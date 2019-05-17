@@ -1,0 +1,10 @@
+MiniSat v1.12b
+========================================
+
+This is the last version where arbitrary boolean constraints are
+supported.  Later versions of MiniSat only supports clauses. However,
+don't be discouraged; the improvements made in v1.13 and v1.14 are
+quite easily back-ported to this version, so if you really need
+the functionality provided by this release, go ahead and use it
+(and send us the upgrades if you make them!)
+
