@@ -20,10 +20,13 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #ifndef Solver_h
 #define Solver_h
 
+#include <climits>
+
 #include "SolverTypes.h"
 #include "Constraints.h"
 #include "Queue.h"
 #include "VarOrder.h"
+#include "OutOrder.h"
 
 
 //=================================================================================================
@@ -55,18 +58,30 @@ protected:
     vec<double>         activity;       // A heuristic measurement of the activity of a variable.
     double              var_inc;        // Amount to bump next variable with.
     double              var_decay;      // INVERSE decay factor for variable activity: stores 1/decay. Use negative value for static variable order.
+
+    //
     VarOrder            order;          // Keeps track of the decision variable order.
 
+    //
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
+    //
     vec<vec<Constr*> >  undos;          // 'undos[var]' is a list of constraints that will be called when 'var' becomes unbound.
+
     Queue<Lit>          propQ;          // Propagation queue.
 
+    //
     vec<char>           assigns;        // The current assignments (lbool:s stored as char:s).
+    //
     vec<Lit>            trail;          // List of assignments made. 
+    //
     vec<int>            trail_lim;      // Separator indices for different decision levels in 'trail'.
+    //
     vec<Constr*>        reason;         // 'reason[var]' is the clause that implied the variables current value, or 'NULL' if none.
+    //
     vec<int>            level;          // 'level[var]' is the decision level at which assignment was made.
+    //
     int                 root_level;     // Level of first proper decision.
+    //
     int                 last_simplify;  // Number of top-level assignments at last 'simplifyDB()'.
 
     // Temporaries (to reduce allocation overhead):
@@ -105,16 +120,26 @@ protected:
     int     decisionLevel(void) { return trail_lim.size(); }
 
 public:
-    Solver(void) : ok               (true)
-                 , cla_inc          (1)
-                 , cla_decay        (1)
-                 , var_inc          (1)
-                 , var_decay        (1)
-                 , order            (assigns, activity)
-                 , last_simplify    (-1)
-                 , progress_estimate(0)
-                 , verbosity(0)
-                 { }
+
+    vec<bool>           pures;          // The pure literals (undef === one).
+    vec<bool>           output_mask;    // The mask of output variables.
+    vec<Lit>            outputs;        // The output literals.
+    // (only queue_ix)
+    OutOrder            out_order;      // Keeps track of which outputs have not yet been decided.
+
+    Solver()
+      : ok               (true)
+      , cla_inc          (1)
+      , cla_decay        (1)
+      , var_inc          (1)
+      , var_decay        (1)
+      , order            (assigns, activity, pures, output_mask)
+      , last_simplify    (-1)
+      , out_order        (assigns, pures, output_mask)
+      , progress_estimate(0)
+      , verbosity(0)
+      { }
+
    ~Solver(void) {
         for (int i = 0; i < learnts.size(); i++) learnts[i]->remove(*this, true);
         for (int i = 0; i < constrs.size(); i++) constrs[i]->remove(*this, true); }
@@ -134,7 +159,7 @@ public:
 
     // Problem specification:
     //
-    Var     newVar (void);
+    Var     newVar (bool pure=false);
     int     nVars  (void)  { return assigns.size(); }
     void    addUnit(Lit p) { if (ok) enqueue(p); }
 

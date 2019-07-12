@@ -43,18 +43,18 @@ inline void check(bool expr) { assert(expr); }
 // Creates a new SAT variable in the solver. If 'decision_var' is cleared, variable will not be
 // used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
 //
-Var Solver::newVar(void)
+Var Solver::newVar(bool pure)
 {
     int     index;
     index = nVars();
-    watches .push();          // (list for positive literal)
-    watches .push();          // (list for negative literal)
-    undos   .push();
-    reason  .push(NULL);
-    assigns .push(toInt(l_Undef));
-    level   .push(-1);
-    activity.push(0);
-    order   .newVar();
+    watches  .push();          // (list for positive literal)
+    watches  .push();          // (list for negative literal)
+    undos    .push();
+    reason   .push(NULL);
+    assigns  .push(toInt(l_Undef));
+    level    .push(-1);
+    activity .push(0);
+    order    .newVar();
     return index;
 }
 
@@ -76,7 +76,7 @@ inline void Solver::undoOne(void)
     Var     x  = var(p);
     assigns[x] = toInt(l_Undef);
     reason [x] = NULL;
-    order.undo(x);
+    if (!out_order.undo(x)) order.undo(x);
     while (undos[x].size() > 0)
         undos[x].last()->undo(*this, p),
         undos[x].pop();
@@ -219,6 +219,7 @@ bool Solver::enqueue(Lit p, Constr* from)
         // New fact -- store it.
         if (verbosity >= 2) printf(L_IND"bind("L_LIT")\n", L_ind, L_lit(p));
         assigns[var(p)] = toInt(lbool(!sign(p)));
+        // printf("prop %d %d\n", var(p), assigns[var(p)]);
         level  [var(p)] = decisionLevel();
         reason [var(p)] = from;
         trail.push(p);
@@ -397,17 +398,29 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
 
             // New variable decision:
             stats.decisions++;
-            Var next = order.select(params.random_var_freq);
 
-            if (next == var_Undef){
-                // Model found:
-                model.growTo(nVars());
-                for (int i = 0; i < nVars(); i++) model[i] = value(i);
-                cancelUntil(root_level);
-                return l_True;
+            Lit decision = out_order.select();
+
+            if (var(decision) == var_Undef) {
+              Var next = order.select(params.random_var_freq);
+              //  printf("decision %d\n", next);
+
+              if (next == var_Undef){
+                  // Model found:
+                  model.growTo(nVars());
+                  for (int i = 0; i < nVars(); i++) model[i] = value(i);
+
+                  // TODO store state
+                  cancelUntil(root_level);
+                  return l_True;
+              }
+
+              check(assume(~Lit(next)));
             }
-
-            check(assume(~Lit(next)));
+            else {
+              // printf("out decision %d %d\n", var(decision), sign(decision));
+              check(assume(decision));
+            }
         }
     }
 }
@@ -469,7 +482,8 @@ bool Solver::solve(const vec<Lit>& assumps)
         if (!assume(assumps[i]) || propagate() != NULL){
             propQ.clear();
             cancelUntil(0);
-            return false; }
+            return false;
+        }
     root_level = decisionLevel();
 
     if (verbosity >= 1){
@@ -494,3 +508,5 @@ bool Solver::solve(const vec<Lit>& assumps)
     cancelUntil(0);
     return status == l_True;
 }
+
+// TODO resumeWith(state)

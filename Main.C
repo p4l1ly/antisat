@@ -106,7 +106,6 @@ static bool parse_DIMACS_main(char* in, Solver& S) {
     return S.okay();
 }
 
-
 // Inserts problem into solver. Returns FALSE upon immediate conflict.
 //
 bool parse_DIMACS(gzFile in, Solver& S) {
@@ -116,6 +115,80 @@ bool parse_DIMACS(gzFile in, Solver& S) {
     return ret; }
 
 
+static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
+    int var;
+    bool neg, pure;
+
+    lits.clear();
+    while (*in != '\n') {
+        skipWhitespace(in);
+
+        pure = *in == 'p';
+        if (pure) in++;
+
+        neg = *in == '-';
+        if (neg) in++;
+
+        var = parseInt(in);
+        while (var >= S.pures.size()) S.pures.push(false);
+        while (var >= S.output_mask.size()) S.output_mask.push(false);
+        while (var >= S.nVars()) S.newVar();
+
+        lits.push( neg ? ~Lit(var) : Lit(var) );
+    }
+    in++;
+}
+
+static bool parse_AFASAT_main(char* in, Solver& S, int* initial) {
+    char *purein = in;
+
+    //pures
+    while (*purein != '\n') {
+        int var = parseInt(purein);
+        while (var >= S.pures.size()) S.pures.push(false);
+        S.pures[var] = true;
+    }
+    skipLine(in); // blank
+
+    *initial = parseInt(in); in++;
+    skipLine(in); // blank
+
+    // out
+    while (*in != '\n') {
+        skipWhitespace(in);
+        bool neg = *in == '-';
+        if (neg) in++;
+
+        int var = parseInt(in);
+
+        while (var >= S.output_mask.size()) S.output_mask.push(false);
+        S.output_mask[var] = true;
+
+        Lit lit = neg ? ~Lit(var) : Lit(var);
+        S.outputs.push(lit);
+        while (var >= S.pures.size()) S.pures.push(false);
+        S.out_order.newVar(lit);
+    }
+    in++;
+    skipLine(in); // blank
+
+    // clauses
+    vec<Lit>    lits;
+    while (*in != '\n') {
+        readClauseAfasat(in, S, lits);
+        S.addClause(lits);
+        if (!S.okay())
+            return false;
+    }
+    return S.okay();
+}
+
+bool parse_AFASAT(gzFile in, Solver& S, int* initial) {
+    char* text = readFile(in);
+    bool ret = parse_AFASAT_main(text, S, initial);
+    free(text);
+    return ret;
+}
 //=================================================================================================
 
 
@@ -144,12 +217,13 @@ int main(int argc, char** argv)
 {
     Solver      S;
     bool        st;
+    int initial;
 
     gzFile in = argc == 1 ? gzdopen(0, "rb") : gzopen(argv[1], "rb");
     if (in == NULL)
         fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
         exit(1);
-    st = parse_DIMACS(in, S);
+    st = parse_AFASAT(in, S, &initial);
     gzclose(in);
 
     if (!st)
@@ -159,10 +233,71 @@ int main(int argc, char** argv)
     S.verbosity = 1;
     solver = &S;
     signal(SIGINT,SIGINT_handler);
-    st = S.solve();
-    printStats(S.stats, cpuTime());
-    printf("\n");
-    printf(st ? "SATISFIABLE\n" : "UNSATISFIABLE\n");
+
+    // vec<Lit> *finalCell = new vec<Lit>(S.outputs.size() - 1);
+    vec<Lit> *finalCell = new vec<Lit>(S.outputs.size());
+
+    for (int i = 0; i < S.outputs.size(); i++) {
+        (*finalCell)[i] = ~Lit(i);
+        // if (i < final_)
+        //     (*finalCell)[i] = ~Lit(i);
+        // if (i > final_)
+        //     (*finalCell)[i-1] = ~Lit(i);
+    }
+
+    vec<vec<Lit>*> config_stack;
+
+    while (true) {
+        st = S.solve(*finalCell);
+        printStats(S.stats, cpuTime());
+        printf("\n");
+        printf(st ? "SATISFIABLE\n" : "UNSATISFIABLE\n");
+
+        if (st) {
+            for (int i = 0; i < S.nVars(); i++) {
+                printf(
+                    "%c",
+                    S.model[i] == l_True
+                        ? '1'
+                        : (S.model[i] == l_False ? '0' : 'x')
+                );
+            }
+            printf("\n");
+
+            vec<Lit> histOut;
+
+            config_stack.push(finalCell);
+            finalCell = new vec<Lit>();
+
+            for (int i = 0; i < S.outputs.size(); i++) {
+                Lit out = S.outputs[i];
+
+                if (
+                    S.model[var(out)] == l_False && !sign(out) ||
+                    S.model[var(out)] == l_True && sign(out)
+                ) {
+                    printf("0");
+                    histOut.push(out);
+                    finalCell->push(~Lit(i));
+                }
+                else if (i == initial) {
+                    printf("REACHABLE\n"); exit(0);
+                }
+                else printf("%c", S.model[var(out)] == l_Undef ? 'x' : '1');
+            }
+            printf("\n");
+
+            S.addClause(histOut);
+        }
+        else {
+            delete finalCell;
+            if (config_stack.size()) {
+                finalCell = config_stack.last();
+                config_stack.pop();
+            }
+            else break;
+        }
+    }
 
     return 0;
 }
