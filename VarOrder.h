@@ -36,15 +36,15 @@ class VarOrder {
     const vec<char>&    assigns;       // var->val. Pointer to external assignment table.
     const vec<double>&  activity;      // var->act. Pointer to external activity table.
     const vec<bool>&    pures;
-    const vec<bool>&    output_mask;
+    const vec<int>&     output_map;
     Heap<VarOrder_lt>   heap;
     double              random_seed;   // For the internal random number generator
 
 public:
     VarOrder(
         const vec<char>& ass, const vec<double>& act, const vec<bool>& pures_,
-        const vec<bool>& outs
-    ) : assigns(ass), activity(act), pures(pures_), output_mask(outs),
+        const vec<int>& outs
+    ) : assigns(ass), activity(act), pures(pures_), output_map(outs),
         heap(VarOrder_lt(act)), random_seed(91648253)
     { }
 
@@ -59,8 +59,8 @@ void VarOrder::newVar(void)
 {
     heap.setBounds(assigns.size());
     int ix = assigns.size() - 1;
-    // printf("pure1 %d %d %d\n", ix, pures[ix], output_mask[ix]);
-    if (!pures[ix] && !output_mask[ix])
+    // printf("pure1 %d %d %d\n", ix, pures[ix], output_map[ix]);
+    if (!pures[ix] && output_map[ix] == -1)
         heap.insert(ix);
 }
 
@@ -68,7 +68,7 @@ void VarOrder::newVar(void)
 void VarOrder::update(Var x)
 {
     // printf("pure2 %d %d\n", x, pures[x]);
-    if (!pures[x] && !output_mask[x] && heap.inHeap(x))
+    if (!pures[x] && output_map[x] == -1 && heap.inHeap(x))
         heap.increase(x);
 }
 
@@ -76,7 +76,7 @@ void VarOrder::update(Var x)
 void VarOrder::undo(Var x)
 {
     // printf("pure3 %d %d\n", x, pures[x]);
-    if (!pures[x] && !output_mask[x] && !heap.inHeap(x))
+    if (!pures[x] && output_map[x] == -1 && !heap.inHeap(x))
         heap.insert(x);
 }
 

@@ -122,7 +122,7 @@ protected:
 public:
 
     vec<bool>           pures;          // The pure literals (undef === one).
-    vec<bool>           output_mask;    // The mask of output variables.
+    vec<int>           output_map;    // The mask of output variables.
     vec<Lit>            outputs;        // The output literals.
     // (only queue_ix)
     OutOrder            out_order;      // Keeps track of which outputs have not yet been decided.
@@ -133,9 +133,9 @@ public:
       , cla_decay        (1)
       , var_inc          (1)
       , var_decay        (1)
-      , order            (assigns, activity, pures, output_mask)
+      , order            (assigns, activity, pures, output_map)
       , last_simplify    (-1)
-      , out_order        (assigns, pures, output_mask)
+      , out_order        (assigns, pures, output_map)
       , progress_estimate(0)
       , verbosity(0)
       { }

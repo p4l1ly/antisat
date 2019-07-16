@@ -22,6 +22,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <unistd.h>
 #include <signal.h>
 #include <zlib.h>
+#include <chrono>
+#include <iostream>
 
 //=================================================================================================
 // Helpers:
@@ -131,7 +133,7 @@ static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
 
         var = parseInt(in);
         while (var >= S.pures.size()) S.pures.push(false);
-        while (var >= S.output_mask.size()) S.output_mask.push(false);
+        while (var >= S.output_map.size()) S.output_map.push(-1);
         while (var >= S.nVars()) S.newVar();
 
         lits.push( neg ? ~Lit(var) : Lit(var) );
@@ -139,12 +141,13 @@ static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
     in++;
 }
 
-static bool parse_AFASAT_main(char* in, Solver& S, int* initial) {
-    char *purein = in;
+static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
+    *acnt = parseInt(in); in++;
+    skipLine(in); // blank
 
     //pures
-    while (*purein != '\n') {
-        int var = parseInt(purein);
+    while (*in != '\n') {
+        int var = parseInt(in);
         while (var >= S.pures.size()) S.pures.push(false);
         S.pures[var] = true;
     }
@@ -161,8 +164,8 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial) {
 
         int var = parseInt(in);
 
-        while (var >= S.output_mask.size()) S.output_mask.push(false);
-        S.output_mask[var] = true;
+        while (var >= S.output_map.size()) S.output_map.push(-1);
+        S.output_map[var] = S.outputs.size();
 
         Lit lit = neg ? ~Lit(var) : Lit(var);
         S.outputs.push(lit);
@@ -183,9 +186,9 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial) {
     return S.okay();
 }
 
-bool parse_AFASAT(gzFile in, Solver& S, int* initial) {
+bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt) {
     char* text = readFile(in);
-    bool ret = parse_AFASAT_main(text, S, initial);
+    bool ret = parse_AFASAT_main(text, S, initial, acnt);
     free(text);
     return ret;
 }
@@ -217,20 +220,20 @@ int main(int argc, char** argv)
 {
     Solver      S;
     bool        st;
-    int initial;
+    int initial, acnt;
 
     gzFile in = argc == 1 ? gzdopen(0, "rb") : gzopen(argv[1], "rb");
     if (in == NULL)
         fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
         exit(1);
-    st = parse_AFASAT(in, S, &initial);
+    st = parse_AFASAT(in, S, &initial, &acnt);
     gzclose(in);
 
     if (!st)
         printf("Trivial problem\nUNSATISFIABLE\n"),
         exit(20);
 
-    S.verbosity = 1;
+    S.verbosity = -1;
     solver = &S;
     signal(SIGINT,SIGINT_handler);
 
@@ -247,45 +250,77 @@ int main(int argc, char** argv)
 
     vec<vec<Lit>*> config_stack;
 
+    std::chrono::duration<double> elapsed_total = std::chrono::duration<double>::zero();
+    auto tic_all = std::chrono::steady_clock::now();
+    int count = 0;
+
     while (true) {
+        count += 1;
+        auto tic = std::chrono::steady_clock::now();
+
         st = S.solve(*finalCell);
-        printStats(S.stats, cpuTime());
-        printf("\n");
-        printf(st ? "SATISFIABLE\n" : "UNSATISFIABLE\n");
+
+        elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
+
+        if (S.verbosity >= 0) {
+          printStats(S.stats, cpuTime());
+          printf("\n");
+          printf(st ? "SATISFIABLE\n" : "UNSATISFIABLE\n");
+        }
 
         if (st) {
-            for (int i = 0; i < S.nVars(); i++) {
-                printf(
-                    "%c",
-                    S.model[i] == l_True
-                        ? '1'
-                        : (S.model[i] == l_False ? '0' : 'x')
-                );
+            if (S.verbosity >= 0) {
+              for (int i = 0; i < S.nVars(); i++) {
+                  printf(
+                      "%c",
+                      S.model[i] == l_True
+                          ? '1'
+                          : (S.model[i] == l_False ? '0' : 'x')
+                  );
+              }
+              printf("\n");
             }
-            printf("\n");
 
             vec<Lit> histOut;
 
             config_stack.push(finalCell);
             finalCell = new vec<Lit>();
 
+            if (S.verbosity >= -1)
+              printf("***********************************************\nq ");
             for (int i = 0; i < S.outputs.size(); i++) {
                 Lit out = S.outputs[i];
 
                 if (
-                    S.model[var(out)] == l_False && !sign(out) ||
-                    S.model[var(out)] == l_True && sign(out)
+                    (S.model[var(out)] == l_False && !sign(out)) ||
+                    (S.model[var(out)] == l_True && sign(out))
                 ) {
-                    printf("0");
+                    if (S.verbosity >= -1) printf("0");
                     histOut.push(out);
                     finalCell->push(~Lit(i));
                 }
                 else if (i == initial) {
-                    printf("REACHABLE\n"); exit(0);
+                    printf("REACHABLE\n"); goto statPrint;
                 }
-                else printf("%c", S.model[var(out)] == l_Undef ? 'x' : '1');
+                else if (S.verbosity >= -1) {
+                  printf("%c", S.model[var(out)] == l_Undef ? 'x' : '1');
+                }
             }
-            printf("\n");
+            if (S.verbosity >= -1) {
+              printf("\n");
+              printf("\na ");
+              for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
+                printf(
+                    "%c",
+                    S.model[i] == l_True
+                        ? '1'
+                        : (S.model[i] == l_False ? '0' : 'x')
+                );
+              }
+              printf("\n");
+              std::cout << count << " " << config_stack.size() << " " << elapsed_total.count() << std::endl;
+              printf("-----------------------------------------------\n\n");
+            }
 
             S.addClause(histOut);
         }
@@ -298,6 +333,11 @@ int main(int argc, char** argv)
             else break;
         }
     }
+
+statPrint:
+    printStats(S.stats, cpuTime());
+    std::chrono::duration<double> elapsed_all = std::chrono::steady_clock::now() - tic_all;
+    std::cout << count << " " << elapsed_total.count() << " " << elapsed_all.count() << std::endl;
 
     return 0;
 }

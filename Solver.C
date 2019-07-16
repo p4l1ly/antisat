@@ -403,7 +403,6 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
 
             if (var(decision) == var_Undef) {
               Var next = order.select(params.random_var_freq);
-              //  printf("decision %d\n", next);
 
               if (next == var_Undef){
                   // Model found:
@@ -415,10 +414,11 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
                   return l_True;
               }
 
+              // printf("decision -%d\n", next);
               check(assume(~Lit(next)));
             }
             else {
-              // printf("out decision %d %d\n", var(decision), sign(decision));
+              // printf("out decision %c%d %d\n", sign(decision) ? '-' : '+', var(decision));
               check(assume(decision));
             }
         }
