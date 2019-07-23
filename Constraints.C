@@ -85,10 +85,11 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
 
         c->size_learnt = (int)learnt | (ps.size() << 1);
         for (int i = 0; i < ps.size(); i++) c->data[i] = ps[i];
-        if (learnt) c->activity() = 0.0;
 
         // For learnt clauses only:
         if (learnt){
+            c->activity() = 0.0;
+
             // Put the second watch on the literal with highest decision level:
             int     max_i = 1;
             int     max   = S.level[var(ps[1])];
@@ -112,6 +113,66 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
         // Store clause:
         S.watches[index(~c->data[0])].push(c);
         S.watches[index(~c->data[1])].push(c);
+        if (&out_clause != NULL) out_clause = c;
+
+        return true;
+    }
+}
+
+bool Clause_new_handleConflict(Solver& S, const vec<Lit>& ps, Clause*& out_clause)
+{
+    if (&out_clause != NULL) out_clause = NULL;
+
+    if (ps.size() == 1) {
+        return S.enqueue(ps[0]);
+    }
+    else{
+        // Allocate clause:
+        assert(sizeof(Lit)   == sizeof(unsigned));
+        assert(sizeof(float) == sizeof(unsigned));
+        void* mem = xmalloc<char>(sizeof(Clause) + sizeof(unsigned)*ps.size());
+        Clause* c   = new (mem) Clause;
+
+        c->size_learnt = ps.size() << 1;
+        for (int i = 0; i < ps.size(); i++) c->data[i] = ps[i];
+
+        S.stats.clauses++;
+        S.stats.clauses_literals += c->size();
+
+        // jump over unsatisfied literals
+        int i;
+        for (i = 0; i < ps.size(); i++) {
+          if (sign(ps[i])
+              ? toLbool(S.assigns[var(ps[i])]) != l_True
+              : toLbool(S.assigns[var(ps[i])]) != l_False
+          ) break;
+        }
+
+        if (i >= ps.size()) {
+            S.watches[index(~c->data[0])].push(c);
+            S.watches[index(~c->data[1])].push(c);
+            return false;
+        }
+
+        c->data[0] = c->data[i], c->data[i] = c->data[0];
+        S.watches[index(~c->data[0])].push(c);
+
+        // jump over unsatisfied literals
+        for (i++; i < ps.size(); i++) {
+          if (sign(ps[i])
+              ? toLbool(S.assigns[var(ps[i])]) != l_True
+              : toLbool(S.assigns[var(ps[i])]) != l_False
+          ) break;
+        }
+
+        if (i >= ps.size()) {
+            S.watches[index(~c->data[1])].push(c);
+            return false;
+        }
+
+        c->data[1] = c->data[i], c->data[i] = c->data[1];
+        S.watches[index(~c->data[1])].push(c);
+
         if (&out_clause != NULL) out_clause = c;
 
         return true;
@@ -264,3 +325,67 @@ void AtMost::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
         }
     }
 }
+
+/*
+//=================================================================================================
+// AtLeast constraint:
+
+
+bool AtLeast_new(Solver& S, const vec<Lit>& ps, AtLeast*& out)
+{
+    assert(S.decisionLevel() == 0);
+
+    void* mem    = (void*)xmalloc<char>(sizeof(AtLeast) + sizeof(Lit) * ps.size());
+    out          = new (mem) AtLeast;
+    out->size    = ps.size();
+    out->n       = n;
+    for (int i = 0; i < ps.size(); i++) out->lits[i] = ps[i];
+
+    return true;
+}
+
+
+void AtLeast::remove(Solver& S, bool just_dealloc) {
+    if (!just_dealloc)
+        for (int i = 0; i < size; i++)
+            removeWatch(S.watches[index(lits[i])], this);
+    xfree(this);
+}
+
+
+bool AtLeast::simplify(Solver& S) {
+    return false; }
+
+
+bool AtLeast::propagate(Solver& S, Lit p, bool& keep_watch)
+{
+    keep_watch = true;
+    if (counter == n) return false;
+
+    counter++;
+    S.undos[var(p)].push(this);
+
+    // If no more can be true, enqueue the negation of the rest:
+    if (counter == n)
+        for (int i = 0; i < size; i++)
+            if (!S.enqueue(~lits[i], this))
+                return false;
+    return true;
+}
+
+
+void AtLeast::undo(Solver& S, Lit p) {
+    counter--; }
+
+
+void AtLeast::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
+{
+    int     c = (p == lit_Undef) ? -1 : 0;
+    for (int i = 0; i < size; i++){
+        if (S.value(lits[i]) == l_True){
+            out_reason.push(lits[i]);
+            if (++c == n) return;
+        }
+    }
+}
+*/

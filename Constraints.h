@@ -55,6 +55,7 @@ public:
 
     // Constructor -- creates a new clause and add it to watcher lists.
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
+    friend bool Clause_new_handleConflict(Solver& S, const vec<Lit>& ps, Clause*& out_clause);
 
     // Learnt clauses only:
     bool    locked  (const Solver& S) const;
@@ -91,5 +92,29 @@ public:
 };
 
 
+/*
 //=================================================================================================
+// AtLeast:
+
+
+class AtLeast : public Constr {
+    int     n;
+    int     counter;
+    int     size;
+    Lit     lits[0];
+
+public:
+    // Constructor -- creates a new AtMost-constraint and add it to watcher lists.
+    friend bool AtLeast_new(Solver& S, const vec<Lit>& ps, int n, AtLeast*& out);
+
+    // Constraint interface:
+    void remove    (Solver& S, bool just_dealloc = false);
+    bool propagate (Solver& S, Lit p, bool& keep_watch);
+    bool simplify  (Solver& S);
+    void undo      (Solver& S, Lit p);
+    void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+};
+//=================================================================================================
+*/
+
 #endif

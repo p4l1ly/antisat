@@ -10,13 +10,14 @@ class OutOrder {
     const vec<char>& assigns;       // var->val. Pointer to external assignment table.
     const vec<bool>& pures;
     const vec<int>& output_map;
-    vec<Lit> queue;
+    vec<Lit>& queue;
     int queue_ix;
 
 public:
     OutOrder(
-        const vec<char>& ass, const vec<bool>& pures_, const vec<int>& outs
-    ) : assigns(ass), pures(pures_), output_map(outs), queue_ix(0)
+        const vec<char>& ass, const vec<bool>& pures_, const vec<int>& outs,
+        vec<Lit>& queue_
+    ) : assigns(ass), pures(pures_), output_map(outs), queue(queue_), queue_ix(0)
     { }
 
     inline void newVar(Lit x);
@@ -24,11 +25,6 @@ public:
     inline Lit select(void);
 
 };
-
-void OutOrder::newVar(Lit x) {
-    if (!pures[var(x)])
-        queue.push(x);
-}
 
 bool OutOrder::undo(Var x) {
     // printf("undoing %d %d %d\n", queue_ix - 1, var(queue[queue_ix - 1]), x);

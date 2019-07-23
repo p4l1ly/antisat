@@ -20,6 +20,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Sort.h"
 #include <cmath>
+#include <iostream>
 
 
 //=================================================================================================
@@ -27,14 +28,11 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 
 // For derivation output (verbosity level 2)
-#define L_IND    "%-*d"
-#define L_ind    decisionLevel()*3+3,decisionLevel()
 #define L_LIT    "%sx%d"
 #define L_lit(p) sign(p)?"~":"", var(p)
 
 // Just like 'assert()' but expression will be evaluated in the release version as well.
 inline void check(bool expr) { assert(expr); }
-
 
 //=================================================================================================
 // Minor methods:
@@ -62,7 +60,7 @@ Var Solver::newVar(bool pure)
 // Returns FALSE if immediate conflict.
 bool Solver::assume(Lit p) {
     assert(propQ.size() == 0);
-    if (verbosity >= 2) printf(L_IND"assume("L_LIT")\n", L_ind, L_lit(p));
+    if (verbosity >= 2) printf(L_IND "assume(" L_LIT ")\n", L_ind, L_lit(p));
     trail_lim.push(trail.size());
     return enqueue(p); }
 
@@ -71,7 +69,7 @@ bool Solver::assume(Lit p) {
 //
 inline void Solver::undoOne(void)
 {
-    if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND"unbind("L_LIT")\n", L_ind, L_lit(p)); }
+    if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND "unbind(" L_LIT ")\n", L_ind, L_lit(p)); }
     Lit     p  = trail.last(); trail.pop();
     Var     x  = var(p);
     assigns[x] = toInt(l_Undef);
@@ -88,7 +86,7 @@ inline void Solver::undoOne(void)
 void Solver::cancel(void)
 {
     assert(propQ.size() == 0);
-    if (verbosity >= 2){ if (trail.size() != trail_lim.last()){ Lit p = trail[trail_lim.last()]; printf(L_IND"cancel("L_LIT")\n", L_ind, L_lit(p)); } }
+    if (verbosity >= 2){ if (trail.size() != trail_lim.last()){ Lit p = trail[trail_lim.last()]; printf(L_IND "cancel(" L_LIT ")\n", L_ind, L_lit(p)); } }
     for (int c = trail.size() - trail_lim.last(); c != 0; c--)
         undoOne();
     trail_lim.pop();
@@ -181,8 +179,8 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
 
     if (verbosity >= 2){
-        printf(L_IND"Learnt {", L_ind);
-        for (int i = 0; i < out_learnt.size(); i++) printf(" "L_LIT, L_lit(out_learnt[i]));
+        printf(L_IND "Learnt {", L_ind);
+        for (int i = 0; i < out_learnt.size(); i++) printf(" " L_LIT, L_lit(out_learnt[i]));
         printf(" } at level %d\n", out_btlevel); }
 }
 
@@ -217,7 +215,7 @@ bool Solver::enqueue(Lit p, Constr* from)
         }
     }else{
         // New fact -- store it.
-        if (verbosity >= 2) printf(L_IND"bind("L_LIT")\n", L_ind, L_lit(p));
+        if (verbosity >= 2) printf(L_IND "bind(" L_LIT ")\n", L_ind, L_lit(p));
         assigns[var(p)] = toInt(lbool(!sign(p)));
         // printf("prop %d %d\n", var(p), assigns[var(p)]);
         level  [var(p)] = decisionLevel();
@@ -351,10 +349,10 @@ void Solver::simplifyDB(void)
 |    all variables are decision variables, this means that the clause set is satisfiable. 'l_False'
 |    if the clause set is unsatisfiable. 'l_Undef' if the bound on number of conflicts is reached.
 |________________________________________________________________________________________________@*/
-lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& params)
+lbool Solver::search()
 {
     if (!ok) return l_False;    // GUARD (public method)
-    assert(root_level == decisionLevel());
+    // assert(root_level == decisionLevel());
 
     stats.starts++;
     int     conflictC = 0;
@@ -367,7 +365,7 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
         if (confl != NULL){
             // CONFLICT
 
-            if (verbosity >= 2) printf(L_IND"**CONFLICT**\n", L_ind);
+            if (verbosity >= 2) printf(L_IND "**CONFLICT**\n", L_ind);
             stats.conflicts++; conflictC++;
             vec<Lit>    learnt_clause;
             int         backtrack_level;
@@ -383,7 +381,6 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
 
             if (nof_conflicts >= 0 && conflictC >= nof_conflicts){
                 // Reached bound on number of conflicts:
-                progress_estimate = progressEstimate();
                 propQ.clear();
                 cancelUntil(root_level);
                 return l_Undef; }
@@ -409,7 +406,6 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
                   model.growTo(nVars());
                   for (int i = 0; i < nVars(); i++) model[i] = value(i);
 
-                  // TODO store state
                   cancelUntil(root_level);
                   return l_True;
               }
@@ -423,19 +419,6 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
             }
         }
     }
-}
-
-
-// Return search-space coverage. Not extremely reliable.
-//
-double Solver::progressEstimate(void)
-{
-    double  progress = 0;
-    double  F = 1.0 / nVars();
-    for (int i = 0; i < nVars(); i++)
-        if (value(i) != l_Undef)
-            progress += pow(F, level[i]);
-    return progress / nVars();
 }
 
 
@@ -473,10 +456,13 @@ bool Solver::solve(const vec<Lit>& assumps)
     simplifyDB();
     if (!ok) return false;
 
-    SearchParams    params(0.95, 0.999, 0.02);
-    double  nof_conflicts = 100;
-    double  nof_learnts   = nConstrs() / 3;
-    lbool   status        = l_Undef;
+    params.var_decay = 0.95;
+    params.clause_decay = 0.999;
+    params.random_var_freq = 0.02;
+
+    nof_conflicts = 100;
+    nof_learnts   = nConstrs() / 3;
+    lbool   status = l_Undef;
 
     for (int i = 0; i < assumps.size(); i++)
         if (!assume(assumps[i]) || propagate() != NULL){
@@ -495,18 +481,50 @@ bool Solver::solve(const vec<Lit>& assumps)
 
     while (status == l_Undef){
         if (verbosity >= 1){
-            printf("| %9d | %7d %8d | %7d %7d %8d %7.1f | %6.3f %% |\n", (int)stats.conflicts, nConstrs(), (int)stats.clauses_literals, (int)nof_learnts, nLearnts(), (int)stats.learnts_literals, (double)stats.learnts_literals/nLearnts(), progress_estimate*100);
+            printf("| %9d | %7d %8d | %7d %7d %8d %7.1f |\n",
+                (int)stats.conflicts, nConstrs(), (int)stats.clauses_literals,
+                (int)nof_learnts, nLearnts(), (int)stats.learnts_literals,
+                (double)stats.learnts_literals/nLearnts());
             fflush(stdout);
         }
-        status = search((int)nof_conflicts, (int)nof_learnts, params);
+        status = search();
         nof_conflicts *= 1.5;
         nof_learnts   *= 1.1;
     }
     if (verbosity >= 1)
         printf("==============================================================================\n");
 
-    cancelUntil(0);
     return status == l_True;
 }
 
-// TODO resumeWith(state)
+bool Solver::resume() {
+    lbool   status = l_Undef;
+
+    if (verbosity >= 1){
+        printf("==================================[MINISAT]===================================\n");
+        printf("| Conflicts |     ORIGINAL     |              LEARNT              | Progress |\n");
+        printf("|           | Clauses Literals |   Limit Clauses Literals  Lit/Cl |          |\n");
+        printf("==============================================================================\n");
+    }
+
+    while (status == l_Undef){
+        if (verbosity >= 1){
+            printf("| %9d | %7d %8d | %7d %7d %8d %7.1f |\n",
+                (int)stats.conflicts, nConstrs(), (int)stats.clauses_literals,
+                (int)nof_learnts, nLearnts(), (int)stats.learnts_literals,
+                (double)stats.learnts_literals/nLearnts());
+            fflush(stdout);
+        }
+        status = search();
+        nof_conflicts *= 1.5;
+        nof_learnts   *= 1.1;
+    }
+    if (verbosity >= 1)
+        printf("==============================================================================\n");
+
+    return status == l_True;
+}
+
+void Solver::reset() {
+  cancelUntil(0);
+}

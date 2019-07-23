@@ -61,6 +61,9 @@ class Heap {
 
  public:
     Heap(C c) : comp(c) { heap.push(-1); }
+    Heap(const Heap<C>& h)
+    : comp(h.comp), heap(h.heap), indices(h.indices)
+    { }
 
     void setBounds (int size) { assert(size >= 0); indices.growTo(size,0); }
     bool inHeap    (int n)    { assert(ok(n)); return indices[n] != 0; }

@@ -128,6 +128,7 @@ public:
     vec(int size)               : data(NULL) , sz(0)   , cap(0)    { growTo(size); }
     vec(int size, const T& pad) : data(NULL) , sz(0)   , cap(0)    { growTo(size, pad); }
     vec(T* array, int size)     : data(array), sz(size), cap(size) { }      // (takes ownership of array -- will be deallocated with 'xfree()')
+    vec(const vec<T>& v) : data(NULL), sz(0), cap(0) { v.copyTo(*this); }
    ~vec(void)                                                      { clear(true); }
 
     // Ownership of underlying array:
@@ -155,7 +156,7 @@ public:
 
     // Don't allow copying (error prone):
     vec<T>&  operator = (vec<T>& other) { TEMPLATE_FAIL; }
-             vec        (vec<T>& other) { TEMPLATE_FAIL; }
+             // vec        (vec<T>& other) { TEMPLATE_FAIL; }
 
     // Duplicatation (preferred instead):
     void copyTo(vec<T>& copy) const { copy.clear(); copy.growTo(sz); for (int i = 0; i < sz; i++) new (&copy[i]) T(data[i]); }
@@ -218,7 +219,7 @@ const lbool l_True  = toLbool( 1);
 const lbool l_False = toLbool(-1);
 const lbool l_Undef = toLbool( 0);
 
-
+const int verbosity = -2;
 //=================================================================================================
 // Relation operators -- extend definitions from '==' and '<'
 

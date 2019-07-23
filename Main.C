@@ -170,7 +170,7 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
         Lit lit = neg ? ~Lit(var) : Lit(var);
         S.outputs.push(lit);
         while (var >= S.pures.size()) S.pures.push(false);
-        S.out_order.newVar(lit);
+        if (!S.pures[var]) S.impure_outputs.push(lit);
     }
     in++;
     skipLine(in); // blank
@@ -197,11 +197,11 @@ bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt) {
 
 void printStats(SolverStats& stats, double cpu_time)
 {
-    printf("restarts              : %"I64_fmt"\n", stats.starts);
-    printf("conflicts             : %-12"I64_fmt"   (%.0f /sec)\n", stats.conflicts   , stats.conflicts   /cpu_time);
-    printf("decisions             : %-12"I64_fmt"   (%.0f /sec)\n", stats.decisions   , stats.decisions   /cpu_time);
-    printf("propagations          : %-12"I64_fmt"   (%.0f /sec)\n", stats.propagations, stats.propagations/cpu_time);
-    printf("inspects              : %-12"I64_fmt"   (%.0f /sec)\n", stats.inspects    , stats.inspects    /cpu_time);
+    printf("restarts              : %" I64_fmt "\n", stats.starts);
+    printf("conflicts             : %-12" I64_fmt "   (%.0f /sec)\n", stats.conflicts   , stats.conflicts   /cpu_time);
+    printf("decisions             : %-12" I64_fmt "   (%.0f /sec)\n", stats.decisions   , stats.decisions   /cpu_time);
+    printf("propagations          : %-12" I64_fmt "   (%.0f /sec)\n", stats.propagations, stats.propagations/cpu_time);
+    printf("inspects              : %-12" I64_fmt "   (%.0f /sec)\n", stats.inspects    , stats.inspects    /cpu_time);
     printf("CPU time              : %g s\n", cpu_time);
 }
 
@@ -218,7 +218,8 @@ static void SIGINT_handler(int signum) {
 
 int main(int argc, char** argv)
 {
-    Solver      S;
+    GlobSolver  GS;
+    Solver      S(GS);
     bool        st;
     int initial, acnt;
 
@@ -233,60 +234,40 @@ int main(int argc, char** argv)
         printf("Trivial problem\nUNSATISFIABLE\n"),
         exit(20);
 
-    S.verbosity = -1;
     solver = &S;
     signal(SIGINT,SIGINT_handler);
 
-    // vec<Lit> *finalCell = new vec<Lit>(S.outputs.size() - 1);
     vec<Lit> *finalCell = new vec<Lit>(S.outputs.size());
 
     for (int i = 0; i < S.outputs.size(); i++) {
         (*finalCell)[i] = ~Lit(i);
-        // if (i < final_)
-        //     (*finalCell)[i] = ~Lit(i);
-        // if (i > final_)
-        //     (*finalCell)[i-1] = ~Lit(i);
     }
 
     vec<vec<Lit>*> config_stack;
 
     std::chrono::duration<double> elapsed_total = std::chrono::duration<double>::zero();
     auto tic_all = std::chrono::steady_clock::now();
-    int count = 0;
+    int satCnt = 0;
+    int unsatCnt = 0;
+    int maxDepth = 0;
 
     while (true) {
-        count += 1;
         auto tic = std::chrono::steady_clock::now();
 
         st = S.solve(*finalCell);
 
         elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
 
-        if (S.verbosity >= 0) {
-          printStats(S.stats, cpuTime());
-          printf("\n");
-          printf(st ? "SATISFIABLE\n" : "UNSATISFIABLE\n");
-        }
-
+        S.reset();
         if (st) {
-            if (S.verbosity >= 0) {
-              for (int i = 0; i < S.nVars(); i++) {
-                  printf(
-                      "%c",
-                      S.model[i] == l_True
-                          ? '1'
-                          : (S.model[i] == l_False ? '0' : 'x')
-                  );
-              }
-              printf("\n");
-            }
+            satCnt++;
 
             vec<Lit> histOut;
 
             config_stack.push(finalCell);
             finalCell = new vec<Lit>();
 
-            if (S.verbosity >= -1)
+            if (verbosity >= -1)
               printf("***********************************************\nq ");
             for (int i = 0; i < S.outputs.size(); i++) {
                 Lit out = S.outputs[i];
@@ -295,18 +276,18 @@ int main(int argc, char** argv)
                     (S.model[var(out)] == l_False && !sign(out)) ||
                     (S.model[var(out)] == l_True && sign(out))
                 ) {
-                    if (S.verbosity >= -1) printf("0");
+                    if (verbosity >= -1) printf("0");
                     histOut.push(out);
                     finalCell->push(~Lit(i));
                 }
                 else if (i == initial) {
-                    printf("REACHABLE\n"); goto statPrint;
+                    printf("0 "); goto statPrint;
                 }
-                else if (S.verbosity >= -1) {
+                else if (verbosity >= -1) {
                   printf("%c", S.model[var(out)] == l_Undef ? 'x' : '1');
                 }
             }
-            if (S.verbosity >= -1) {
+            if (verbosity >= -1) {
               printf("\n");
               printf("\na ");
               for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
@@ -318,13 +299,16 @@ int main(int argc, char** argv)
                 );
               }
               printf("\n");
-              std::cout << count << " " << config_stack.size() << " " << elapsed_total.count() << std::endl;
+              std::cout << satCnt << " " << unsatCnt << " " << " " << config_stack.size() << " " << elapsed_total.count() << std::endl;
               printf("-----------------------------------------------\n\n");
             }
+            maxDepth = max(config_stack.size(), maxDepth);
 
             S.addClause(histOut);
         }
         else {
+            unsatCnt++;
+
             delete finalCell;
             if (config_stack.size()) {
                 finalCell = config_stack.last();
@@ -334,10 +318,17 @@ int main(int argc, char** argv)
         }
     }
 
+    printf("1 ");
+
 statPrint:
-    printStats(S.stats, cpuTime());
+    // printStats(S.stats, cpuTime());
     std::chrono::duration<double> elapsed_all = std::chrono::steady_clock::now() - tic_all;
-    std::cout << count << " " << elapsed_total.count() << " " << elapsed_all.count() << std::endl;
+    std::cout
+      << satCnt << " "
+      << unsatCnt << " "
+      << maxDepth << " "
+      << elapsed_total.count() << " "
+      << elapsed_all.count() << std::endl;
 
     return 0;
 }

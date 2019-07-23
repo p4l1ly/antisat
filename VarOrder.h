@@ -48,6 +48,15 @@ public:
         heap(VarOrder_lt(act)), random_seed(91648253)
     { }
 
+    VarOrder(const vec<char>& ass, const VarOrder& order)
+    : assigns(ass)
+    , activity(order.activity)
+    , pures(order.pures)
+    , output_map(order.output_map)
+    , heap(order.heap)
+    , random_seed(order.random_seed)
+    { }
+
     inline void newVar(void);
     inline void update(Var x);                  // Called when variable increased in activity.
     inline void undo(Var x);                    // Called when variable is unassigned and may be selected again.
