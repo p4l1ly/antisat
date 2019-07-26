@@ -21,6 +21,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Sort.h"
 
+#include <iostream>
+
 
 //=================================================================================================
 // Helpers:
@@ -45,7 +47,7 @@ void removeWatch(vec<Constr*>& ws, Constr* elem)
 bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause)
 {
     vec<Lit>    qs;
-    if (&out_clause != NULL) out_clause = NULL;
+    out_clause = NULL;
 
     if (!learnt){
         assert(S.decisionLevel() == 0);
@@ -113,70 +115,71 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
         // Store clause:
         S.watches[index(~c->data[0])].push(c);
         S.watches[index(~c->data[1])].push(c);
-        if (&out_clause != NULL) out_clause = c;
+        out_clause = c;
 
         return true;
     }
 }
 
-bool Clause_new_handleConflict(Solver& S, const vec<Lit>& ps, Clause*& out_clause)
+bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
 {
-    if (&out_clause != NULL) out_clause = NULL;
+    out_clause = NULL;
+    sortUnique(ps);
 
-    if (ps.size() == 1) {
-        return S.enqueue(ps[0]);
-    }
-    else{
-        // Allocate clause:
-        assert(sizeof(Lit)   == sizeof(unsigned));
-        assert(sizeof(float) == sizeof(unsigned));
-        void* mem = xmalloc<char>(sizeof(Clause) + sizeof(unsigned)*ps.size());
-        Clause* c   = new (mem) Clause;
+    if (ps.size() == 1) ps.push(ps[0]);
 
-        c->size_learnt = ps.size() << 1;
-        for (int i = 0; i < ps.size(); i++) c->data[i] = ps[i];
+    // Allocate clause:
+    assert(sizeof(Lit)   == sizeof(unsigned));
+    assert(sizeof(float) == sizeof(unsigned));
+    void* mem = xmalloc<char>(sizeof(Clause) + sizeof(unsigned)*ps.size());
+    Clause* c   = new (mem) Clause;
 
-        S.stats.clauses++;
-        S.stats.clauses_literals += c->size();
+    c->size_learnt = ps.size() << 1;
+    for (int i = 0; i < ps.size(); i++) c->data[i] = ps[i];
 
-        // jump over unsatisfied literals
-        int i;
-        for (i = 0; i < ps.size(); i++) {
-          if (sign(ps[i])
-              ? toLbool(S.assigns[var(ps[i])]) != l_True
-              : toLbool(S.assigns[var(ps[i])]) != l_False
-          ) break;
-        }
+    S.stats.clauses++;
+    S.stats.clauses_literals += c->size();
 
-        if (i >= ps.size()) {
-            S.watches[index(~c->data[0])].push(c);
-            S.watches[index(~c->data[1])].push(c);
-            return false;
-        }
+    // jump over unsatisfied literals
+    // int i;
 
-        c->data[0] = c->data[i], c->data[i] = c->data[0];
+    // for (i = 0; i < ps.size(); i++) {
+    //     if (sign(ps[i])
+    //         ? toLbool(S.assigns[var(ps[i])]) != l_True
+    //         : toLbool(S.assigns[var(ps[i])]) != l_False
+    //     ) break;
+    // }
+
+    // if (i >= ps.size()) {
         S.watches[index(~c->data[0])].push(c);
-
-        // jump over unsatisfied literals
-        for (i++; i < ps.size(); i++) {
-          if (sign(ps[i])
-              ? toLbool(S.assigns[var(ps[i])]) != l_True
-              : toLbool(S.assigns[var(ps[i])]) != l_False
-          ) break;
-        }
-
-        if (i >= ps.size()) {
-            S.watches[index(~c->data[1])].push(c);
-            return false;
-        }
-
-        c->data[1] = c->data[i], c->data[i] = c->data[1];
         S.watches[index(~c->data[1])].push(c);
+        out_clause = c;
+        return false;
+    // }
+    assert(false);
 
-        if (&out_clause != NULL) out_clause = c;
+    // c->data[0] = c->data[i], c->data[i] = c->data[0];
+    // S.watches[index(~c->data[0])].push(c);
 
-        return true;
-    }
+    // // jump over unsatisfied literals
+    // for (i++; i < ps.size(); i++) {
+    //   if (sign(ps[i])
+    //       ? toLbool(S.assigns[var(ps[i])]) != l_True
+    //       : toLbool(S.assigns[var(ps[i])]) != l_False
+    //   ) break;
+    // }
+
+    // if (i >= ps.size()) {
+    //     S.watches[index(~c->data[1])].push(c);
+    //     if (S.enqueue(c->data[0], c)) throw;
+    // }
+
+    // c->data[1] = c->data[i], c->data[i] = c->data[1];
+    // S.watches[index(~c->data[1])].push(c);
+
+    // out_clause = c;
+
+    // return true;
 }
 
 
@@ -250,9 +253,11 @@ bool Clause::propagate(Solver& S, Lit p, bool& keep_watch)
 void Clause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
 {
     assert(p == lit_Undef || p == data[0]);
-    for (int i = ((p == lit_Undef) ? 0 : 1); i < size(); i++)
+
+    for (int i = ((p == lit_Undef) ? 0 : 1); i < size(); i++) {
         assert(S.value(data[i]) == l_False),
         out_reason.push(~data[i]);
+    }
     if (learnt()) S.claBumpActivity(this);
 }
 

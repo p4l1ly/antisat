@@ -43,6 +43,11 @@ typedef long long   int64;
 typedef const char  cchar;
 
 
+// For derivation output (verbosity level 2)
+#define L_LIT    "%sx%d"
+#define L_lit(p) sign(p)?"~":"", var(p)
+
+
 template<class T> static inline T min(T x, T y) { return (x < y) ? x : y; }
 template<class T> static inline T max(T x, T y) { return (x > y) ? x : y; }
 
@@ -150,6 +155,9 @@ public:
     const T& last  (void) const        { return data[sz-1]; }
     T&       last  (void)              { return data[sz-1]; }
 
+    template<class A>
+    void     pushWithArg  (A a)     { if (sz == cap) grow(sz+1); new (&data[sz]) T(a); sz++; }
+
     // Vector interface:
     const T& operator [] (int index) const  { return data[index]; }
     T&       operator [] (int index)        { return data[index]; }
@@ -219,7 +227,7 @@ const lbool l_True  = toLbool( 1);
 const lbool l_False = toLbool(-1);
 const lbool l_Undef = toLbool( 0);
 
-const int verbosity = -2;
+const int verbosity = -10;
 //=================================================================================================
 // Relation operators -- extend definitions from '==' and '<'
 
@@ -231,6 +239,38 @@ template <class T> static inline bool operator >  (const T& x, const T& y) { ret
 template <class T> static inline bool operator <= (const T& x, const T& y) { return !(y < x);  }
 template <class T> static inline bool operator >= (const T& x, const T& y) { return !(x < y);  }
 #endif
+
+typedef int Var;
+#define var_Undef (-1)
+
+
+class Lit {
+    int     x;
+public:
+    Lit(void)   /* unspecifed value allowed for efficiency */      { }
+    explicit Lit(Var var, bool sign = false) : x((var+var) + sign) { }
+    friend Lit operator ~ (Lit p) { Lit q; q.x = p.x ^ 1; return q; }
+
+    friend bool sign (Lit p) { return p.x & 1; }
+    friend int  var  (Lit p) { return p.x >> 1; }
+    friend int  index(Lit p) { return p.x; }        // A "toInt" method that guarantees small, positive integers suitable for array indexing.
+    friend Lit  toLit(int i) { Lit p; p.x = i; return p; }
+
+    friend bool operator == (Lit p, Lit q) { return index(p) == index(q); }
+    friend bool operator <  (Lit p, Lit q) { return index(p)  < index(q); }  // '<' guarantees that p, ~p are adjacent in the ordering.
+};
+
+const Lit lit_Undef(var_Undef, false);  // }- Useful special constants.
+const Lit lit_Error(var_Undef, true );  // }
+
+
+
+inline void printClause(const vec<Lit> &c) {
+    printf("{");
+    for (int i = 0; i < c.size(); i++)
+        printf(" " L_LIT, L_lit(c[i]));
+    printf(" }");
+}
 
 
 //=================================================================================================

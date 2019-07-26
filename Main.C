@@ -237,13 +237,12 @@ int main(int argc, char** argv)
     solver = &S;
     signal(SIGINT,SIGINT_handler);
 
-    vec<Lit> *finalCell = new vec<Lit>(S.outputs.size());
-
-    for (int i = 0; i < S.outputs.size(); i++) {
-        (*finalCell)[i] = ~Lit(i);
-    }
-
     vec<vec<Lit>*> config_stack;
+    vec<Lit> *cell_in = new vec<Lit>(S.outputs.size());
+
+    vec<Lit> cell_out;
+
+    for (int i = 0; i < S.outputs.size(); i++) (*cell_in)[i] = ~Lit(i);
 
     std::chrono::duration<double> elapsed_total = std::chrono::duration<double>::zero();
     auto tic_all = std::chrono::steady_clock::now();
@@ -251,71 +250,79 @@ int main(int argc, char** argv)
     int unsatCnt = 0;
     int maxDepth = 0;
 
+
+    auto tic = std::chrono::steady_clock::now();
+
     while (true) {
-        auto tic = std::chrono::steady_clock::now();
-
-        st = S.solve(*finalCell);
-
+        tic = std::chrono::steady_clock::now();
+        st = S.solve(*cell_in);
         elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
+        delete cell_in;
+
+        if (st) {
+            tic = std::chrono::steady_clock::now();
+            while (S.resume()) {
+                elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
+                satCnt++;
+
+                cell_out.clear();
+                cell_in = new vec<Lit>();
+                config_stack.push(cell_in);
+
+                if (verbosity >= -1)
+                  printf("***********************************************\nq ");
+                for (int i = 0; i < S.outputs.size(); i++) {
+                    Lit out = S.outputs[i];
+
+                    if (S.value(out) == l_False) // WARNING solver must not be reset after sat
+                    {
+                        if (verbosity >= -1) printf("0");
+
+                        // for (int j = 0; j < cell_out.size(); j++) {
+                        //     if (out == cell_out[j]) goto outputfor;
+                        // }
+                        cell_out.push(out);
+                        cell_in->push(~Lit(i));
+                    }
+                    else if (i == initial) {
+                        printf("0 "); goto statPrint;
+                    }
+                    else if (verbosity >= -1) {
+                      printf("%c", S.value(out) == l_Undef ? 'x' : '1');
+                    }
+outputfor:      ((void)0);
+                }
+                if (verbosity >= -1) {
+                  printf("\n");
+                  printf("\na ");
+                  for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
+                    printf(
+                        "%c",
+                        S.model[i] == l_True
+                            ? '1'
+                            : (S.model[i] == l_False ? '0' : 'x')
+                    );
+                  }
+                  printf("\n\n");
+                  std::cout << satCnt << " " << unsatCnt << " " << " " << config_stack.size() << " " << elapsed_total.count() << std::endl;
+                  printf("-----------------------------------------------\n\n");
+                }
+                maxDepth = max(config_stack.size(), maxDepth);
+
+                if (!S.addConflictingClause(cell_out)) break;
+            };
+            elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
+        }
+
+        unsatCnt++;
+
+        if (config_stack.size()) {
+            cell_in = config_stack.last();
+            config_stack.pop();
+        }
+        else break;
 
         S.reset();
-        if (st) {
-            satCnt++;
-
-            vec<Lit> histOut;
-
-            config_stack.push(finalCell);
-            finalCell = new vec<Lit>();
-
-            if (verbosity >= -1)
-              printf("***********************************************\nq ");
-            for (int i = 0; i < S.outputs.size(); i++) {
-                Lit out = S.outputs[i];
-
-                if (
-                    (S.model[var(out)] == l_False && !sign(out)) ||
-                    (S.model[var(out)] == l_True && sign(out))
-                ) {
-                    if (verbosity >= -1) printf("0");
-                    histOut.push(out);
-                    finalCell->push(~Lit(i));
-                }
-                else if (i == initial) {
-                    printf("0 "); goto statPrint;
-                }
-                else if (verbosity >= -1) {
-                  printf("%c", S.model[var(out)] == l_Undef ? 'x' : '1');
-                }
-            }
-            if (verbosity >= -1) {
-              printf("\n");
-              printf("\na ");
-              for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
-                printf(
-                    "%c",
-                    S.model[i] == l_True
-                        ? '1'
-                        : (S.model[i] == l_False ? '0' : 'x')
-                );
-              }
-              printf("\n");
-              std::cout << satCnt << " " << unsatCnt << " " << " " << config_stack.size() << " " << elapsed_total.count() << std::endl;
-              printf("-----------------------------------------------\n\n");
-            }
-            maxDepth = max(config_stack.size(), maxDepth);
-
-            S.addClause(histOut);
-        }
-        else {
-            unsatCnt++;
-
-            delete finalCell;
-            if (config_stack.size()) {
-                finalCell = config_stack.last();
-                config_stack.pop();
-            }
-            else break;
-        }
     }
 
     printf("1 ");

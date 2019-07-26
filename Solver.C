@@ -21,15 +21,12 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Sort.h"
 #include <cmath>
 #include <iostream>
+#include <cstdlib>
 
 
 //=================================================================================================
 // Debug:
 
-
-// For derivation output (verbosity level 2)
-#define L_LIT    "%sx%d"
-#define L_lit(p) sign(p)?"~":"", var(p)
 
 // Just like 'assert()' but expression will be evaluated in the release version as well.
 inline void check(bool expr) { assert(expr); }
@@ -60,6 +57,9 @@ Var Solver::newVar(bool pure)
 // Returns FALSE if immediate conflict.
 bool Solver::assume(Lit p) {
     assert(propQ.size() == 0);
+    if (verbosity >= 2) {
+        printf(L_LIT "\n", L_lit(p));
+    }
     if (verbosity >= 2) printf(L_IND "assume(" L_LIT ")\n", L_ind, L_lit(p));
     trail_lim.push(trail.size());
     return enqueue(p); }
@@ -87,7 +87,7 @@ void Solver::cancel(void)
 {
     assert(propQ.size() == 0);
     if (verbosity >= 2){ if (trail.size() != trail_lim.last()){ Lit p = trail[trail_lim.last()]; printf(L_IND "cancel(" L_LIT ")\n", L_ind, L_lit(p)); } }
-    for (int c = trail.size() - trail_lim.last(); c != 0; c--)
+    for (int c = trail.size() - trail_lim.last(); c > 0; c--)
         undoOne();
     trail_lim.pop();
 }
@@ -96,7 +96,8 @@ void Solver::cancel(void)
 // Revert to the state at given level.
 //
 void Solver::cancelUntil(int level) {
-    while (decisionLevel() > level) cancel(); }
+    while (decisionLevel() > level) cancel();
+}
 
 
 // Record a clause and drive backtracking. 'clause[0]' must contain the asserting literal.
@@ -179,9 +180,75 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
 
     if (verbosity >= 2){
-        printf(L_IND "Learnt {", L_ind);
-        for (int i = 0; i < out_learnt.size(); i++) printf(" " L_LIT, L_lit(out_learnt[i]));
-        printf(" } at level %d\n", out_btlevel); }
+        printf(L_IND "Learnt ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
+}
+
+bool Solver::analyze2(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
+{
+    vec<char>&  seen = analyze_seen;
+    int         pathC    = 0;
+    Lit         p = lit_Undef;
+    vec<Lit>    p_reason;
+    seen.growTo(nVars(), 0);
+
+    // Generate conflict clause:
+    //
+    out_learnt.push();      // (leave room for the asserting literal)
+    out_btlevel = 0;
+    do{
+        assert(confl != NULL);          // (otherwise should be UIP)
+
+        p_reason.clear();
+        confl->calcReason(*this, p, p_reason);
+
+        if (p == lit_Undef) {
+            int max_level = -1;
+
+            for (int j = 0; j < p_reason.size(); j++)
+                max_level = max(level[var(p_reason[j])], max_level);
+
+            if (max_level <= root_level) return false;
+
+            cancelUntil(max_level);
+        }
+
+        for (int j = 0; j < p_reason.size(); j++){
+            Lit q = p_reason[j];
+            if (!seen[var(q)] && level[var(q)] > 0){
+                seen[var(q)] = 1;
+                varBumpActivity(q);
+                if (level[var(q)] == decisionLevel())
+                    pathC++;
+                else{
+                    out_learnt.push(~q),
+                    out_btlevel = max(out_btlevel, level[var(q)]);
+                }
+            }
+        }
+
+        // Select next clause to look at:
+        do{
+            p = trail.last();
+            confl = reason[var(p)];
+            undoOne();
+        }while (!seen[var(p)]);
+        pathC--;
+    seen[var(p)] = 0;
+    }while (pathC > 0);
+    out_learnt[0] = ~p;
+
+    for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
+
+    if (verbosity >= 2){
+        printf(L_IND "Learnt ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
+
+    return true;
 }
 
 
@@ -358,7 +425,6 @@ lbool Solver::search()
     int     conflictC = 0;
     var_decay = 1 / params.var_decay;
     cla_decay = 1 / params.clause_decay;
-    model.clear();
 
     for (;;){
         Constr* confl = propagate();
@@ -403,10 +469,10 @@ lbool Solver::search()
 
               if (next == var_Undef){
                   // Model found:
+                  model.clear();
                   model.growTo(nVars());
                   for (int i = 0; i < nVars(); i++) model[i] = value(i);
 
-                  cancelUntil(root_level);
                   return l_True;
               }
 
@@ -462,7 +528,6 @@ bool Solver::solve(const vec<Lit>& assumps)
 
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
-    lbool   status = l_Undef;
 
     for (int i = 0; i < assumps.size(); i++)
         if (!assume(assumps[i]) || propagate() != NULL){
@@ -471,42 +536,12 @@ bool Solver::solve(const vec<Lit>& assumps)
             return false;
         }
     root_level = decisionLevel();
-
-    if (verbosity >= 1){
-        printf("==================================[MINISAT]===================================\n");
-        printf("| Conflicts |     ORIGINAL     |              LEARNT              | Progress |\n");
-        printf("|           | Clauses Literals |   Limit Clauses Literals  Lit/Cl |          |\n");
-        printf("==============================================================================\n");
-    }
-
-    while (status == l_Undef){
-        if (verbosity >= 1){
-            printf("| %9d | %7d %8d | %7d %7d %8d %7.1f |\n",
-                (int)stats.conflicts, nConstrs(), (int)stats.clauses_literals,
-                (int)nof_learnts, nLearnts(), (int)stats.learnts_literals,
-                (double)stats.learnts_literals/nLearnts());
-            fflush(stdout);
-        }
-        status = search();
-        nof_conflicts *= 1.5;
-        nof_learnts   *= 1.1;
-    }
-    if (verbosity >= 1)
-        printf("==============================================================================\n");
-
-    return status == l_True;
+    return true;
 }
 
 bool Solver::resume() {
     lbool   status = l_Undef;
 
-    if (verbosity >= 1){
-        printf("==================================[MINISAT]===================================\n");
-        printf("| Conflicts |     ORIGINAL     |              LEARNT              | Progress |\n");
-        printf("|           | Clauses Literals |   Limit Clauses Literals  Lit/Cl |          |\n");
-        printf("==============================================================================\n");
-    }
-
     while (status == l_Undef){
         if (verbosity >= 1){
             printf("| %9d | %7d %8d | %7d %7d %8d %7.1f |\n",
@@ -519,8 +554,6 @@ bool Solver::resume() {
         nof_conflicts *= 1.5;
         nof_learnts   *= 1.1;
     }
-    if (verbosity >= 1)
-        printf("==============================================================================\n");
 
     return status == l_True;
 }

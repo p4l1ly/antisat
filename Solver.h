@@ -22,6 +22,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include <climits>
 #include <cstring>
+#include <iostream>
 
 #include "SolverTypes.h"
 #include "Constraints.h"
@@ -112,8 +113,6 @@ public:
     SearchParams params;
     double nof_conflicts, nof_learnts;
 
-    bool output_changed;
-
     // Temporaries (to reduce allocation overhead):
     //
     vec<char>           analyze_seen;
@@ -127,6 +126,7 @@ public:
     void        record       (const vec<Lit>& clause);
 
     void        analyze      (Constr* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    bool        analyze2     (Constr* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
     bool        enqueue      (Lit fact, Constr* from = NULL);
     Constr*     propagate    (void);
     void        reduceDB     (void);
@@ -168,7 +168,6 @@ public:
       , out_order        (assigns, pures, output_map, impure_outputs)
       , last_simplify    (-1)
       , params(1, 1, 0)
-      , output_changed(true)
       { }
 
     Solver(const Solver& s)
@@ -201,7 +200,6 @@ public:
 
     , last_simplify    (s.last_simplify)
     , params(1, 1, 0)
-    , output_changed(true)
     { }
 
     // Helpers: (semi-internal)
@@ -237,26 +235,31 @@ public:
       }
     }
 
-    bool addClauseAndSolveAgain(const vec<Lit>& ps) {
-      if (ok) {
-        Clause* c;
-        bool ok_ = Clause_new_handleConflict(*this, ps, c);
-        if (c != NULL) constrs.push(c);
-        if (!ok_) {
-          if (verbosity >= 2) printf(L_IND "**CONFLICT2**\n", L_ind);
-          stats.conflicts++;
-          vec<Lit>    learnt_clause;
-          int         backtrack_level;
-          if (decisionLevel() == root_level)
-              return false;
-          analyze(c, learnt_clause, backtrack_level);
-          cancelUntil(max(backtrack_level, root_level));
-          record(learnt_clause);
-          varDecayActivity(); claDecayActivity();
-        }
-        resume();
-      }
+    bool addConflictingClause(vec<Lit>& ps) {
+      Clause* c;
+      bool ok_ = Clause_new_handleConflict(*this, ps, c);
+      assert(!ok_);
 
+      if (c == NULL) return true;
+
+      constrs.push(c);
+
+      if (verbosity >= 2) printf(L_IND "**CONFLICT2**\n", L_ind);
+      stats.conflicts++;
+
+      vec<Lit>    learnt_clause;
+      int         backtrack_level;
+
+      if (decisionLevel() == root_level)
+          return false;
+
+      if (!analyze2(c, learnt_clause, backtrack_level)) return false;
+
+      cancelUntil(max(backtrack_level, root_level));
+      record(learnt_clause);
+      varDecayActivity(); claDecayActivity();
+
+      return true;
     }
 
     void    addAtMost(const vec<Lit>& ps, int n) {
