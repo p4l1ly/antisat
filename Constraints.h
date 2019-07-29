@@ -49,6 +49,7 @@ class Clause : public Constr {
     Lit         data[0];
 
 public:
+    int  max_level   (const Solver& S) const;
     int  size        (void)      const { return size_learnt >> 1; }
     bool learnt      (void)      const { return size_learnt & 1; }
     Lit  operator [] (int index) const { return data[index]; }

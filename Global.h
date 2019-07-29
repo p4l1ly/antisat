@@ -227,7 +227,6 @@ const lbool l_True  = toLbool( 1);
 const lbool l_False = toLbool(-1);
 const lbool l_Undef = toLbool( 0);
 
-const int verbosity = -10;
 //=================================================================================================
 // Relation operators -- extend definitions from '==' and '<'
 
@@ -272,6 +271,8 @@ inline void printClause(const vec<Lit> &c) {
     printf(" }");
 }
 
+
+const int verbosity = -2;
 
 //=================================================================================================
 #endif

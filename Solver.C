@@ -205,10 +205,7 @@ bool Solver::analyze2(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
         confl->calcReason(*this, p, p_reason);
 
         if (p == lit_Undef) {
-            int max_level = -1;
-
-            for (int j = 0; j < p_reason.size(); j++)
-                max_level = max(level[var(p_reason[j])], max_level);
+            int max_level = ((Clause *)confl)->max_level(*this);
 
             if (max_level <= root_level) return false;
 

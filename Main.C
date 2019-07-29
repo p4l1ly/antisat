@@ -17,6 +17,7 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+#include "SubQ.h"
 #include "Solver.h"
 #include <ctime>
 #include <unistd.h>
@@ -24,6 +25,18 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <zlib.h>
 #include <chrono>
 #include <iostream>
+#include <set>
+#include <deque>
+#include <vector>
+#include <string>
+
+using std::cout;
+using std::endl;
+using std::set;
+using std::deque;
+using std::vector;
+using std::string;
+namespace chrono = std::chrono;
 
 //=================================================================================================
 // Helpers:
@@ -215,6 +228,121 @@ static void SIGINT_handler(int signum) {
 
 //=================================================================================================
 
+struct LeastSizeCompare
+{
+    bool operator()(const vec<Lit>* lhs, const vec<Lit>* rhs)
+    {
+        // return lhs->size() < rhs->size();
+        if (lhs->size() != rhs->size()) return lhs->size() < rhs->size();
+        for (int i = 0; i < lhs->size(); i++) {
+            if (lhs[i] != rhs[i]) return lhs[i] < rhs[i];
+        }
+        return false;
+    }
+};
+
+struct CellContainer {
+    virtual void add(vec<Lit>* x) = 0;
+    virtual int size() const = 0;
+    virtual vec<Lit>* pop() = 0;
+    virtual ~CellContainer() {};
+};
+
+class CellContainerSet : public CellContainer {
+    set<vec<Lit>*, LeastSizeCompare> data;
+public:
+    CellContainerSet() {}
+    void add(vec<Lit>* x) { data.insert(x); }
+    int size() const { return data.size(); }
+    vec<Lit>* pop() {
+        auto it = data.begin();
+        vec<Lit>* result = *it;
+        data.erase(it);
+        return result;
+    }
+};
+
+class CellContainerBfs : public CellContainer {
+    deque<vec<Lit>*> data;
+public:
+    CellContainerBfs() {}
+    void add(vec<Lit>* x) { data.push_back(x); }
+    int size() const { return data.size(); }
+    vec<Lit>* pop() {
+        vec<Lit>* result = data.front();
+        data.pop_front();
+        return result;
+    }
+};
+
+class CellContainerDfs : public CellContainer {
+    vector<vec<Lit>*> data;
+public:
+    CellContainerDfs() {}
+    void add(vec<Lit>* x) { data.push_back(x); }
+    int size() const { return data.size(); }
+    vec<Lit>* pop() {
+        vec<Lit>* result = data.back();
+        data.pop_back();
+        return result;
+    }
+};
+
+
+bool extract_sat_result(
+    Solver &S,
+    vec<Lit> &cell_out,
+    vec<Lit> &cell_in,
+    int initial,
+    // only for logging purposes:
+    chrono::duration<double> &elapsed_sat,
+    const CellContainer &cell_container,
+    int acnt, int satCnt, int unsatCnt, int &maxDepth, int omitted
+) {
+    if (verbosity >= -1)
+        printf("***********************************************\nq ");
+    for (int i = 0; i < S.outputs.size(); i++) {
+        Lit out = S.outputs[i];
+
+        if (S.value(out) == l_False) // WARNING solver must not be reset after sat
+        {
+            if (verbosity >= -1) printf("0");
+
+            cell_in.push(~Lit(i));
+            for (int j = 0; j < cell_out.size(); j++) {
+                if (out == cell_out[j]) goto outputfor;
+            }
+            cell_out.push(out);
+        }
+        else if (i == initial) return true;
+        else if (verbosity >= -1)
+            printf("%c", S.value(out) == l_Undef ? 'x' : '1');
+
+outputfor:
+        ((void)0);
+    }
+
+    if (verbosity >= -1) {
+        printf("\n");
+        printf("\na ");
+        for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
+            printf(
+                "%c",
+                S.model[i] == l_True
+                    ? '1'
+                    : (S.model[i] == l_False ? '0' : 'x')
+            );
+        }
+        printf("\n\n");
+        cout << satCnt << " " << unsatCnt << " " << omitted
+          << " " << cell_container.size() << " " << elapsed_sat.count() << endl;
+        printf("-----------------------------------------------\n\n");
+    }
+    maxDepth = max(cell_container.size(), maxDepth);
+
+    return false;
+}
+
 
 int main(int argc, char** argv)
 {
@@ -237,105 +365,205 @@ int main(int argc, char** argv)
     solver = &S;
     signal(SIGINT,SIGINT_handler);
 
-    vec<vec<Lit>*> config_stack;
-    vec<Lit> *cell_in = new vec<Lit>(S.outputs.size());
+    string cont_str(argv[2]);
+    CellContainer *cell_container =
+        (cont_str == string("set"))
+        ? (CellContainer*)new CellContainerSet()
+        : (cont_str == string("dfs"))
+        ? (CellContainer*)new CellContainerDfs()
+        : (CellContainer*)new CellContainerBfs();
 
+    vec<Lit> *cell_in = new vec<Lit>(S.outputs.size());
     vec<Lit> cell_out;
 
     for (int i = 0; i < S.outputs.size(); i++) (*cell_in)[i] = ~Lit(i);
 
-    std::chrono::duration<double> elapsed_total = std::chrono::duration<double>::zero();
-    auto tic_all = std::chrono::steady_clock::now();
+    chrono::duration<double> elapsed_sat = chrono::duration<double>::zero();
+    auto tic_all = chrono::steady_clock::now();
     int satCnt = 0;
     int unsatCnt = 0;
     int maxDepth = 0;
 
+    auto tic = chrono::steady_clock::now();
 
-    auto tic = std::chrono::steady_clock::now();
+    string supq_str(argv[5]);
+    SupQ *supq = (supq_str == string("vec"))
+      ? (SupQ*)new SupQVec()
+      : new SupQ();
+
+    int omitted = 0;
+
+    int unsat_limit = std::stoi(argv[4]);
+
+    if (string(argv[3]) == string("resetallLocBfs")) goto resetallLocBfs;
+    if (string(argv[3]) == string("resetallImmediate")) goto resetallImmediate;
 
     while (true) {
-        tic = std::chrono::steady_clock::now();
-        st = S.solve(*cell_in);
-        elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
-        delete cell_in;
+        if (supq->get(*cell_in)) omitted++;
+        else {
+          supq->add(*cell_in);
 
-        if (st) {
-            tic = std::chrono::steady_clock::now();
-            while (S.resume()) {
-                elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
+          tic = chrono::steady_clock::now();
+          st = S.solve(*cell_in);
+          elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+
+          delete cell_in;
+
+          if (st) {
+              tic = chrono::steady_clock::now();
+              while (S.resume()) {
+                  elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+                  satCnt++;
+
+                  cell_out.clear();
+                  cell_in = new vec<Lit>();
+
+                  if (extract_sat_result(
+                          S, cell_out, *cell_in, initial, elapsed_sat,
+                          *cell_container, acnt, satCnt, unsatCnt, maxDepth,
+                          omitted))
+                      goto l_reach;
+
+                  cell_container->add(cell_in);
+
+                  tic = chrono::steady_clock::now();
+                  if (!S.addConflictingClause(cell_out)) break;
+              };
+              elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+          }
+
+          unsatCnt++;
+          if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto statPrint;
+        }
+
+        if (!cell_container->size()) break;
+        cell_in = cell_container->pop();
+
+        tic = chrono::steady_clock::now();
+        S.reset();
+        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+    }
+
+    goto l_unreach;
+
+resetallLocBfs:
+
+    while (true) {
+        if (supq->get(*cell_in)) omitted++;
+        else {
+            supq->add(*cell_in);
+
+            while (true) {
+                tic = chrono::steady_clock::now();
+                st = S.solve(*cell_in);
+                st = st && S.resume();
+                elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+
+                if (!st) break;
+
                 satCnt++;
 
                 cell_out.clear();
-                cell_in = new vec<Lit>();
-                config_stack.push(cell_in);
+                vec<Lit> *cell_in2 = new vec<Lit>();
 
-                if (verbosity >= -1)
-                  printf("***********************************************\nq ");
-                for (int i = 0; i < S.outputs.size(); i++) {
-                    Lit out = S.outputs[i];
+                if (extract_sat_result(
+                        S, cell_out, *cell_in2, initial, elapsed_sat,
+                        *cell_container, acnt, satCnt, unsatCnt, maxDepth,
+                        omitted))
+                    goto l_reach;
 
-                    if (S.value(out) == l_False) // WARNING solver must not be reset after sat
-                    {
-                        if (verbosity >= -1) printf("0");
+                cell_container->add(cell_in2);
 
-                        // for (int j = 0; j < cell_out.size(); j++) {
-                        //     if (out == cell_out[j]) goto outputfor;
-                        // }
-                        cell_out.push(out);
-                        cell_in->push(~Lit(i));
-                    }
-                    else if (i == initial) {
-                        printf("0 "); goto statPrint;
-                    }
-                    else if (verbosity >= -1) {
-                      printf("%c", S.value(out) == l_Undef ? 'x' : '1');
-                    }
-outputfor:      ((void)0);
-                }
-                if (verbosity >= -1) {
-                  printf("\n");
-                  printf("\na ");
-                  for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
-                    printf(
-                        "%c",
-                        S.model[i] == l_True
-                            ? '1'
-                            : (S.model[i] == l_False ? '0' : 'x')
-                    );
-                  }
-                  printf("\n\n");
-                  std::cout << satCnt << " " << unsatCnt << " " << " " << config_stack.size() << " " << elapsed_total.count() << std::endl;
-                  printf("-----------------------------------------------\n\n");
-                }
-                maxDepth = max(config_stack.size(), maxDepth);
-
-                if (!S.addConflictingClause(cell_out)) break;
-            };
-            elapsed_total = elapsed_total + std::chrono::steady_clock::now() - tic;
+                tic = chrono::steady_clock::now();
+                S.reset();
+                S.addClause(cell_out);
+                elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+            }
         }
 
         unsatCnt++;
+        delete cell_in;
+        if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto statPrint;
 
-        if (config_stack.size()) {
-            cell_in = config_stack.last();
-            config_stack.pop();
-        }
-        else break;
+        if (!cell_container->size()) goto l_unreach;
+        cell_in = cell_container->pop();
 
+        tic = chrono::steady_clock::now();
         S.reset();
+        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
     }
 
+resetallImmediate:
+
+    while (true) {
+        tic = chrono::steady_clock::now();
+        st = S.solve(*cell_in);
+        st = st && S.resume();
+        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+
+        if (st) {
+            satCnt++;
+
+            cell_container->add(cell_in);
+            cell_out.clear();
+            cell_in = new vec<Lit>();
+
+            if (extract_sat_result(
+                    S, cell_out, *cell_in, initial, elapsed_sat,
+                    *cell_container, acnt, satCnt, unsatCnt, maxDepth,
+                    omitted))
+                goto l_reach;
+
+            cell_container->add(cell_in);
+
+            tic = chrono::steady_clock::now();
+            S.reset();
+            S.addClause(cell_out);
+            elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+        }
+        else {
+            unsatCnt++;
+            supq->add(*cell_in);
+
+            delete cell_in;
+            if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto statPrint;
+        }
+
+        while (true) {
+            if (!cell_container->size()) goto l_unreach;
+            cell_in = cell_container->pop();
+
+            if (supq->get(*cell_in)) omitted++;
+            else break;
+        }
+
+        tic = chrono::steady_clock::now();
+        S.reset();
+        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+    }
+
+l_unreach:
     printf("1 ");
+    goto statPrint;
+
+l_reach:
+    printf("0 ");
+    goto statPrint;
 
 statPrint:
     // printStats(S.stats, cpuTime());
-    std::chrono::duration<double> elapsed_all = std::chrono::steady_clock::now() - tic_all;
-    std::cout
+    chrono::duration<double> elapsed_all = chrono::steady_clock::now() - tic_all;
+    cout
       << satCnt << " "
       << unsatCnt << " "
       << maxDepth << " "
-      << elapsed_total.count() << " "
-      << elapsed_all.count() << std::endl;
+      << omitted << " "
+      << elapsed_sat.count() << " "
+      << elapsed_all.count() << " "
+      << supq->elapsed_add.count() << " "
+      << supq->elapsed_get.count() << endl;
 
+    delete cell_container;
+    delete supq;
     return 0;
 }

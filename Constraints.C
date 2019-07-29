@@ -23,6 +23,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include <iostream>
 
+using std::swap;
 
 //=================================================================================================
 // Helpers:
@@ -151,10 +152,37 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     // }
 
     // if (i >= ps.size()) {
-        S.watches[index(~c->data[0])].push(c);
-        S.watches[index(~c->data[1])].push(c);
-        out_clause = c;
-        return false;
+
+    int max_level = S.level[var(c->data[0])];
+    int max_level2 = S.level[var(c->data[1])];;
+
+    if (max_level < max_level2) {
+      swap(max_level, max_level2);
+      swap(c->data[0], c->data[1]);
+    }
+
+    // make the first two literals have the highest levels of all literals
+    int level;
+    for (int i = 2; i < ps.size(); i++) {
+      level = S.level[var(c->data[i])];
+      if (level > max_level) {
+        max_level2 = max_level;
+        max_level = level;
+        swap(c->data[0], c->data[1]);
+        swap(c->data[0], c->data[i]);
+      }
+      else if (level > max_level2) {
+        max_level2 = level;
+        swap(c->data[1], c->data[i]);
+      }
+    }
+
+    // add watches
+    S.watches[index(~c->data[0])].push(c);
+    S.watches[index(~c->data[1])].push(c);
+    out_clause = c;
+    return false;
+
     // }
     assert(false);
 
@@ -181,6 +209,8 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
 
     // return true;
 }
+
+int  Clause::max_level(const Solver& S) const { return S.level[var(data[0])]; }
 
 
 bool Clause::locked(const Solver& S) const {

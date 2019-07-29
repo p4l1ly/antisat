@@ -244,7 +244,11 @@ public:
 
       constrs.push(c);
 
-      if (verbosity >= 2) printf(L_IND "**CONFLICT2**\n", L_ind);
+      if (verbosity >= 2) {
+        printf(L_IND "**CONFLICT2**", L_ind);
+        printClause(ps);
+        printf("\n");
+      }
       stats.conflicts++;
 
       vec<Lit>    learnt_clause;
