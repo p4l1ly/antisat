@@ -29,6 +29,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <deque>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 using std::cout;
 using std::endl;
@@ -154,15 +155,20 @@ static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
     in++;
 }
 
-static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
+static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt, bool purity) {
     *acnt = parseInt(in); in++;
     skipLine(in); // blank
+
+    int maxvar = -1;
 
     //pures
     while (*in != '\n') {
         int var = parseInt(in);
+        maxvar = std::max(maxvar, var);
+
         while (var >= S.pures.size()) S.pures.push(false);
         S.pures[var] = true;
+        if (!purity) S.pures[var] = false;
     }
     skipLine(in); // blank
 
@@ -176,6 +182,7 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
         if (neg) in++;
 
         int var = parseInt(in);
+        maxvar = std::max(maxvar, var);
 
         while (var >= S.output_map.size()) S.output_map.push(-1);
         S.output_map[var] = S.outputs.size();
@@ -188,6 +195,8 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
     in++;
     skipLine(in); // blank
 
+    while (maxvar >= S.nVars()) S.newVar();
+
     // clauses
     vec<Lit>    lits;
     while (*in != '\n') {
@@ -199,9 +208,9 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
     return S.okay();
 }
 
-bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt) {
+bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt, bool purity) {
     char* text = readFile(in);
-    bool ret = parse_AFASAT_main(text, S, initial, acnt);
+    bool ret = parse_AFASAT_main(text, S, initial, acnt, purity);
     free(text);
     return ret;
 }
@@ -351,18 +360,20 @@ int main(int argc, char** argv)
     bool        st;
     int initial, acnt;
 
-    gzFile in = argc == 1 ? gzdopen(0, "rb") : gzopen(argv[1], "rb");
+    gzFile in = gzopen(argv[1], "rb");
     if (in == NULL)
         fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
         exit(1);
-    st = parse_AFASAT(in, S, &initial, &acnt);
+
+    bool purity = argv[6][0] == '1';
+
+    st = parse_AFASAT(in, S, &initial, &acnt, purity);
     gzclose(in);
 
     if (!st)
         printf("Trivial problem\nUNSATISFIABLE\n"),
         exit(20);
 
-    solver = &S;
     signal(SIGINT,SIGINT_handler);
 
     string cont_str(argv[2]);
@@ -433,7 +444,7 @@ int main(int argc, char** argv)
           }
 
           unsatCnt++;
-          if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto statPrint;
+          if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto finally;
         }
 
         if (!cell_container->size()) break;
@@ -483,7 +494,7 @@ resetallLocBfs:
 
         unsatCnt++;
         delete cell_in;
-        if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto statPrint;
+        if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto finally;
 
         if (!cell_container->size()) goto l_unreach;
         cell_in = cell_container->pop();
@@ -526,7 +537,7 @@ resetallImmediate:
             supq->add(*cell_in);
 
             delete cell_in;
-            if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto statPrint;
+            if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto finally;
         }
 
         while (true) {
@@ -544,13 +555,15 @@ resetallImmediate:
 
 l_unreach:
     printf("1 ");
-    goto statPrint;
+    goto finally;
 
 l_reach:
     printf("0 ");
-    goto statPrint;
+    goto finally;
 
-statPrint:
+finally:
+    delete cell_in;
+
     // printStats(S.stats, cpuTime());
     chrono::duration<double> elapsed_all = chrono::steady_clock::now() - tic_all;
     cout

@@ -127,7 +127,7 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     out_clause = NULL;
     sortUnique(ps);
 
-    if (ps.size() == 1) ps.push(ps[0]);
+    if (ps.size() == 1) ps.push(Lit(ps[0]));
 
     // Allocate clause:
     assert(sizeof(Lit)   == sizeof(unsigned));
