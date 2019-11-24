@@ -432,8 +432,10 @@ int main(int argc, char** argv)
                   if (extract_sat_result(
                           S, cell_out, *cell_in, initial, elapsed_sat,
                           *cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                          omitted))
+                          omitted)) {
+                      delete cell_in;
                       goto l_reach;
+                  }
 
                   cell_container->add(cell_in);
 
@@ -444,7 +446,10 @@ int main(int argc, char** argv)
           }
 
           unsatCnt++;
-          if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto finally;
+          if (unsat_limit >= 0 && unsatCnt > unsat_limit) {
+              delete cell_in;
+              goto finally;
+          }
         }
 
         if (!cell_container->size()) break;
@@ -480,8 +485,10 @@ resetallLocBfs:
                 if (extract_sat_result(
                         S, cell_out, *cell_in2, initial, elapsed_sat,
                         *cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                        omitted))
+                        omitted)) {
+                    delete cell_in;
                     goto l_reach;
+                }
 
                 cell_container->add(cell_in2);
 
@@ -522,8 +529,10 @@ resetallImmediate:
             if (extract_sat_result(
                     S, cell_out, *cell_in, initial, elapsed_sat,
                     *cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                    omitted))
+                    omitted)) {
+                delete cell_in;
                 goto l_reach;
+            }
 
             cell_container->add(cell_in);
 
@@ -544,7 +553,10 @@ resetallImmediate:
             if (!cell_container->size()) goto l_unreach;
             cell_in = cell_container->pop();
 
-            if (supq->get(*cell_in)) omitted++;
+            if (supq->get(*cell_in)) {
+                omitted++;
+                delete cell_in;
+            }
             else break;
         }
 
@@ -562,8 +574,6 @@ l_reach:
     goto finally;
 
 finally:
-    delete cell_in;
-
     // printStats(S.stats, cpuTime());
     chrono::duration<double> elapsed_all = chrono::steady_clock::now() - tic_all;
     cout
