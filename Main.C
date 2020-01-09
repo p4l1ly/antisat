@@ -370,9 +370,10 @@ int main(int argc, char** argv)
     st = parse_AFASAT(in, S, &initial, &acnt, purity);
     gzclose(in);
 
-    if (!st)
-        printf("Trivial problem\nUNSATISFIABLE\n"),
-        exit(20);
+    if (!st) {
+        cout << "1 0 0 0 0 0 0 0 0" << endl;
+        exit(0);
+    }
 
     signal(SIGINT,SIGINT_handler);
 
