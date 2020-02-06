@@ -20,7 +20,11 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #ifndef Constraints_h
 #define Constraints_h
 
+#include <vector>
+#include <cstdio>
+
 #include "SolverTypes.h"
+#include "SupQ.h"
 
 
 //=================================================================================================
@@ -93,20 +97,19 @@ public:
 };
 
 
-/*
 //=================================================================================================
-// AtLeast:
+// SubsetQ:
 
 
-class AtLeast : public Constr {
-    int     n;
-    int     counter;
-    int     size;
-    Lit     lits[0];
-
+class SubsetQ : public Constr {
 public:
-    // Constructor -- creates a new AtMost-constraint and add it to watcher lists.
-    friend bool AtLeast_new(Solver& S, const vec<Lit>& ps, int n, AtLeast*& out);
+    MeasuredSupQ supq;
+
+    SubsetQ(Solver& S);
+    void addClause (std::vector<int>& clause) {
+      printf("add {"); for(int x: clause) printf(" %d", x); printf(" }\n");
+      supq.add(clause);
+    }
 
     // Constraint interface:
     void remove    (Solver& S, bool just_dealloc = false);
@@ -116,6 +119,5 @@ public:
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 };
 //=================================================================================================
-*/
 
 #endif

@@ -227,7 +227,7 @@ public:
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
     friend bool AtMost_new(Solver& S, const vec<Lit>& ps, int  max   , AtMost*& out_constr);
 
-    void    addClause(const vec<Lit>& ps) {
+    void  addClause(const vec<Lit>& ps) {
       if (ok){
         Clause* c;
         ok = Clause_new(*this, ps, false, c);
@@ -235,20 +235,18 @@ public:
       }
     }
 
-    bool addConflictingClause(vec<Lit>& ps) {
-      Clause* c;
-      bool ok_ = Clause_new_handleConflict(*this, ps, c);
-      assert(!ok_);
-
-      if (c == NULL) return true;
-
+    void addConstr(Constr *c) {
       constrs.push(c);
+    }
 
+    bool raise_conflict(SubsetQ* c, const vector<int>& cell) {
       if (verbosity >= 2) {
         printf(L_IND "**CONFLICT2**", L_ind);
-        printClause(ps);
-        printf("\n");
+        printf("{");
+        for(int x: cell) printf(" %d", x);
+        printf(" }\n");
       }
+
       stats.conflicts++;
 
       vec<Lit>    learnt_clause;

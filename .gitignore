@@ -1,1 +1,7 @@
 /minisat
+/minisat-*
+vgcore.*
+*.o
+*.mak
+draft/
+/tags

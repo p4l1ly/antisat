@@ -22,6 +22,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Sort.h"
 
 #include <iostream>
+#include <cstdlib>
 
 using std::swap;
 
@@ -141,18 +142,6 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     S.stats.clauses++;
     S.stats.clauses_literals += c->size();
 
-    // jump over unsatisfied literals
-    // int i;
-
-    // for (i = 0; i < ps.size(); i++) {
-    //     if (sign(ps[i])
-    //         ? toLbool(S.assigns[var(ps[i])]) != l_True
-    //         : toLbool(S.assigns[var(ps[i])]) != l_False
-    //     ) break;
-    // }
-
-    // if (i >= ps.size()) {
-
     int max_level = S.level[var(c->data[0])];
     int max_level2 = S.level[var(c->data[1])];;
 
@@ -182,32 +171,6 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     S.watches[index(~c->data[1])].push(c);
     out_clause = c;
     return false;
-
-    // }
-    assert(false);
-
-    // c->data[0] = c->data[i], c->data[i] = c->data[0];
-    // S.watches[index(~c->data[0])].push(c);
-
-    // // jump over unsatisfied literals
-    // for (i++; i < ps.size(); i++) {
-    //   if (sign(ps[i])
-    //       ? toLbool(S.assigns[var(ps[i])]) != l_True
-    //       : toLbool(S.assigns[var(ps[i])]) != l_False
-    //   ) break;
-    // }
-
-    // if (i >= ps.size()) {
-    //     S.watches[index(~c->data[1])].push(c);
-    //     if (S.enqueue(c->data[0], c)) throw;
-    // }
-
-    // c->data[1] = c->data[i], c->data[i] = c->data[1];
-    // S.watches[index(~c->data[1])].push(c);
-
-    // out_clause = c;
-
-    // return true;
 }
 
 int  Clause::max_level(const Solver& S) const { return S.level[var(data[0])]; }
@@ -361,66 +324,77 @@ void AtMost::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
     }
 }
 
-/*
-//=================================================================================================
-// AtLeast constraint:
 
+//========= Subset Query constraint ==================
+SubsetQ::SubsetQ(Solver& S) {
+  for (int i = 0; i < S.outputs.size(); i++) {
+    S.watches[index(~S.outputs[i])].push(this);
+  }
+}
 
-bool AtLeast_new(Solver& S, const vec<Lit>& ps, AtLeast*& out)
-{
-    assert(S.decisionLevel() == 0);
-
-    void* mem    = (void*)xmalloc<char>(sizeof(AtLeast) + sizeof(Lit) * ps.size());
-    out          = new (mem) AtLeast;
-    out->size    = ps.size();
-    out->n       = n;
-    for (int i = 0; i < ps.size(); i++) out->lits[i] = ps[i];
-
-    return true;
+void SubsetQ::remove(Solver& S, bool just_dealloc) {
+  std::cerr << "SubsetQ removed!\n";
 }
 
 
-void AtLeast::remove(Solver& S, bool just_dealloc) {
-    if (!just_dealloc)
-        for (int i = 0; i < size; i++)
-            removeWatch(S.watches[index(lits[i])], this);
-    xfree(this);
+bool SubsetQ::simplify(Solver& S) {
+  return false;
 }
 
 
-bool AtLeast::simplify(Solver& S) {
-    return false; }
-
-
-bool AtLeast::propagate(Solver& S, Lit p, bool& keep_watch)
+bool SubsetQ::propagate(Solver& S, Lit p, bool& keep_watch)
 {
-    keep_watch = true;
-    if (counter == n) return false;
+  keep_watch = true;
 
-    counter++;
-    S.undos[var(p)].push(this);
+  vector<int> clause;
+  for (int i = 0; i < S.outputs.size(); i++) {
+    if (S.value(S.outputs[i]) == l_False)
+      clause.push_back(i);
+  }
 
-    // If no more can be true, enqueue the negation of the rest:
-    if (counter == n)
-        for (int i = 0; i < size; i++)
-            if (!S.enqueue(~lits[i], this))
-                return false;
-    return true;
+  if (supq.get(clause)) return false;
+
+  int i = supq.propagate(clause).index;
+  if (i == -2) {
+    assert(false);
+  }
+  if (i >= 0) {
+    bool ok = S.enqueue(S.outputs[i], this);
+    assert(ok);
+  }
+
+  return true;
 }
 
 
-void AtLeast::undo(Solver& S, Lit p) {
-    counter--; }
+void SubsetQ::undo(Solver& S, Lit p) {
+}
 
 
-void AtLeast::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
+void SubsetQ::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
 {
-    int     c = (p == lit_Undef) ? -1 : 0;
-    for (int i = 0; i < size; i++){
-        if (S.value(lits[i]) == l_True){
-            out_reason.push(lits[i]);
-            if (++c == n) return;
-        }
+  vector<int> clause;
+  for (int i = 0; i < S.outputs.size(); i++) {
+    if (S.value(S.outputs[i]) == l_False)
+      clause.push_back(i);
+  }
+
+  if (p == lit_Undef) {
+    const vector<int> *result;
+    result = supq.get(clause);
+
+    for (int i: *result) {
+      out_reason.push(~S.outputs[i]);
     }
+  }
+  else {
+    Reason result = supq.propagate(clause);
+    assert(result.index != -2);
+    assert(result.index != -1);
+
+    for (int i: *result.clause) {
+      if (i != result.index)
+        out_reason.push(~S.outputs[i]);
+    }
+  }
 }
-*/

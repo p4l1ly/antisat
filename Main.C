@@ -17,24 +17,22 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#include "SubQ.h"
+#include "SupQ.h"
+#include "CellContainer.h"
 #include "Solver.h"
+#include "Constraints.h"
 #include <ctime>
 #include <unistd.h>
 #include <signal.h>
 #include <zlib.h>
 #include <chrono>
 #include <iostream>
-#include <set>
-#include <deque>
 #include <vector>
 #include <string>
 #include <algorithm>
 
 using std::cout;
 using std::endl;
-using std::set;
-using std::deque;
 using std::vector;
 using std::string;
 namespace chrono = std::chrono;
@@ -155,7 +153,7 @@ static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
     in++;
 }
 
-static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt, bool purity) {
+static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
     *acnt = parseInt(in); in++;
     skipLine(in); // blank
 
@@ -168,7 +166,6 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt, bool
 
         while (var >= S.pures.size()) S.pures.push(false);
         S.pures[var] = true;
-        if (!purity) S.pures[var] = false;
     }
     skipLine(in); // blank
 
@@ -208,9 +205,9 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt, bool
     return S.okay();
 }
 
-bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt, bool purity) {
+bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt) {
     char* text = readFile(in);
-    bool ret = parse_AFASAT_main(text, S, initial, acnt, purity);
+    bool ret = parse_AFASAT_main(text, S, initial, acnt);
     free(text);
     return ret;
 }
@@ -237,71 +234,9 @@ static void SIGINT_handler(int signum) {
 
 //=================================================================================================
 
-struct LeastSizeCompare
-{
-    bool operator()(const vec<Lit>* lhs, const vec<Lit>* rhs)
-    {
-        // return lhs->size() < rhs->size();
-        if (lhs->size() != rhs->size()) return lhs->size() < rhs->size();
-        for (int i = 0; i < lhs->size(); i++) {
-            if (lhs[i] != rhs[i]) return lhs[i] < rhs[i];
-        }
-        return false;
-    }
-};
-
-struct CellContainer {
-    virtual void add(vec<Lit>* x) = 0;
-    virtual int size() const = 0;
-    virtual vec<Lit>* pop() = 0;
-    virtual ~CellContainer() {};
-};
-
-class CellContainerSet : public CellContainer {
-    set<vec<Lit>*, LeastSizeCompare> data;
-public:
-    CellContainerSet() {}
-    void add(vec<Lit>* x) { data.insert(x); }
-    int size() const { return data.size(); }
-    vec<Lit>* pop() {
-        auto it = data.begin();
-        vec<Lit>* result = *it;
-        data.erase(it);
-        return result;
-    }
-};
-
-class CellContainerBfs : public CellContainer {
-    deque<vec<Lit>*> data;
-public:
-    CellContainerBfs() {}
-    void add(vec<Lit>* x) { data.push_back(x); }
-    int size() const { return data.size(); }
-    vec<Lit>* pop() {
-        vec<Lit>* result = data.front();
-        data.pop_front();
-        return result;
-    }
-};
-
-class CellContainerDfs : public CellContainer {
-    vector<vec<Lit>*> data;
-public:
-    CellContainerDfs() {}
-    void add(vec<Lit>* x) { data.push_back(x); }
-    int size() const { return data.size(); }
-    vec<Lit>* pop() {
-        vec<Lit>* result = data.back();
-        data.pop_back();
-        return result;
-    }
-};
-
-
 bool extract_sat_result(
     Solver &S,
-    vec<Lit> &cell_out,
-    vec<Lit> &cell_in,
+    vector<int> &cell,
     int initial,
     // only for logging purposes:
     chrono::duration<double> &elapsed_sat,
@@ -316,19 +251,11 @@ bool extract_sat_result(
         if (S.value(out) == l_False) // WARNING solver must not be reset after sat
         {
             if (verbosity >= -1) printf("0");
-
-            cell_in.push(~Lit(i));
-            for (int j = 0; j < cell_out.size(); j++) {
-                if (out == cell_out[j]) goto outputfor;
-            }
-            cell_out.push(out);
+            cell.push_back(i);
         }
         else if (i == initial) return true;
         else if (verbosity >= -1)
             printf("%c", S.value(out) == l_Undef ? 'x' : '1');
-
-outputfor:
-        ((void)0);
     }
 
     if (verbosity >= -1) {
@@ -365,9 +292,9 @@ int main(int argc, char** argv)
         fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
         exit(1);
 
-    bool purity = argv[6][0] == '1';
+    int unsat_limit = std::stoi(argv[2]);
 
-    st = parse_AFASAT(in, S, &initial, &acnt, purity);
+    st = parse_AFASAT(in, S, &initial, &acnt);
     gzclose(in);
 
     if (!st) {
@@ -377,18 +304,11 @@ int main(int argc, char** argv)
 
     signal(SIGINT,SIGINT_handler);
 
-    string cont_str(argv[2]);
-    CellContainer *cell_container =
-        (cont_str == string("set"))
-        ? (CellContainer*)new CellContainerSet()
-        : (cont_str == string("dfs"))
-        ? (CellContainer*)new CellContainerDfs()
-        : (CellContainer*)new CellContainerBfs();
+    CellContainerSet cell_container;
 
-    vec<Lit> *cell_in = new vec<Lit>(S.outputs.size());
-    vec<Lit> cell_out;
+    vector<int> *cell = new vector<int>(S.outputs.size());
 
-    for (int i = 0; i < S.outputs.size(); i++) (*cell_in)[i] = ~Lit(i);
+    for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
 
     chrono::duration<double> elapsed_sat = chrono::duration<double>::zero();
     auto tic_all = chrono::steady_clock::now();
@@ -398,28 +318,27 @@ int main(int argc, char** argv)
 
     auto tic = chrono::steady_clock::now();
 
-    string supq_str(argv[5]);
-    SupQ *supq = (supq_str == string("vec"))
-      ? (SupQ*)new SupQVec()
-      : new SupQ();
+    MeasuredSupQ container_supq;
+    SubsetQ* subq_constr = new SubsetQ(S);
 
     int omitted = 0;
-
-    int unsat_limit = std::stoi(argv[4]);
-
-    if (string(argv[3]) == string("resetallLocBfs")) goto resetallLocBfs;
-    if (string(argv[3]) == string("resetallImmediate")) goto resetallImmediate;
+    vec<Lit> solver_input(S.outputs.size());
 
     while (true) {
-        if (supq->get(*cell_in)) omitted++;
+        if (container_supq.get(*cell)) omitted++;
         else {
-          supq->add(*cell_in);
+          container_supq.add(*cell);
+
+          solver_input.clear();
+          for(int i: *cell) {
+            solver_input.push(~Lit(i));
+          }
 
           tic = chrono::steady_clock::now();
-          st = S.solve(*cell_in);
+          st = S.solve(solver_input);
           elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
 
-          delete cell_in;
+          delete cell;
 
           if (st) {
               tic = chrono::steady_clock::now();
@@ -427,34 +346,34 @@ int main(int argc, char** argv)
                   elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
                   satCnt++;
 
-                  cell_out.clear();
-                  cell_in = new vec<Lit>();
+                  cell = new vector<int>();
 
                   if (extract_sat_result(
-                          S, cell_out, *cell_in, initial, elapsed_sat,
-                          *cell_container, acnt, satCnt, unsatCnt, maxDepth,
+                          S, *cell, initial, elapsed_sat,
+                          cell_container, acnt, satCnt, unsatCnt, maxDepth,
                           omitted)) {
-                      delete cell_in;
+                      delete cell;
                       goto l_reach;
                   }
 
-                  cell_container->add(cell_in);
+                  cell_container.add(cell);
 
                   tic = chrono::steady_clock::now();
-                  if (!S.addConflictingClause(cell_out)) break;
+                  subq_constr->addClause(*cell);
+                  if (!S.raise_conflict(subq_constr, *cell)) break;
               };
               elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
           }
 
           unsatCnt++;
           if (unsat_limit >= 0 && unsatCnt > unsat_limit) {
-              delete cell_in;
-              goto finally;
+            if (st) delete cell;
+            goto finally;
           }
         }
 
-        if (!cell_container->size()) break;
-        cell_in = cell_container->pop();
+        if (!cell_container.size()) break;
+        cell = cell_container.pop();
 
         tic = chrono::steady_clock::now();
         S.reset();
@@ -462,109 +381,6 @@ int main(int argc, char** argv)
     }
 
     goto l_unreach;
-
-resetallLocBfs:
-
-    while (true) {
-        if (supq->get(*cell_in)) omitted++;
-        else {
-            supq->add(*cell_in);
-
-            while (true) {
-                tic = chrono::steady_clock::now();
-                st = S.solve(*cell_in);
-                st = st && S.resume();
-                elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-
-                if (!st) break;
-
-                satCnt++;
-
-                cell_out.clear();
-                vec<Lit> *cell_in2 = new vec<Lit>();
-
-                if (extract_sat_result(
-                        S, cell_out, *cell_in2, initial, elapsed_sat,
-                        *cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                        omitted)) {
-                    delete cell_in;
-                    goto l_reach;
-                }
-
-                cell_container->add(cell_in2);
-
-                tic = chrono::steady_clock::now();
-                S.reset();
-                S.addClause(cell_out);
-                elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-            }
-        }
-
-        unsatCnt++;
-        delete cell_in;
-        if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto finally;
-
-        if (!cell_container->size()) goto l_unreach;
-        cell_in = cell_container->pop();
-
-        tic = chrono::steady_clock::now();
-        S.reset();
-        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-    }
-
-resetallImmediate:
-
-    while (true) {
-        tic = chrono::steady_clock::now();
-        st = S.solve(*cell_in);
-        st = st && S.resume();
-        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-
-        if (st) {
-            satCnt++;
-
-            cell_container->add(cell_in);
-            cell_out.clear();
-            cell_in = new vec<Lit>();
-
-            if (extract_sat_result(
-                    S, cell_out, *cell_in, initial, elapsed_sat,
-                    *cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                    omitted)) {
-                delete cell_in;
-                goto l_reach;
-            }
-
-            cell_container->add(cell_in);
-
-            tic = chrono::steady_clock::now();
-            S.reset();
-            S.addClause(cell_out);
-            elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-        }
-        else {
-            unsatCnt++;
-            supq->add(*cell_in);
-
-            delete cell_in;
-            if (unsat_limit >= 0 && unsatCnt > unsat_limit) goto finally;
-        }
-
-        while (true) {
-            if (!cell_container->size()) goto l_unreach;
-            cell_in = cell_container->pop();
-
-            if (supq->get(*cell_in)) {
-                omitted++;
-                delete cell_in;
-            }
-            else break;
-        }
-
-        tic = chrono::steady_clock::now();
-        S.reset();
-        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-    }
 
 l_unreach:
     printf("1 ");
@@ -584,10 +400,8 @@ finally:
       << omitted << " "
       << elapsed_sat.count() << " "
       << elapsed_all.count() << " "
-      << supq->elapsed_add.count() << " "
-      << supq->elapsed_get.count() << endl;
+      << container_supq.elapsed_add.count() << " "
+      << container_supq.elapsed_get.count() << endl;
 
-    delete cell_container;
-    delete supq;
     return 0;
 }
