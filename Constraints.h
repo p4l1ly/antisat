@@ -111,6 +111,8 @@ public:
       supq.add(clause);
     }
 
+    int max_level(Solver& S);
+
     // Constraint interface:
     void remove    (Solver& S, bool just_dealloc = false);
     bool propagate (Solver& S, Lit p, bool& keep_watch);

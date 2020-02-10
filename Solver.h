@@ -252,10 +252,13 @@ public:
       vec<Lit>    learnt_clause;
       int         backtrack_level;
 
-      if (decisionLevel() == root_level)
+      if (decisionLevel() == root_level) {
           return false;
+      }
 
-      if (!analyze2(c, learnt_clause, backtrack_level)) return false;
+      if (!analyze2(c, learnt_clause, backtrack_level)) {
+          return false;
+      }
 
       cancelUntil(max(backtrack_level, root_level));
       record(learnt_clause);

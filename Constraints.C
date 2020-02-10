@@ -352,15 +352,17 @@ bool SubsetQ::propagate(Solver& S, Lit p, bool& keep_watch)
       clause.push_back(i);
   }
 
-  if (supq.get(clause)) return false;
+  if (supq.get(clause)) { return false; }
 
   int i = supq.propagate(clause).index;
   if (i == -2) {
     assert(false);
   }
   if (i >= 0) {
-    bool ok = S.enqueue(S.outputs[i], this);
-    assert(ok);
+    if (S.value(S.outputs[i]) == l_Undef) {
+      bool ok = S.enqueue(S.outputs[i], this);
+      assert(ok);
+    }
   }
 
   return true;
@@ -393,8 +395,9 @@ void SubsetQ::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
     assert(result.index != -1);
 
     for (int i: *result.clause) {
-      if (i != result.index)
+      if (i != result.index) {
         out_reason.push(~S.outputs[i]);
+      }
     }
   }
 }

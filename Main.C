@@ -334,6 +334,21 @@ int main(int argc, char** argv)
             solver_input.push(~Lit(i));
           }
 
+          if (verbosity >= -1) {
+            printf("==================\ni ");
+            int j = 0;
+            for (int i = 0; i < S.outputs.size(); i++) {
+              if (j < cell->size() && (*cell)[j] == i) {
+                printf("0");
+                j++;
+              }
+              else {
+                printf("x");
+              }
+            }
+            printf("\n==================\n");
+          }
+
           tic = chrono::steady_clock::now();
           st = S.solve(solver_input);
           elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;

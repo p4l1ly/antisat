@@ -205,7 +205,12 @@ bool Solver::analyze2(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
         confl->calcReason(*this, p, p_reason);
 
         if (p == lit_Undef) {
-            int max_level = ((Clause *)confl)->max_level(*this);
+            int max_level = 0;
+
+            for (int i = 0; i < p_reason.size(); i++) {
+                int l = level[var(p_reason[i])];
+                if (l > max_level) max_level = l;
+            }
 
             if (max_level <= root_level) return false;
 
@@ -233,8 +238,9 @@ bool Solver::analyze2(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
             undoOne();
         }while (!seen[var(p)]);
         pathC--;
-    seen[var(p)] = 0;
-    }while (pathC > 0);
+        seen[var(p)] = 0;
+
+    } while (pathC > 0);
     out_learnt[0] = ~p;
 
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
