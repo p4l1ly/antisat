@@ -107,7 +107,7 @@ public:
 
     SubsetQ(Solver& S);
     void addClause (std::vector<int>& clause) {
-      printf("add {"); for(int x: clause) printf(" %d", x); printf(" }\n");
+      // printf("add {"); for(int x: clause) printf(" %d", x); printf(" }\n");
       supq.add(clause);
     }
 

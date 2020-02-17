@@ -416,7 +416,10 @@ finally:
       << elapsed_sat.count() << " "
       << elapsed_all.count() << " "
       << container_supq.elapsed_add.count() << " "
-      << container_supq.elapsed_get.count() << endl;
+      << container_supq.elapsed_get.count() << " "
+      << subq_constr->supq.elapsed_add.count() << " "
+      << subq_constr->supq.elapsed_get.count() << " "
+      << endl;
 
     return 0;
 }
