@@ -21,6 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "CellContainer.h"
 #include "Solver.h"
 #include "Constraints.h"
+#include "Trie.h"
 #include <ctime>
 #include <unistd.h>
 #include <signal.h>
@@ -286,6 +287,12 @@ int main(int argc, char** argv)
     Solver      S(GS);
     bool        st;
     int initial, acnt;
+
+    Trie trie;
+    trie.add(std::vector<int>({1, 2, 3}));
+    trie.add(std::vector<int>({4, 5, 6}));
+    printf("trie.guess: %d\n", trie.guess());
+    exit(0);
 
     gzFile in = gzopen(argv[1], "rb");
     if (in == NULL)
