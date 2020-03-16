@@ -29,6 +29,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Queue.h"
 #include "VarOrder.h"
 #include "OutOrder.h"
+#include "Trie.h"
 
 #define L_IND    "%-*d"
 #define L_ind    decisionLevel()*3+3,decisionLevel()
@@ -95,7 +96,6 @@ public:
     vec<Lit>    &       impure_outputs;  // The output literals.
 
     VarOrder            order;          // Keeps track of the decision variable order.
-    OutOrder            out_order;      // Keeps track of which outputs have not yet been decided.
 
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
     vec<vec<Constr*> >  undos;          // 'undos[var]' is a list of constraints that will be called when 'var' becomes unbound.
@@ -112,6 +112,8 @@ public:
 
     SearchParams params;
     double nof_conflicts, nof_learnts;
+
+    Trie *trie;
 
     // Temporaries (to reduce allocation overhead):
     //
@@ -165,7 +167,6 @@ public:
       , impure_outputs(gs.impure_outputs)
 
       , order            (assigns, activity, pures, output_map)
-      , out_order        (assigns, pures, output_map, impure_outputs)
       , last_simplify    (-1)
       , params(1, 1, 0)
       { }
@@ -186,7 +187,6 @@ public:
     , impure_outputs(s.impure_outputs)
 
     , order            (assigns, s.order)
-    , out_order        (assigns, pures, output_map, impure_outputs)
 
     , watches(s.watches)
     , undos(s.undos)

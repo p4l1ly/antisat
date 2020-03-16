@@ -288,12 +288,6 @@ int main(int argc, char** argv)
     bool        st;
     int initial, acnt;
 
-    Trie trie;
-    trie.add(std::vector<int>({1, 2, 3}));
-    trie.add(std::vector<int>({4, 5, 6}));
-    printf("trie.guess: %d\n", trie.guess());
-    exit(0);
-
     gzFile in = gzopen(argv[1], "rb");
     if (in == NULL)
         fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
@@ -314,8 +308,10 @@ int main(int argc, char** argv)
     CellContainerSet cell_container;
 
     vector<int> *cell = new vector<int>(S.outputs.size());
-
     for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
+
+    Trie trie(S.outputs.size());
+    S.trie = &trie;
 
     chrono::duration<double> elapsed_sat = chrono::duration<double>::zero();
     auto tic_all = chrono::steady_clock::now();
@@ -343,7 +339,7 @@ int main(int argc, char** argv)
 
           if (verbosity >= -1) {
             printf("==================\ni ");
-            int j = 0;
+            unsigned j = 0;
             for (int i = 0; i < S.outputs.size(); i++) {
               if (j < cell->size() && (*cell)[j] == i) {
                 printf("0");

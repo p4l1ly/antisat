@@ -2,10 +2,13 @@
 #define Trie_h
 
 #include <vector>
-#include <iostream>
 #include <unordered_set>
 
-using std::cout;
+#include "Constraints.h"
+
+class Trie;
+#include "Solver.h"
+
 using std::vector;
 using std::unordered_set;
 
@@ -32,7 +35,7 @@ struct HorStart {
   Hor hor;
 
   HorStart(
-    int tag_,
+    unsigned tag_,
     unsigned parent_hor_ix,
     unsigned parent_ver_ix,
     Hor *parent
@@ -42,66 +45,48 @@ struct HorStart {
 };
 
 struct VerStart {
-  int tag;
+  unsigned tag;
   vector<HorStart> hors;
 
-  VerStart(unsigned parent_hor_ix, Hor *parent, unordered_set<int> xs)
-  : hors()
-  {
-    auto iter = xs.begin();
-    tag = *iter;
-    xs.erase(iter);
-
-    hors.reserve(xs.size());
-
-    int i = 0;
-    for (int x: xs) {
-      hors.emplace_back(x, parent_hor_ix, i, parent);
-      i++;
-    }
-  }
+  VerStart() : hors() {}
 };
 
-class Trie {
+
+enum WhatToDo {
+  WATCH = -3,
+  DONE = -2,
+  AGAIN = -1,
+  CONFLICT = 0,
+  PROPAGATE = 1,
+};
+
+class Trie : public Constr {
 public:
   Hor root;
   Hor *active_hor;
-  unsigned int hor_ix = 0;
+  unsigned hor_ix = 0;
   int ver_ix = -1;
+  unsigned var_count;
+  vector<unsigned> back_ptrs;
+  unsigned active_var = 0;
+  unsigned active_var_old = 0;
+  unsigned undo_skip_count = 0;
+  vector<unsigned> my_zeroes;
 
-  Trie() : root(0, -1, NULL) {
-    active_hor = &root;
-  }
+  Trie(unsigned var_count);
 
-  int guess() {
-    if (ver_ix >= 0) {
-      return active_hor->vers[hor_ix].hors[ver_ix].tag;
-    }
-    else if (hor_ix < active_hor->vers.size()) {
-      cout << "guess\n";
-      return active_hor->vers[hor_ix].tag;
-    }
-    else {
-      return -1;
-    }
-  }
+  Lit guess(Solver &S);
+  void onSat(Solver &S);
 
-  void add(vector<int> xs) {
-    unordered_set<int> xs_set(xs.begin(), xs.end());
-    Hor *hor_iter = active_hor;
+  void remove(Solver& S, bool just_dealloc);
+  bool simplify(Solver& S);
+  bool propagate (Solver& S, Lit p, bool& keep_watch);
+  void undo(Solver& S, Lit p);
+  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 
-    while (hor_iter->parent) {
-      for (int i = hor_iter->parent_ver_ix - 1; i >= 0; --i) {
-        xs_set.erase(
-          hor_iter->parent->vers[hor_iter->parent_hor_ix].hors[i].tag);
-      }
-      xs_set.erase(hor_iter->parent->vers[hor_iter->parent_hor_ix].tag);
-      hor_iter = hor_iter->parent;
-    }
-
-    active_hor->vers.emplace_back(active_hor->vers.size(), active_hor, xs_set);
-    cout << active_hor->vers.size() << "add\n";
-  }
+  WhatToDo after_hors_change(Solver &S);
+  WhatToDo after_vers_change(Solver &S);
+  void back();
 };
 
 //=================================================================================================

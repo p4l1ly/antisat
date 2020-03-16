@@ -74,7 +74,7 @@ inline void Solver::undoOne(void)
     Var     x  = var(p);
     assigns[x] = toInt(l_Undef);
     reason [x] = NULL;
-    if (!out_order.undo(x)) order.undo(x);
+    order.undo(x);
     while (undos[x].size() > 0)
         undos[x].last()->undo(*this, p),
         undos[x].pop();
@@ -172,8 +172,9 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
             confl = reason[var(p)];
             undoOne();
         }while (!seen[var(p)]);
+
         pathC--;
-    seen[var(p)] = 0;
+        seen[var(p)] = 0;
     }while (pathC > 0);
     out_learnt[0] = ~p;
 
@@ -465,7 +466,7 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
-            Lit decision = out_order.select();
+            Lit decision = trie->guess(*this);
 
             if (var(decision) == var_Undef) {
               Var next = order.select(params.random_var_freq);

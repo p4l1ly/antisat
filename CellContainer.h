@@ -10,7 +10,7 @@ using std::vector;
 
 struct LeastSizeCompare
 {
-    bool operator()(const vector<int>* lhs, const vector<int>* rhs)
+    bool operator()(const vector<int>* lhs, const vector<int>* rhs) const
     {
         // return lhs->size() < rhs->size();
         if (lhs->size() != rhs->size()) return lhs->size() < rhs->size();

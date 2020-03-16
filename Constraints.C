@@ -143,7 +143,7 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     S.stats.clauses_literals += c->size();
 
     int max_level = S.level[var(c->data[0])];
-    int max_level2 = S.level[var(c->data[1])];;
+    int max_level2 = S.level[var(c->data[1])];
 
     if (max_level < max_level2) {
       swap(max_level, max_level2);
@@ -373,8 +373,7 @@ void SubsetQ::undo(Solver& S, Lit p) {
 }
 
 
-void SubsetQ::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
-{
+void SubsetQ::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   vector<int> clause;
   for (int i = 0; i < S.outputs.size(); i++) {
     if (S.value(S.outputs[i]) == l_False)
