@@ -102,8 +102,9 @@ Var VarOrder::select(double random_var_freq)
     // Activity based decision:
     while (!heap.empty()){
         Var next = heap.getmin();
-        if (toLbool(assigns[next]) == l_Undef)
+        if (toLbool(assigns[next]) == l_Undef) {
             return next;
+        }
     }
 
     return var_Undef;

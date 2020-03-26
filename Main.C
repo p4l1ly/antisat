@@ -293,8 +293,6 @@ int main(int argc, char** argv)
         fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
         exit(1);
 
-    int unsat_limit = std::stoi(argv[2]);
-
     st = parse_AFASAT(in, S, &initial, &acnt);
     gzclose(in);
 
@@ -309,9 +307,15 @@ int main(int argc, char** argv)
 
     vector<int> *cell = new vector<int>(S.outputs.size());
     for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
+    printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");
 
     Trie trie(S.outputs.size());
     S.trie = &trie;
+    S.addConstr(&trie);
+
+    for (int x = 0; x < S.outputs.size(); x++) {
+      printf("VAR %d %d %d\n", x, var(S.outputs[x]), sign(S.outputs[x]));
+    }
 
     chrono::duration<double> elapsed_sat = chrono::duration<double>::zero();
     auto tic_all = chrono::steady_clock::now();
@@ -328,8 +332,11 @@ int main(int argc, char** argv)
     vec<Lit> solver_input(S.outputs.size());
 
     while (true) {
-        if (container_supq.get(*cell)) omitted++;
-        else {
+        if (container_supq.get(*cell)) {
+          printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");
+          delete cell;
+          omitted++;
+        } else {
           container_supq.add(*cell);
 
           solver_input.clear();
@@ -356,6 +363,7 @@ int main(int argc, char** argv)
           st = S.solve(solver_input);
           elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
 
+          printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");
           delete cell;
 
           if (st) {
@@ -370,23 +378,26 @@ int main(int argc, char** argv)
                           S, *cell, initial, elapsed_sat,
                           cell_container, acnt, satCnt, unsatCnt, maxDepth,
                           omitted)) {
+                      printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");
+                      printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");
                       delete cell;
                       goto l_reach;
                   }
+                  printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");
 
                   cell_container.add(cell);
 
                   tic = chrono::steady_clock::now();
-                  subq_constr->addClause(*cell);
-                  if (!S.raise_conflict(subq_constr, *cell)) break;
+                  printf("ON_SAT_START\n");
+                  BackJumper *back = trie.onSat(S);
+                  printf("ON_SAT_END\n");
+                  if (!S.onSatConflict(*cell)) {
+                    if (back) back->cut();
+                    break;
+                  }
+                  if (back) back->cut();
               };
               elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-          }
-
-          unsatCnt++;
-          if (unsat_limit >= 0 && unsatCnt > unsat_limit) {
-            if (st) delete cell;
-            goto finally;
           }
         }
 
@@ -424,5 +435,7 @@ finally:
       << subq_constr->supq.elapsed_get.count() << " "
       << endl;
 
+    S.constrs.pop();
+    delete subq_constr;
     return 0;
 }

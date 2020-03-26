@@ -13,7 +13,7 @@ RCOBJS    = $(addsuffix r,  $(COBJS))
 EXEC      = minisat
 
 CXX       = g++
-CFLAGS    = -Wall
+CFLAGS    = -Wall -std=c++2a -lboost
 COPTIMIZE = -O3 -fomit-frame-pointer
 
 

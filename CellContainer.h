@@ -41,6 +41,12 @@ public:
         data.erase(it);
         return result;
     }
+
+    ~CellContainerSet() {
+      for (vector<int> *x: data) {
+        delete x;
+      }
+    }
 };
 
 class CellContainerBfs : public CellContainer {

@@ -33,11 +33,16 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 class Solver;
 
-struct Constr {
+struct Undoable {
+    virtual void undo      (Solver& S, Lit p) { };
+
+    virtual ~Undoable(void) { };  // (not used, just to keep the compiler happy)
+};
+
+struct Constr : public Undoable{
     virtual void remove    (Solver& S, bool just_dealloc = false) = 0;
     virtual bool propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
-    virtual void undo      (Solver& S, Lit p) { };
     virtual void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) = 0;
 
     virtual ~Constr(void) { };  // (not used, just to keep the compiler happy)

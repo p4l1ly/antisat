@@ -34,6 +34,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #define L_IND    "%-*d"
 #define L_ind    decisionLevel()*3+3,decisionLevel()
 
+void check(bool expr);
 
 //=================================================================================================
 // Solver -- the main class:
@@ -98,7 +99,7 @@ public:
     VarOrder            order;          // Keeps track of the decision variable order.
 
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
-    vec<vec<Constr*> >  undos;          // 'undos[var]' is a list of constraints that will be called when 'var' becomes unbound.
+    vec<vec<Undoable*> >  undos;          // 'undos[var]' is a list of constraints that will be called when 'var' becomes unbound.
 
     Queue<Lit>          propQ;          // Propagation queue.
 
@@ -128,7 +129,7 @@ public:
     void        record       (const vec<Lit>& clause);
 
     void        analyze      (Constr* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
-    bool        analyze2     (Constr* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    void        analyze2     (const vector<int>&, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
     bool        enqueue      (Lit fact, Constr* from = NULL);
     Constr*     propagate    (void);
     void        reduceDB     (void);
@@ -239,33 +240,7 @@ public:
       constrs.push(c);
     }
 
-    bool raise_conflict(SubsetQ* c, const vector<int>& cell) {
-      if (verbosity >= 2) {
-        printf(L_IND "**CONFLICT2**", L_ind);
-        printf("{");
-        for(int x: cell) printf(" %d", x);
-        printf(" }\n");
-      }
-
-      stats.conflicts++;
-
-      vec<Lit>    learnt_clause;
-      int         backtrack_level;
-
-      if (decisionLevel() == root_level) {
-          return false;
-      }
-
-      if (!analyze2(c, learnt_clause, backtrack_level)) {
-          return false;
-      }
-
-      cancelUntil(max(backtrack_level, root_level));
-      record(learnt_clause);
-      varDecayActivity(); claDecayActivity();
-
-      return true;
-    }
+    bool onSatConflict(const vector<int>& cell);
 
     void    addAtMost(const vec<Lit>& ps, int n) {
         if (ok){
