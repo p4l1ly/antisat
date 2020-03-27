@@ -128,8 +128,8 @@ public:
     void        cancelUntil  (int level);
     void        record       (const vec<Lit>& clause);
 
-    void        analyze      (Constr* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
-    void        analyze2     (const vector<int>&, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    bool        analyze      (Constr* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    bool        analyze2     (const vector<int>&, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
     bool        enqueue      (Lit fact, Constr* from = NULL);
     Constr*     propagate    (void);
     void        reduceDB     (void);

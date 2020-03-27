@@ -182,6 +182,7 @@ WhatToDo Trie::after_hors_change(Solver &S) {
     return WhatToDo::WATCH;
   }
   if (val == l_False && ver_head.hors->size() == 0) {
+    my_zeroes.push_back(out);
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -201,6 +202,7 @@ WhatToDo Trie::after_vers_change(Solver &S) {
     return WhatToDo::WATCH;
   }
   if (val == l_False && ver_ix == int(ver_head.hors->size()) - 1) {
+    my_zeroes.push_back(out);
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -320,14 +322,24 @@ void Trie::undo(Solver& S, Lit p) {
 
 
 void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
-  if (p != lit_Undef) {
+  if (p == lit_Undef) {
+    int max_level = -1;
+    for (unsigned x: my_zeroes) {
+      Lit out_lit = S.outputs[x];
+      max_level = max(max_level, S.level[var(out_lit)]);
+      out_reason.push(~out_lit);
+    }
+    S.cancelUntil(max_level);
+  }
+  else {
     propagations.back()->undo(S, lit_Undef);
     propagations.pop_back();
+
+    for (unsigned x: my_zeroes) {
+      out_reason.push(~S.outputs[x]);
+    }
   }
 
-  for (unsigned x: my_zeroes) {
-    out_reason.push(~S.outputs[x]);
-  }
   printf("CALC_REASON %d", var(p)); for (unsigned x: my_zeroes) { printf(" %u", x); } printf("\n");
 }
 

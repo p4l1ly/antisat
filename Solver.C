@@ -132,7 +132,10 @@ bool Solver::onSatConflict(const vector<int>& cell) {
       return false;
   }
 
-  analyze2(cell, learnt_clause, backtrack_level);
+  if (!analyze2(cell, learnt_clause, backtrack_level)) {
+      printf("DECLEVEL2\n");
+      return false;
+  }
 
   cancelUntil(max(backtrack_level, root_level));
   check(enqueue(learnt_clause[0], trie));
@@ -159,7 +162,7 @@ bool Solver::onSatConflict(const vector<int>& cell) {
 |  Effect:
 |    Will undo part of the trail, upto but not beyond the assumption of the current decision level.
 |________________________________________________________________________________________________@*/
-void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
+bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
 {
     vec<char>&  seen = analyze_seen;
     int         pathC    = 0;
@@ -169,13 +172,19 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
     // Generate conflict clause:
     //
-    out_learnt.push();      // (leave room for the asserting literal)
+    out_learnt.push(lit_Undef);      // (leave room for the asserting literal)
     out_btlevel = 0;
-    do{
+
+    while (true) {
         assert(confl != NULL);          // (otherwise should be UIP)
 
         p_reason.clear();
         confl->calcReason(*this, p, p_reason);
+        printf("REASON " L_LIT, L_lit(p));
+        for (int i = 0; i < p_reason.size(); i++) {
+          printf(" " L_LIT, L_lit(p_reason[i]));
+        }
+        printf("\n");
 
         for (int j = 0; j < p_reason.size(); j++){
             Lit q = p_reason[j];
@@ -185,12 +194,14 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
                 if (level[var(q)] == decisionLevel())
                     pathC++;
                 else{
+                    printf("PUSH " L_LIT " %d %d\n", L_lit(~q), level[var(q)], decisionLevel());
                     out_learnt.push(~q),
                     out_btlevel = max(out_btlevel, level[var(q)]);
                 }
             }
         }
 
+find_next_p:
         // Select next clause to look at:
         do{
             p = trail.last();
@@ -199,9 +210,35 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
         }while (!seen[var(p)]);
 
         pathC--;
+
+        if (pathC == 0 && out_learnt[0] == lit_Undef) out_learnt[0] = ~p;
+
+        if (confl == NULL) {
+          if (seen[var(p)]) { seen[var(p)] = 0; break; }
+          else {
+            pathC = 0;
+            for (int j = 1; j < out_learnt.size(); j++) {
+              Lit lit = out_learnt[j];
+              if (level[var(lit)] == out_btlevel) {
+                pathC++;
+              }
+              else if (pathC) {
+                out_learnt[j - pathC] = lit;
+              }
+            }
+
+            out_learnt.shrink(out_learnt.size() - pathC);
+            cancelUntil(out_btlevel);
+
+            if (decisionLevel() == root_level)
+              return false;
+
+            goto find_next_p;
+          }
+        }
+
         seen[var(p)] = 0;
-    }while (pathC > 0);
-    out_learnt[0] = ~p;
+    }
 
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
 
@@ -210,9 +247,11 @@ void Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
         printClause(out_learnt);
         printf(" at level %d\n", out_btlevel);
     }
+
+    return true;
 }
 
-void Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_btlevel)
+bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_btlevel)
 {
     vec<char>&  seen = analyze_seen;
     int         pathC    = 0;
@@ -243,6 +282,7 @@ void Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
             }
         }
 
+find_next_p:
         Constr* confl;
         // Select next clause to look at:
         do {
@@ -251,17 +291,41 @@ void Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
             printf("GetP %d\n", var(p));
             undoOne();
         } while (!seen[var(p)]);
-        pathC--;
-        seen[var(p)] = 0;
 
-        if (pathC <= 0) break;
+        pathC--;
+        if (pathC == 0 && out_learnt[0] == lit_Undef) out_learnt[0] = ~p;
+
+        if (confl == NULL) {
+          if (seen[var(p)]) { seen[var(p)] = 0; break; }
+          else {
+            pathC = 0;
+            for (int j = 1; j < out_learnt.size(); j++) {
+              Lit lit = out_learnt[j];
+              if (level[var(lit)] == out_btlevel) {
+                pathC++;
+              }
+              else if (pathC) {
+                out_learnt[j - pathC] = lit;
+              }
+            }
+
+            out_learnt.shrink(out_learnt.size() - pathC);
+            cancelUntil(out_btlevel);
+
+            if (decisionLevel() == root_level)
+              return false;
+
+            goto find_next_p;
+          }
+        }
+
+        seen[var(p)] = 0;
 
         assert(confl != NULL);          // (otherwise should be UIP)
 
         p_reason.clear();
         confl->calcReason(*this, p, p_reason);
     }
-    out_learnt[0] = ~p;
 
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
 
@@ -272,6 +336,8 @@ void Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
     }
 
     printf("ANALYZED2\n");
+
+    return true;
 }
 
 
@@ -460,7 +526,8 @@ lbool Solver::search()
             int         backtrack_level;
             if (decisionLevel() == root_level)
                 return l_False;
-            analyze(confl, learnt_clause, backtrack_level);
+            if (!analyze(confl, learnt_clause, backtrack_level))
+                return l_False;
             cancelUntil(max(backtrack_level, root_level));
             record(learnt_clause);
             varDecayActivity(); claDecayActivity();

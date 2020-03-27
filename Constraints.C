@@ -20,6 +20,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Constraints.h"
 #include "Solver.h"
 #include "Sort.h"
+#include "Global.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -247,8 +248,18 @@ void Clause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
 {
     assert(p == lit_Undef || p == data[0]);
 
+    if (learnt()) printf("LEARNT\n");
+    else printf("BASE\n");
+
+    for (int i = 0; i < size(); i++) {
+      printf(L_LIT "\n", L_lit(data[i]));
+    }
+
     for (int i = ((p == lit_Undef) ? 0 : 1); i < size(); i++) {
-        assert(S.value(data[i]) == l_False),
+        if (S.value(data[i]) != l_False) {
+          printf("NOT_FALSE %d\n", var(data[i]));
+          assert(false);
+        }
         out_reason.push(~data[i]);
     }
     if (learnt()) S.claBumpActivity(this);
