@@ -101,30 +101,4 @@ public:
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 };
 
-
-//=================================================================================================
-// SubsetQ:
-
-
-class SubsetQ : public Constr {
-public:
-    MeasuredSupQ supq;
-
-    SubsetQ(Solver& S);
-    void addClause (std::vector<int>& clause) {
-      // printf("add {"); for(int x: clause) printf(" %d", x); printf(" }\n");
-      supq.add(clause);
-    }
-
-    int max_level(Solver& S);
-
-    // Constraint interface:
-    void remove    (Solver& S, bool just_dealloc = false);
-    bool propagate (Solver& S, Lit p, bool& keep_watch);
-    bool simplify  (Solver& S);
-    void undo      (Solver& S, Lit p);
-    void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
-};
-//=================================================================================================
-
 #endif

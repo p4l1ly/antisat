@@ -4,58 +4,51 @@
 
 using std::vector;
 
-void SupQList::add(const vector<int> &clause) {
-  sets.emplace_back();
-  vector<int> &set = sets.back();
-  set.reserve(clause.size());
-
-  for (unsigned i = 0; i < clause.size(); ++i)
-    set.push_back(clause[i]);
+bool SupQTrie::get_or_add(const vector<int> &clause) {
+  if (Node::get(root, clause, 0)) return true;
+  else {
+    if (clause.size() == 0) root = NULL;
+    else Node::add(root, clause);
+    return false;
+  }
 }
 
-const vector<int>* SupQList::get(const vector<int> &clause) const {
-  for (unsigned i = 0; i < sets.size(); i++) {
-    if (std::includes(
-          clause.begin(), clause.end(), sets[i].begin(), sets[i].end())
-    ) {
-      return &sets[i];
+bool Node::get(Node *node, const vector<int> &clause, unsigned ix) {
+  if (node == NULL) return true;
+  if (ix == clause.size()) return false;
+
+  auto childs = node->childs;
+  for (unsigned j = ix; j < clause.size(); j++) {
+    auto it = childs.find(clause[j]);
+    if (it == childs.end()) {
+      return false;
     }
+
+    if (get(it->second, clause, j + 1)) return true;
   }
 
-  return NULL;
+  return false;
 }
 
-const Reason SupQList::propagate(const vector<int> &clause) const {
-  for (unsigned i = 0; i < sets.size(); i++) {
-    unsigned a = 0, b = 0;
-    int extra = -1;
+void Node::add(Node *node, const vector<int> &clause) {
+  unsigned ix = 0;
+  std::unordered_map<int, Node*>::iterator it;
 
-    while (a < sets[i].size() && b < clause.size()) {
-      if (clause[b] < sets[i][a]) b++;
-      else if (sets[i][a] < clause[b]) {
-        if (extra == -1) {
-          extra = a;
-          a++;
-        }
-        else goto outer_continue;
-      }
-      else {
-        a++;
-        b++;
-      }
-    }
-
-    if (a < sets[i].size()) {
-      if (a + 1 < sets[i].size() || extra != -1) continue;
-      else extra = a;
-    }
-
-    if (extra == -1) return Reason{&sets[i], -2};  // the clause is a superset of a set
-    else return Reason{&sets[i], sets[i][extra]};  // the clause propagates a literal from a set
-
-outer_continue:
-    continue;
+  for (; ix < clause.size(); ++ix) {
+    it = node->childs.find(clause[ix]);
+    if (it != node->childs.end()) node = it->second;
+    else break;
   }
 
-  return Reason{NULL, -1};  // we cannot propagate anything yet
+  if (ix == clause.size()) it->second = NULL;
+  else {
+    while (true) {
+      if (ix + 1 == clause.size()) {
+        node->childs[clause[ix]] = NULL;
+        break;
+      }
+      node = node->childs[clause[ix]] = new Node();
+      ix++;
+    }
+  }
 }

@@ -333,13 +333,11 @@ int main(int argc, char** argv)
     vec<Lit> solver_input(S.outputs.size());
 
     while (true) {
-        if (container_supq.get(*cell)) {
+        if (container_supq.get_or_add(*cell)) {
           if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
           delete cell;
           omitted++;
         } else {
-          container_supq.add(*cell);
-
           solver_input.clear();
           for(int i: *cell) {
             solver_input.push(~Lit(i));
