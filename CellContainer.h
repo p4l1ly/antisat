@@ -15,7 +15,7 @@ struct LeastSizeCompare
         // return lhs->size() < rhs->size();
         if (lhs->size() != rhs->size()) return lhs->size() < rhs->size();
         for (unsigned i = 0; i < lhs->size(); i++) {
-            if (lhs[i] != rhs[i]) return lhs[i] < rhs[i];
+            if ((*lhs)[i] != (*rhs)[i]) return (*lhs)[i] < (*rhs)[i];
         }
         return false;
     }
@@ -44,6 +44,7 @@ public:
 
     ~CellContainerSet() {
       for (vector<int> *x: data) {
+        if (verbosity >= 2) {printf("dcellf"); for(int i: *x){printf(" %d", i);} printf("\n");}
         delete x;
       }
     }

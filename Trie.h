@@ -64,7 +64,7 @@ public:
   {}
 
   Head(Head&& old) : tag(old.tag), backjumper(old.backjumper) {
-    printf("MOVING Head\n");
+    // printf("MOVING Head\n");
     old.backjumper = NULL;
   }
 
@@ -125,6 +125,16 @@ enum WhatToDo {
 };
 
 
+struct PropUndo : public Undoable {
+  void undo(Solver &S, Lit _p);
+};
+
+
+struct ActiveVarUndo : public Undoable {
+  void undo(Solver &S, Lit _p);
+};
+
+
 class Trie : public Constr {
 public:
   Hor root;
@@ -137,6 +147,9 @@ public:
   unsigned active_var_old = 0;
   vector<unsigned> my_zeroes;
   vector<BackJumper*> propagations;
+  PropUndo prop_undo;
+  ActiveVarUndo active_var_undo;
+  vector<BackJumper*> acc_backjumpers;
   int last_state_level = -1;
 
   Trie(unsigned var_count);

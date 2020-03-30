@@ -128,17 +128,17 @@ bool Solver::onSatConflict(const vector<int>& cell) {
   int         backtrack_level;
 
   if (decisionLevel() <= root_level) {
-      printf("DECLEVEL\n");
+      if (verbosity >= 2) printf("DECLEVEL\n");
       return false;
   }
 
   if (!analyze2(cell, learnt_clause, backtrack_level)) {
-      printf("DECLEVEL2\n");
+      if (verbosity >= 2) printf("DECLEVEL2\n");
       return false;
   }
 
   cancelUntil(max(backtrack_level, root_level));
-  check(enqueue(learnt_clause[0], trie));
+  record(learnt_clause);
   varDecayActivity(); claDecayActivity();
 
   return true;
@@ -169,22 +169,26 @@ bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
     Lit         p = lit_Undef;
     vec<Lit>    p_reason;
     seen.growTo(nVars(), 0);
+    int out_learnt_final_size;
+    int out_btlevel_final;
 
     // Generate conflict clause:
     //
     out_learnt.push(lit_Undef);      // (leave room for the asserting literal)
     out_btlevel = 0;
 
-    while (true) {
-        assert(confl != NULL);          // (otherwise should be UIP)
+    p_reason.clear();
+    confl->calcReason(*this, p, p_reason);
+    if (decisionLevel() <= root_level) return false;
 
-        p_reason.clear();
-        confl->calcReason(*this, p, p_reason);
-        printf("REASON " L_LIT, L_lit(p));
-        for (int i = 0; i < p_reason.size(); i++) {
-          printf(" " L_LIT, L_lit(p_reason[i]));
+    while (true) {
+        if (verbosity >= 2) {
+          printf("REASON " L_LIT ":", L_lit(p));
+          for (int i = 0; i < p_reason.size(); i++) {
+            printf(" " L_LIT, L_lit(p_reason[i]));
+          }
+          printf("\n");
         }
-        printf("\n");
 
         for (int j = 0; j < p_reason.size(); j++){
             Lit q = p_reason[j];
@@ -194,53 +198,86 @@ bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
                 if (level[var(q)] == decisionLevel())
                     pathC++;
                 else{
-                    printf("PUSH " L_LIT " %d %d\n", L_lit(~q), level[var(q)], decisionLevel());
+                    if (verbosity >= 2) printf("PUSH " L_LIT " %d %d\n", L_lit(~q), level[var(q)], decisionLevel());
                     out_learnt.push(~q),
                     out_btlevel = max(out_btlevel, level[var(q)]);
                 }
             }
         }
 
-find_next_p:
         // Select next clause to look at:
-        do{
+        while (true) {
             p = trail.last();
             confl = reason[var(p)];
-            undoOne();
-        }while (!seen[var(p)]);
 
-        pathC--;
+            if (seen[var(p)]) {
+              seen[var(p)] = 0;
 
-        if (pathC == 0 && out_learnt[0] == lit_Undef) out_learnt[0] = ~p;
-
-        if (confl == NULL) {
-          if (seen[var(p)]) { seen[var(p)] = 0; break; }
-          else {
-            pathC = 0;
-            for (int j = 1; j < out_learnt.size(); j++) {
-              Lit lit = out_learnt[j];
-              if (level[var(lit)] == out_btlevel) {
-                pathC++;
+              if (confl == NULL) {
+                if (out_learnt[0] == lit_Undef) {
+                  if (verbosity >= 2) printf("ASSERTING " L_LIT " %d\n", L_lit(~p), out_learnt.size());
+                  out_learnt[0] = ~p;
+                  out_learnt_final_size = out_learnt.size();
+                  out_btlevel_final = out_btlevel;
+                }
+                undoOne();
+                goto resolved;
               }
-              else if (pathC) {
-                out_learnt[j - pathC] = lit;
+
+              pathC--;
+
+              if (pathC == 0 && out_learnt[0] == lit_Undef) {
+                if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
+                out_learnt[0] = ~p;
+                out_learnt_final_size = out_learnt.size();
+                out_btlevel_final = out_btlevel;
               }
+
+              p_reason.clear();
+              confl->calcReason(*this, p, p_reason);
+              undoOne();
+
+              break;
             }
 
-            out_learnt.shrink(out_learnt.size() - pathC);
-            cancelUntil(out_btlevel);
+            undoOne();
 
-            if (decisionLevel() == root_level)
-              return false;
+            if (confl == NULL) {
+              if (verbosity >= 2) printf("OLD_LEVEL\n");
+              pathC = 0;
+              int max_level = out_btlevel;
+              out_btlevel = 0;
 
-            goto find_next_p;
-          }
+              if (max_level <= root_level) {
+                for (int j = 1; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;
+                return false;
+              }
+
+              for (int j = 1; j < out_learnt.size(); j++) {
+                Lit lit = out_learnt[j];
+                int lvl = level[var(lit)];
+                if (lvl == max_level) {
+                  pathC++;
+                }
+                else {
+                  out_btlevel = max(out_btlevel, lvl);
+                  if (pathC) out_learnt[j - pathC] = lit;
+                }
+              }
+
+              out_learnt.shrink(pathC);
+              out_learnt[0] = lit_Undef;
+              cancelUntil(max_level);
+            }
         }
-
-        seen[var(p)] = 0;
     }
 
+resolved:
+
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
+
+    out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
+    out_btlevel = out_btlevel_final;
 
     if (verbosity >= 2){
         printf(L_IND "Learnt ", L_ind);
@@ -257,6 +294,9 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
     int         pathC    = 0;
     Lit         p = lit_Undef;
     vec<Lit>    p_reason;
+    int out_learnt_final_size;
+    int out_btlevel_final;
+
     seen.growTo(nVars(), 0);
 
     for (int i: cell) {
@@ -265,7 +305,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
 
     // Generate conflict clause:
     //
-    out_learnt.push();      // (leave room for the asserting literal)
+    out_learnt.push(lit_Undef);      // (leave room for the asserting literal)
     out_btlevel = 0;
     while(true){
         for (int j = 0; j < p_reason.size(); j++){
@@ -282,52 +322,90 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
             }
         }
 
-find_next_p:
         Constr* confl;
+
         // Select next clause to look at:
-        do {
+        while (true) {
             p = trail.last();
             confl = reason[var(p)];
-            printf("GetP %d\n", var(p));
-            undoOne();
-        } while (!seen[var(p)]);
 
-        pathC--;
-        if (pathC == 0 && out_learnt[0] == lit_Undef) out_learnt[0] = ~p;
+            if (seen[var(p)]) {
+              seen[var(p)] = 0;
 
-        if (confl == NULL) {
-          if (seen[var(p)]) { seen[var(p)] = 0; break; }
-          else {
-            pathC = 0;
-            for (int j = 1; j < out_learnt.size(); j++) {
-              Lit lit = out_learnt[j];
-              if (level[var(lit)] == out_btlevel) {
-                pathC++;
+              if (confl == NULL) {
+                if (out_learnt[0] == lit_Undef) {
+                  if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
+                  out_learnt[0] = ~p;
+                  out_learnt_final_size = out_learnt.size();
+                  out_btlevel_final = out_btlevel;
+                }
+
+                undoOne();
+                goto resolved;
               }
-              else if (pathC) {
-                out_learnt[j - pathC] = lit;
+
+              pathC--;
+
+              if (pathC == 0 && out_learnt[0] == lit_Undef) {
+                if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
+                out_learnt[0] = ~p;
+                out_learnt_final_size = out_learnt.size();
+                out_btlevel_final = out_btlevel;
               }
+
+              p_reason.clear();
+              confl->calcReason(*this, p, p_reason);
+
+              if (verbosity >= 2) {
+                printf("REASON " L_LIT ":", L_lit(p));
+                for (int i = 0; i < p_reason.size(); i++) {
+                  printf(" " L_LIT, L_lit(p_reason[i]));
+                }
+                printf("\n");
+              }
+
+              undoOne();
+              break;
             }
 
-            out_learnt.shrink(out_learnt.size() - pathC);
-            cancelUntil(out_btlevel);
+            undoOne();
 
-            if (decisionLevel() == root_level)
-              return false;
+            if (confl == NULL) {
+              if (verbosity >= 2) printf("OLD_LEVEL\n");
+              pathC = 0;
+              int max_level = out_btlevel;
+              out_btlevel = 0;
 
-            goto find_next_p;
-          }
+              if (max_level <= root_level) {
+                for (int j = 1; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;
+                return false;
+              }
+
+              for (int j = 1; j < out_learnt.size(); j++) {
+                Lit lit = out_learnt[j];
+                int lvl = level[var(lit)];
+                if (lvl == max_level) {
+                  pathC++;
+                }
+                else {
+                  out_btlevel = max(out_btlevel, lvl);
+                  if (pathC) out_learnt[j - pathC] = lit;
+                }
+              }
+
+              out_learnt.shrink(pathC);
+              out_learnt[0] = lit_Undef;
+              cancelUntil(max_level);
+            }
         }
-
-        seen[var(p)] = 0;
-
-        assert(confl != NULL);          // (otherwise should be UIP)
-
-        p_reason.clear();
-        confl->calcReason(*this, p, p_reason);
     }
 
+resolved:
+
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
+
+    out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
+    out_btlevel = out_btlevel_final;
 
     if (verbosity >= 2){
         printf(L_IND "Learnt ", L_ind);
@@ -335,7 +413,7 @@ find_next_p:
         printf(" at level %d\n", out_btlevel);
     }
 
-    printf("ANALYZED2\n");
+    if (verbosity >= 2) printf("ANALYZED2\n");
 
     return true;
 }
@@ -524,7 +602,7 @@ lbool Solver::search()
             stats.conflicts++; conflictC++;
             vec<Lit>    learnt_clause;
             int         backtrack_level;
-            if (decisionLevel() == root_level)
+            if (decisionLevel() <= root_level)
                 return l_False;
             if (!analyze(confl, learnt_clause, backtrack_level))
                 return l_False;
@@ -618,7 +696,18 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
 
-    trie->reset(*this);
+    if (trie->root.vers->size()) {
+      trie->reset(*this);
+      bool keep_watch;
+      Lit p = outputs[(*trie->root.vers)[0].tag];
+      if (value(var(p)) != l_Undef) {
+        if (!trie->propagate(*this, p, keep_watch) || propagate() != NULL) {
+          propQ.clear();
+          cancelUntil(0);
+          return false;
+        }
+      }
+    }
 
     for (int i = 0; i < assumps.size(); i++)
         if (!assume(assumps[i]) || propagate() != NULL){

@@ -307,14 +307,16 @@ int main(int argc, char** argv)
 
     vector<int> *cell = new vector<int>(S.outputs.size());
     for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
-    printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");
+    if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
     Trie trie(S.outputs.size());
     S.trie = &trie;
     S.addConstr(&trie);
 
-    for (int x = 0; x < S.outputs.size(); x++) {
-      printf("VAR %d %d %d\n", x, var(S.outputs[x]), sign(S.outputs[x]));
+    if (verbosity >= 2) {
+      for (int x = 0; x < S.outputs.size(); x++) {
+        printf("VAR %d " L_LIT "\n", x, L_lit(S.outputs[x]));
+      }
     }
 
     chrono::duration<double> elapsed_sat = chrono::duration<double>::zero();
@@ -326,14 +328,13 @@ int main(int argc, char** argv)
     auto tic = chrono::steady_clock::now();
 
     MeasuredSupQ container_supq;
-    SubsetQ* subq_constr = new SubsetQ(S);
 
     int omitted = 0;
     vec<Lit> solver_input(S.outputs.size());
 
     while (true) {
         if (container_supq.get(*cell)) {
-          printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");
+          if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
           delete cell;
           omitted++;
         } else {
@@ -363,7 +364,7 @@ int main(int argc, char** argv)
           st = S.solve(solver_input);
           elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
 
-          printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");
+          if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
           delete cell;
 
           if (st) {
@@ -378,23 +379,23 @@ int main(int argc, char** argv)
                           S, *cell, initial, elapsed_sat,
                           cell_container, acnt, satCnt, unsatCnt, maxDepth,
                           omitted)) {
-                      printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");
-                      printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");
+                      if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+                      if (verbosity >= 2) {printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
                       delete cell;
                       goto l_reach;
                   }
-                  printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");
+                  if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
                   cell_container.add(cell);
 
                   tic = chrono::steady_clock::now();
-                  printf("ON_SAT_START\n");
                   BackJumper *back = trie.onSat(S);
-                  printf("ON_SAT_END\n");
                   if (!S.onSatConflict(*cell)) {
+                    if (verbosity >= 2) printf("STOP %d\n", back != NULL);
                     if (back) back->cut();
                     break;
                   }
+                  if (verbosity >= 2) printf("NEXT\n");
                   if (back) back->cut();
               };
               elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
@@ -403,6 +404,7 @@ int main(int argc, char** argv)
 
         if (!cell_container.size()) break;
         cell = cell_container.pop();
+        if (verbosity >= 2) {printf("pcell"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
         tic = chrono::steady_clock::now();
         S.reset();
@@ -431,11 +433,8 @@ finally:
       << elapsed_all.count() << " "
       << container_supq.elapsed_add.count() << " "
       << container_supq.elapsed_get.count() << " "
-      << subq_constr->supq.elapsed_add.count() << " "
-      << subq_constr->supq.elapsed_get.count() << " "
       << endl;
 
     S.constrs.pop();
-    delete subq_constr;
     return 0;
 }
