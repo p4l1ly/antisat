@@ -333,7 +333,7 @@ int main(int argc, char** argv)
     vec<Lit> solver_input(S.outputs.size());
 
     while (true) {
-        if (container_supq.get_or_add(*cell)) {
+        if (false) { // (container_supq.get_or_add(*cell)) {
           if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
           delete cell;
           omitted++;
@@ -399,6 +399,8 @@ int main(int argc, char** argv)
               elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
           }
         }
+
+        unsatCnt++;
 
         if (!cell_container.size()) break;
         cell = cell_container.pop();
