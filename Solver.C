@@ -644,7 +644,7 @@ lbool Solver::search()
                   return l_True;
               }
 
-              check(assume(~Lit(next)));
+              check(assume(Lit(next, true)));
             }
             else {
               // printf("out decision %c%d %d\n", sign(decision) ? '-' : '+', var(decision));

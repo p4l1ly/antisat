@@ -98,7 +98,7 @@ static void readClause(char*& in, Solver& S, vec<Lit>& lits) {
         if (parsed_lit == 0) break;
         var = abs(parsed_lit)-1;
         while (var >= S.nVars()) S.newVar();
-        lits.push( (parsed_lit > 0) ? Lit(var) : ~Lit(var) );
+        lits.push( (parsed_lit > 0) ? Lit(var) : Lit(var, true) );
     }
 }
 
@@ -149,7 +149,7 @@ static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
         while (var >= S.output_map.size()) S.output_map.push(-1);
         while (var >= S.nVars()) S.newVar();
 
-        lits.push( neg ? ~Lit(var) : Lit(var) );
+        lits.push( neg ? Lit(var, true) : Lit(var) );
     }
     in++;
 }
@@ -185,7 +185,7 @@ static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
         while (var >= S.output_map.size()) S.output_map.push(-1);
         S.output_map[var] = S.outputs.size();
 
-        Lit lit = neg ? ~Lit(var) : Lit(var);
+        Lit lit = neg ? Lit(var, true) : Lit(var);
         S.outputs.push(lit);
         while (var >= S.pures.size()) S.pures.push(false);
         if (!S.pures[var]) S.impure_outputs.push(lit);
@@ -309,7 +309,7 @@ int main(int argc, char** argv)
     for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
     if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-    Trie trie(S.outputs.size());
+    Trie trie(S.outputs.size(), S.nVars() * 2);
     S.trie = &trie;
     S.addConstr(&trie);
 
@@ -340,7 +340,7 @@ int main(int argc, char** argv)
         } else {
           solver_input.clear();
           for(int i: *cell) {
-            solver_input.push(~Lit(i));
+            solver_input.push(Lit(i, true));
           }
 
           if (verbosity >= -1) {

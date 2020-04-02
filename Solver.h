@@ -28,7 +28,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Constraints.h"
 #include "Queue.h"
 #include "VarOrder.h"
-#include "OutOrder.h"
 #include "Trie.h"
 
 #define L_IND    "%-*d"

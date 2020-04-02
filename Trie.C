@@ -8,6 +8,20 @@
 
 using std::cout;
 
+void Trie::watch(Solver &S, int var_) {
+  // optimized but opaque way to tell: watch(Lit(var)); watch(~Lit(var))
+  var_ += var_;
+  if (!watch_mask[var_]) {
+    watch_mask[var_] = true;
+    S.watches[var_].push(this);
+  }
+  var_++;
+  if (!watch_mask[var_]) {
+    watch_mask[var_] = true;
+    S.watches[var_].push(this);
+  }
+}
+
 void BackJumper::undo(Solver &S, Lit _p) {
   S.trie->active_hor = active_hor;
   S.trie->hor_ix = hor_ix;
@@ -22,18 +36,18 @@ void BackJumper::undo(Solver &S, Lit _p) {
     ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
     : (*active_hor->vers)[hor_ix].tag
   ];
-  S.watches[index(out_lit)].push(S.trie);
-  S.watches[index(~out_lit)].push(S.trie);
+  S.trie->watch(S, var(out_lit));
   if (verbosity >= 2) printf("WU " L_LIT "\n", L_lit(out_lit));
 }
 
-Trie::Trie(unsigned var_count_)
+Trie::Trie(unsigned var_count_, int index_count)
 : root(0, NULL),
   var_count(var_count_),
   back_ptrs(var_count_),
   my_zeroes(),
   propagations(),
-  acc_backjumpers(var_count_)
+  acc_backjumpers(var_count_),
+  watch_mask(index_count)
 {
   my_zeroes.reserve(var_count_);
   propagations.reserve(var_count_);
@@ -241,6 +255,7 @@ WhatToDo Trie::after_vers_change(Solver &S) {
 bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) printf("PROP %d %d %d " L_LIT "\n", active_hor->topo, hor_ix, ver_ix, L_lit(p));
 
+  watch_mask[index(p)] = false;
   if (hor_ix >= active_hor->vers->size()) return true;
 
   unsigned out = ver_ix >= 0
@@ -295,8 +310,7 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
           ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
           : (*active_hor->vers)[hor_ix].tag
         ];
-        S.watches[index(out_lit)].push(this);
-        S.watches[index(~out_lit)].push(this);
+        watch(S, var(out_lit));
         if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
         return true;
       }
@@ -309,24 +323,14 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
 
       case PROPAGATE: {
         if (verbosity >= 2) printf("PROPAGATE %d %d %d\n", active_hor->topo, hor_ix, ver_ix);
-        BackJumper *backjumper;
+        out_lit = S.outputs[ver_ix != -1
+          ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
+          : (*active_hor->vers)[hor_ix].tag
+        ];
 
-        if (ver_ix != -1) {
-            HorHead &hor_head = (*(*active_hor->vers)[hor_ix].hors)[ver_ix];
-            out_lit = S.outputs[hor_head.tag];
-            backjumper = hor_head.backjumper;
-        }
-        else {
-            VerHead &ver_head = (*active_hor->vers)[hor_ix];
-            out_lit = S.outputs[ver_head.tag];
-            backjumper = ver_head.backjumper;
-        }
-
-        S.watches[index(out_lit)].push(this);
-        S.watches[index(~out_lit)].push(this);
+        watch(S, var(out_lit));
         if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(out_lit));
 
-        backjumper->my_zeroes_size = my_zeroes.size();
         propagations.push_back(my_zeroes.size());
         S.undos[var(out_lit)].push(&prop_undo);
         return S.enqueue(out_lit, this);
@@ -390,8 +394,7 @@ void Trie::reset(Solver &S) {
 
   if (root.vers->size()) {
     Lit out_lit = S.outputs[(*root.vers)[0].tag];
-    S.watches[index(out_lit)].push(this);
-    S.watches[index(~out_lit)].push(this);
+    watch(S, var(out_lit));
     if (verbosity >= 2) printf("WR " L_LIT "\n", L_lit(out_lit));
   }
 }

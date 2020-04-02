@@ -150,13 +150,15 @@ public:
   PropUndo prop_undo = {};
   ActiveVarUndo active_var_undo = {};
   vector<BackJumper*> acc_backjumpers;
+  vector<bool> watch_mask;
   int last_state_level = -1;
 
-  Trie(unsigned var_count);
+  Trie(unsigned var_count, int index_count);
 
   Lit guess(Solver &S);
   BackJumper* onSat(Solver &S);
   void reset(Solver &S);
+  void watch(Solver &S, int var_);
 
   void remove(Solver& S, bool just_dealloc);
   bool simplify(Solver& S);
