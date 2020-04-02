@@ -147,8 +147,8 @@ public:
   unsigned active_var_old = 0;
   vector<unsigned> my_zeroes;
   vector<unsigned> propagations;
-  PropUndo prop_undo;
-  ActiveVarUndo active_var_undo;
+  PropUndo prop_undo = {};
+  ActiveVarUndo active_var_undo = {};
   vector<BackJumper*> acc_backjumpers;
   int last_state_level = -1;
 

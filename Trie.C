@@ -33,8 +33,6 @@ Trie::Trie(unsigned var_count_)
   back_ptrs(var_count_),
   my_zeroes(),
   propagations(),
-  prop_undo(),
-  active_var_undo(),
   acc_backjumpers(var_count_)
 {
   my_zeroes.reserve(var_count_);
