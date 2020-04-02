@@ -146,7 +146,7 @@ public:
   unsigned active_var = 0;
   unsigned active_var_old = 0;
   vector<unsigned> my_zeroes;
-  vector<BackJumper*> propagations;
+  vector<unsigned> propagations;
   PropUndo prop_undo;
   ActiveVarUndo active_var_undo;
   vector<BackJumper*> acc_backjumpers;

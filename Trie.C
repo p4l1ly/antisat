@@ -38,6 +38,7 @@ Trie::Trie(unsigned var_count_)
   acc_backjumpers(var_count_)
 {
   my_zeroes.reserve(var_count_);
+  propagations.reserve(var_count_);
   active_hor = &root;
 }
 
@@ -328,7 +329,7 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
         if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(out_lit));
 
         backjumper->my_zeroes_size = my_zeroes.size();
-        propagations.push_back(backjumper);
+        propagations.push_back(my_zeroes.size());
         S.undos[var(out_lit)].push(&prop_undo);
         return S.enqueue(out_lit, this);
       }
@@ -367,7 +368,7 @@ void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   }
   else {
     if (verbosity >= 2) printf("PROPS %lu\n", propagations.size());
-    unsigned my_zeroes_size = propagations.back()->my_zeroes_size;
+    unsigned my_zeroes_size = propagations.back();
 
     for (unsigned i = 0; i < my_zeroes_size; i++) {
       out_reason.push(~S.outputs[my_zeroes[i]]);
