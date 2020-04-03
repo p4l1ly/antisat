@@ -31,7 +31,7 @@ void BackJumper::undo(Solver &S, Lit _p) {
       S.trie->my_zeroes.end()
   );
 
-  if (verbosity >= 2) printf("UNDO %d %d %d %lu\n", active_hor->topo, hor_ix, ver_ix, active_hor->vers->size());
+  if (verbosity >= 2) printf("UNDO %d %d %lu\n", hor_ix, ver_ix, active_hor->vers->size());
   Lit out_lit = S.outputs[ver_ix >= 0
     ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
     : (*active_hor->vers)[hor_ix].tag
@@ -41,7 +41,7 @@ void BackJumper::undo(Solver &S, Lit _p) {
 }
 
 Trie::Trie(unsigned var_count_, int index_count)
-: root(0, NULL),
+: root(NULL),
   var_count(var_count_),
   back_ptrs(var_count_),
   my_zeroes(),
@@ -63,7 +63,7 @@ Lit Trie::guess(Solver &S) {
 
     hor_head.backjumper->my_zeroes_size = my_zeroes.size();
     S.undos[var(out_lit)].push(hor_head.backjumper);
-    if (verbosity >= 2) printf("GUESS_VER %d %d %d %d " L_LIT "\n", active_hor->topo, hor_ix, ver_ix, hor_head.tag, L_lit(out_lit));
+    if (verbosity >= 2) printf("GUESS_VER %d %d %d " L_LIT "\n", hor_ix, ver_ix, hor_head.tag, L_lit(out_lit));
     return out_lit;
   }
   if (hor_ix < active_hor->vers->size()) {
@@ -72,7 +72,7 @@ Lit Trie::guess(Solver &S) {
 
     ver_head.backjumper->my_zeroes_size = my_zeroes.size();
     S.undos[var(out_lit)].push(ver_head.backjumper);
-    if (verbosity >= 2) printf("GUESS_HOR %d %d %d %d " L_LIT "\n", active_hor->topo, hor_ix, ver_ix, ver_head.tag, L_lit(out_lit));
+    if (verbosity >= 2) printf("GUESS_HOR %d %d %d " L_LIT "\n", hor_ix, ver_ix, ver_head.tag, L_lit(out_lit));
     return out_lit;
   }
   else {
@@ -197,7 +197,7 @@ BackJumper* Trie::onSat(Solver &S) {
 
 void BackJumper::cut() {
   vector<HorHead> &hors = *(*active_hor->vers)[hor_ix].hors;
-  if (verbosity >= 2) printf("CUTTING %d[%d] AT %d\n", active_hor->topo, hor_ix, ver_ix);
+  if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
   hors.erase(hors.begin() + ver_ix, hors.end());
 }
 
@@ -253,7 +253,7 @@ WhatToDo Trie::after_vers_change(Solver &S) {
 
 
 bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
-  if (verbosity >= 2) printf("PROP %d %d %d " L_LIT "\n", active_hor->topo, hor_ix, ver_ix, L_lit(p));
+  if (verbosity >= 2) printf("PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
 
   watch_mask[index(p)] = false;
   if (hor_ix >= active_hor->vers->size()) return true;
@@ -296,7 +296,7 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
 
     switch (what_to_do) {
       case AGAIN: {
-        if (verbosity >= 2) printf("AGAIN %d %d %d\n", active_hor->topo, hor_ix, ver_ix);
+        if (verbosity >= 2) printf("AGAIN %d %d\n", hor_ix, ver_ix);
         out = ver_ix >= 0
           ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
           : (*active_hor->vers)[hor_ix].tag;
@@ -305,7 +305,7 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       }
 
       case WATCH: {
-        if (verbosity >= 2) printf("WATCH %d %d %d\n", active_hor->topo, hor_ix, ver_ix);
+        if (verbosity >= 2) printf("WATCH %d %d\n", hor_ix, ver_ix);
         out_lit = S.outputs[ver_ix != -1
           ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
           : (*active_hor->vers)[hor_ix].tag
@@ -316,13 +316,13 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       }
 
       case DONE: {
-        if (verbosity >= 2) printf("DONE %d %d %d, active_var: %d\n", active_hor->topo, hor_ix, ver_ix, active_var);
+        if (verbosity >= 2) printf("DONE %d %d, active_var: %d\n", hor_ix, ver_ix, active_var);
         last_state_level = S.decisionLevel();
         return true;
       }
 
       case PROPAGATE: {
-        if (verbosity >= 2) printf("PROPAGATE %d %d %d\n", active_hor->topo, hor_ix, ver_ix);
+        if (verbosity >= 2) printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
         out_lit = S.outputs[ver_ix != -1
           ? (*(*active_hor->vers)[hor_ix].hors)[ver_ix].tag
           : (*active_hor->vers)[hor_ix].tag
@@ -337,7 +337,7 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       }
 
       case CONFLICT: {
-          if (verbosity >= 2) printf("CONFLICT %d %d %d\n", active_hor->topo, hor_ix, ver_ix);
+          if (verbosity >= 2) printf("CONFLICT %d %d\n", hor_ix, ver_ix);
           return false;
       }
     }

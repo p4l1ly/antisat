@@ -20,14 +20,13 @@ struct BackJumper;
 
 struct Hor {
   vector<struct VerHead> *vers;
-  unsigned topo;
   struct BackJumper *back;
 
-  Hor(unsigned topo_, struct BackJumper *back_)
-  : vers(new vector<struct VerHead>()), topo(topo_), back(back_)
+  Hor(struct BackJumper *back_)
+  : vers(new vector<struct VerHead>()), back(back_)
   {}
 
-  Hor(Hor&& old) : vers(old.vers), topo(old.topo), back(old.back) {
+  Hor(Hor&& old) : vers(old.vers), back(old.back) {
     old.vers = NULL;
   }
 
@@ -80,7 +79,7 @@ public:
 
   HorHead(unsigned tag_, Hor *active_hor, unsigned hor_ix, int ver_ix)
   : Head(tag_, active_hor, hor_ix, ver_ix)
-  , hor(new Hor(active_hor->topo + 1, backjumper))
+  , hor(new Hor(backjumper))
   {}
 
   HorHead(HorHead&& old) : Head(std::move(old)), hor(old.hor) {
