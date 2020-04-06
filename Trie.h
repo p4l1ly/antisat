@@ -102,7 +102,7 @@ public:
   unsigned tag;
   vector<VerHead> *vers;
 
-  HorHead(unsigned tag_) : tag(tag_), vers(new vector<VerHead>()) {}
+  HorHead(unsigned tag_) : tag(tag_), vers(NULL) {}
   HorHead(HorHead&& old) : tag(old.tag), vers(old.vers) { old.vers = NULL; }
 
   HorHead& operator=(const HorHead&) {
@@ -163,6 +163,7 @@ public:
   vector<BackJumper> backjumpers;
   vector<Knee> knees;
   int last_state_level = -1;
+  bool move_right = false;
 
   Trie(unsigned var_count, int index_count);
 

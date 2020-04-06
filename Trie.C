@@ -43,7 +43,7 @@ Trie::Trie(unsigned var_count_, int index_count)
 
 // TODO (optional) support impure_outputs
 Lit Trie::guess(Solver &S) {
-  if (ver_ix != -1) {
+  if (!move_right && ver_ix != -1) {
     HorHead &hor_head = (*(*active_hor)[hor_ix].hors)[ver_ix];
     Lit out_lit = S.outputs[hor_head.tag];
 
@@ -53,7 +53,7 @@ Lit Trie::guess(Solver &S) {
     if (verbosity >= 2) printf("GUESS_VER %d %d %d " L_LIT "\n", hor_ix, ver_ix, hor_head.tag, L_lit(out_lit));
     return out_lit;
   }
-  if (hor_ix < active_hor->size()) {
+  if (!move_right && hor_ix < active_hor->size()) {
     VerHead &ver_head = (*active_hor)[hor_ix];
     Lit out_lit = S.outputs[ver_head.tag];
 
@@ -127,6 +127,16 @@ CutKnee Trie::onSat(Solver &S) {
   }
 
   const std::pair<int, unsigned>& x = added_vars[0];
+
+  if (move_right) {
+    move_right = false;
+    vector<VerHead> *new_active_hor = new vector<VerHead>();
+    (*(*active_hor)[hor_ix].hors)[ver_ix].vers = new_active_hor;
+    active_hor = new_active_hor;
+    hor_ix = 0;
+    ver_ix = -1;
+  }
+
   VerHead &ver_head = active_hor->emplace_back(x.second);
   ver_head.hors->reserve(var_count - my_zeroes.size());
 
@@ -258,10 +268,17 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       if (S.value(out_lit) == l_True) {
         knees.emplace_back(active_hor, hor_ix, ver_ix);
 
-        active_hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
-        hor_ix = 0;
-        ver_ix = -1;
-        what_to_do = after_hors_change(S);
+        vector<VerHead> *hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+        if (hor == NULL) {
+          move_right = true;
+          what_to_do = WhatToDo::DONE;
+        }
+        else {
+          active_hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+          hor_ix = 0;
+          ver_ix = -1;
+          what_to_do = after_hors_change(S);
+        }
       }
       else {
         my_zeroes.push_back(out);
@@ -379,6 +396,7 @@ void Trie::reset(Solver &S) {
   propagations.clear();
   my_zeroes.clear();
   knees.clear();
+  move_right = false;
 
   if (verbosity >= 2) printf("RESET\n");
 
@@ -405,8 +423,11 @@ void BackJumperUndo::undo(Solver &S, Lit _p) {
   S.trie->backjumpers.pop_back();
 }
 
+
 void BackJumper::jump(Solver &S) {
   Trie &trie = *S.trie;
+
+  trie.move_right = false;
 
   trie.active_hor = active_hor;
   trie.hor_ix = hor_ix;
