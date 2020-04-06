@@ -96,6 +96,8 @@ CutKnee Trie::onSat(Solver &S) {
 
   int max_level = -1;
   vector<std::pair<int, unsigned>> added_vars;
+  added_vars.reserve(var_count);
+
   for (unsigned x = 0; x < var_count; x++) {
     if (S.value(S.outputs[x]) == l_False) {
       max_level = max(max_level, S.level[var(S.outputs[x])]);
@@ -126,7 +128,6 @@ CutKnee Trie::onSat(Solver &S) {
 
   const std::pair<int, unsigned>& x = added_vars[0];
   VerHead &ver_head = active_hor->emplace_back(x.second);
-
   ver_head.hors->reserve(var_count - my_zeroes.size());
 
   for (unsigned i = 1; i < added_vars.size(); i++) {
