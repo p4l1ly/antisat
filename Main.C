@@ -387,14 +387,14 @@ int main(int argc, char** argv)
                   cell_container.add(cell);
 
                   tic = chrono::steady_clock::now();
-                  BackJumper *back = trie.onSat(S);
+                  CutKnee cut_knee = trie.onSat(S);
                   if (!S.onSatConflict(*cell)) {
-                    if (verbosity >= 2) printf("STOP %d\n", back != NULL);
-                    if (back) back->cut();
+                    if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
+                    if (cut_knee.enabled) cut_knee.knee.cut();
                     break;
                   }
                   if (verbosity >= 2) printf("NEXT\n");
-                  if (back) back->cut();
+                  if (cut_knee.enabled) cut_knee.knee.cut();
               };
               elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
           }

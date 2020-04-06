@@ -276,8 +276,11 @@ resolved:
 
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
     out_btlevel = out_btlevel_final;
+#pragma GCC diagnostic pop
 
     if (verbosity >= 2){
         printf(L_IND "Learnt ", L_ind);
@@ -404,8 +407,11 @@ resolved:
 
     for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
     out_btlevel = out_btlevel_final;
+#pragma GCC diagnostic pop
 
     if (verbosity >= 2){
         printf(L_IND "Learnt ", L_ind);
@@ -696,10 +702,10 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
 
-    if (trie->root.vers->size()) {
+    if (trie->root.size()) {
       trie->reset(*this);
       bool keep_watch;
-      Lit p = outputs[(*trie->root.vers)[0].tag];
+      Lit p = outputs[trie->root[0].tag];
       if (value(var(p)) != l_Undef) {
         if (!trie->propagate(*this, p, keep_watch) || propagate() != NULL) {
           propQ.clear();

@@ -69,7 +69,12 @@ public:
 
     // Learnt clauses only:
     bool    locked  (const Solver& S) const;
-    float&  activity(void) const { return *((float*)&data[size()]); }
+    float&  activity(void) const {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+      return *((float*)&data[size()]);
+#pragma GCC diagnostic pop
+    }
 
     // Constraint interface:
     void remove    (Solver& S, bool just_dealloc = false);

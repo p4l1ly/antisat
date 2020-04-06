@@ -15,99 +15,113 @@ using std::unordered_set;
 //=================================================================================================
 
 class VerHead;
-struct BackJumper;
 
+struct Knee {
+  vector<VerHead> *active_hor;
+  unsigned hor_ix;
+  unsigned ver_ix;
 
-struct Hor {
-  vector<struct VerHead> *vers;
-  struct BackJumper *back;
+  Knee() {}
 
-  Hor(struct BackJumper *back_)
-  : vers(new vector<struct VerHead>()), back(back_)
+  Knee
+  ( vector<VerHead> *active_hor_
+  , unsigned hor_ix_
+  , int ver_ix_
+  )
+  : active_hor(active_hor_)
+  , hor_ix(hor_ix_)
+  , ver_ix(ver_ix_)
   {}
 
-  Hor(Hor&& old) : vers(old.vers), back(old.back) {
-    old.vers = NULL;
-  }
-
-  ~Hor() {
-    if (vers) delete vers;
-  }
+  void cut();
 };
 
+struct CutKnee {
+  bool enabled;
+  Knee knee;
 
-struct BackJumper : public Undoable {
-    Hor *active_hor;
+  CutKnee() : enabled(false) {}
+
+  CutKnee(Knee &knee_)
+  : enabled(true), knee(knee_.active_hor, knee_.hor_ix, knee_.ver_ix)
+  {}
+};
+
+struct BackJumper {
+    vector<VerHead> *active_hor;
     unsigned hor_ix;
     int ver_ix;
     unsigned my_zeroes_size;
+    unsigned knees_size;
 
-    BackJumper(Hor *active_hor_, unsigned hor_ix_, int ver_ix_)
-    : active_hor(active_hor_), hor_ix(hor_ix_), ver_ix(ver_ix_)
+    BackJumper() {}
+
+    BackJumper
+    ( vector<VerHead> *active_hor_
+    , unsigned hor_ix_
+    , int ver_ix_
+    , unsigned my_zeroes_size_
+    , unsigned knees_size_
+    )
+    : active_hor(active_hor_)
+    , hor_ix(hor_ix_)
+    , ver_ix(ver_ix_)
+    , my_zeroes_size(my_zeroes_size_)
+    , knees_size(knees_size_)
     {}
 
-    void cut();
-
-    void undo(Solver &S, Lit p);
+    void jump(Solver &S);
 };
 
 
-class Head {
+struct AccBackJumper {
+  bool enabled;
+  BackJumper backjumper;
+
+  AccBackJumper() : enabled(false) {}
+
+  void enable
+  ( vector<VerHead> *active_hor
+  , unsigned hor_ix
+  , int ver_ix
+  , unsigned my_zeroes_size
+  , unsigned knees_size
+  ) {
+    enabled = true;
+    backjumper.active_hor = active_hor;
+    backjumper.hor_ix = hor_ix;
+    backjumper.ver_ix = ver_ix;
+    backjumper.my_zeroes_size = my_zeroes_size;
+    backjumper.knees_size = knees_size;
+  }
+};
+
+
+class HorHead {
 public:
   unsigned tag;
-  BackJumper *backjumper;
+  vector<VerHead> *vers;
 
-  Head(unsigned tag_, Hor *active_hor, unsigned hor_ix, int ver_ix)
-  : tag(tag_)
-  , backjumper(new BackJumper(active_hor, hor_ix, ver_ix))
-  {}
-
-  Head(Head&& old) : tag(old.tag), backjumper(old.backjumper) {
-    // printf("MOVING Head\n");
-    old.backjumper = NULL;
-  }
-
-  ~Head() {
-    if (backjumper) delete backjumper;
-  }
-};
-
-
-class HorHead : public Head {
-public:
-  Hor *hor;
-
-  HorHead(unsigned tag_, Hor *active_hor, unsigned hor_ix, int ver_ix)
-  : Head(tag_, active_hor, hor_ix, ver_ix)
-  , hor(new Hor(backjumper))
-  {}
-
-  HorHead(HorHead&& old) : Head(std::move(old)), hor(old.hor) {
-    old.hor = NULL;
-  }
+  HorHead(unsigned tag_) : tag(tag_), vers(new vector<VerHead>()) {}
+  HorHead(HorHead&& old) : tag(old.tag), vers(old.vers) { old.vers = NULL; }
 
   HorHead& operator=(const HorHead&) {
     return *this;  // WARNING: not implemented, only to make vector::erase happy
   }
 
   ~HorHead() {
-    if (hor) delete hor;
+    if (vers) delete vers;
   }
 };
 
 
-class VerHead : public Head {
+class VerHead {
 public:
+  unsigned tag;
   vector<HorHead> *hors;
 
-  VerHead(unsigned tag_, Hor *active_hor, unsigned hor_ix, int ver_ix)
-  : Head(tag_, active_hor, hor_ix, ver_ix)
-  , hors(new vector<HorHead>())
-  {}
-
-  VerHead(VerHead&& old) : Head(std::move(old)), hors(old.hors) {
-    old.hors = NULL;
-  }
+  VerHead(unsigned tag_) : tag(tag_), hors(new vector<HorHead>()) {}
+  VerHead(VerHead&& old) : tag(old.tag), hors(old.hors) { old.hors = NULL; }
 
   ~VerHead() {
     if (hors) delete hors;
@@ -124,20 +138,15 @@ enum WhatToDo {
 };
 
 
-struct PropUndo : public Undoable {
-  void undo(Solver &S, Lit _p);
-};
-
-
-struct ActiveVarUndo : public Undoable {
-  void undo(Solver &S, Lit _p);
-};
+struct PropUndo : public Undoable { void undo(Solver &S, Lit _p); };
+struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
+struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 
 
 class Trie : public Constr {
 public:
-  Hor root;
-  Hor *active_hor;
+  vector<VerHead> root;
+  vector<VerHead> *active_hor;
   unsigned hor_ix = 0;
   int ver_ix = -1;
   unsigned var_count;
@@ -147,15 +156,18 @@ public:
   vector<unsigned> my_zeroes;
   vector<unsigned> propagations;
   PropUndo prop_undo = {};
-  ActiveVarUndo active_var_undo = {};
-  vector<BackJumper*> acc_backjumpers;
+  ActiveVarDoneUndo active_var_done_undo = {};
+  BackJumperUndo backjumper_undo = {};
+  vector<AccBackJumper> acc_backjumpers;
   vector<bool> watch_mask;
+  vector<BackJumper> backjumpers;
+  vector<Knee> knees;
   int last_state_level = -1;
 
   Trie(unsigned var_count, int index_count);
 
   Lit guess(Solver &S);
-  BackJumper* onSat(Solver &S);
+  CutKnee onSat(Solver &S);
   void reset(Solver &S);
   void watch(Solver &S, int var_);
 
