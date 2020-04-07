@@ -272,7 +272,7 @@ inline void printClause(const vec<Lit> &c) {
 }
 
 
-const int verbosity = -2;
+const int verbosity = -3;
 
 //=================================================================================================
 #endif

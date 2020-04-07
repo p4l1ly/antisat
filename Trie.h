@@ -107,11 +107,11 @@ public:
   vector<VerHead> *vers;
 
   HorHead(unsigned tag_) : tag(tag_), vers(NULL) {
-    hor_head_count++;
+    if (verbosity >= -2) hor_head_count++;
   }
   HorHead(HorHead&& old) : tag(old.tag), vers(old.vers) {
     old.vers = NULL;
-    hor_head_count++;
+    if (verbosity >= -2) hor_head_count++;
   }
 
   HorHead& operator=(const HorHead&) {
@@ -119,9 +119,9 @@ public:
   }
 
   ~HorHead() {
-    hor_head_count--;
+    if (verbosity >= -2) hor_head_count--;
     if (vers) {
-      hor_count--;
+      if (verbosity >= -2) hor_count--;
       delete vers;
     }
   }
@@ -134,15 +134,15 @@ public:
   vector<HorHead> *hors;
 
   VerHead(unsigned tag_) : tag(tag_), hors(new vector<HorHead>()) {
-    ver_count++;
+    if (verbosity >= -2) ver_count++;
   }
   VerHead(VerHead&& old) : tag(old.tag), hors(old.hors) {
-    ver_count++;
+    if (verbosity >= -2) ver_count++;
     old.hors = NULL;
   }
 
   ~VerHead() {
-    ver_count--;
+    if (verbosity >= -2) ver_count--;
     if (hors) delete hors;
   }
 };

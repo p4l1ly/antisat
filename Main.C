@@ -412,10 +412,10 @@ int main(int argc, char** argv)
         S.reset();
         elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
 
-        if (verbosity >= -3) {
+        if (verbosity >= -2) {
           reset_count++;
           if (reset_count % 10000 == 0) {
-            printf("memstats %u %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count);
+            printf("memstats %u %d %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count, S.nLearnts());
           }
         }
     }

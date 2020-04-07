@@ -135,7 +135,7 @@ CutKnee Trie::onSat(Solver &S) {
   if (move_right) {
     move_right = false;
     vector<VerHead> *new_active_hor = new vector<VerHead>();
-    hor_count++;
+    if (verbosity >= -2) hor_count++;
     (*(*active_hor)[hor_ix].hors)[ver_ix].vers = new_active_hor;
     active_hor = new_active_hor;
     hor_ix = 0;
