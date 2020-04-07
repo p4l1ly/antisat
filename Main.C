@@ -332,6 +332,8 @@ int main(int argc, char** argv)
     int omitted = 0;
     vec<Lit> solver_input(S.outputs.size());
 
+    unsigned reset_count = 0;
+
     while (true) {
         if (false) { // (container_supq.get_or_add(*cell)) {
           if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
@@ -409,6 +411,13 @@ int main(int argc, char** argv)
         tic = chrono::steady_clock::now();
         S.reset();
         elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+
+        if (verbosity >= -3) {
+          reset_count++;
+          if (reset_count % 10000 == 0) {
+            printf("memstats %u %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count);
+          }
+        }
     }
 
     goto l_unreach;

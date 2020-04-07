@@ -6,6 +6,10 @@
 
 #include "Trie.h"
 
+int hor_head_count = 0;
+int hor_count = 0;
+int ver_count = 0;
+
 using std::cout;
 
 void Trie::watch(Solver &S, int var_) {
@@ -131,6 +135,7 @@ CutKnee Trie::onSat(Solver &S) {
   if (move_right) {
     move_right = false;
     vector<VerHead> *new_active_hor = new vector<VerHead>();
+    hor_count++;
     (*(*active_hor)[hor_ix].hors)[ver_ix].vers = new_active_hor;
     active_hor = new_active_hor;
     hor_ix = 0;

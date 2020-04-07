@@ -16,6 +16,10 @@ using std::unordered_set;
 
 class VerHead;
 
+extern int hor_head_count;
+extern int hor_count;
+extern int ver_count;
+
 struct Knee {
   vector<VerHead> *active_hor;
   unsigned hor_ix;
@@ -102,15 +106,24 @@ public:
   unsigned tag;
   vector<VerHead> *vers;
 
-  HorHead(unsigned tag_) : tag(tag_), vers(NULL) {}
-  HorHead(HorHead&& old) : tag(old.tag), vers(old.vers) { old.vers = NULL; }
+  HorHead(unsigned tag_) : tag(tag_), vers(NULL) {
+    hor_head_count++;
+  }
+  HorHead(HorHead&& old) : tag(old.tag), vers(old.vers) {
+    old.vers = NULL;
+    hor_head_count++;
+  }
 
   HorHead& operator=(const HorHead&) {
     return *this;  // WARNING: not implemented, only to make vector::erase happy
   }
 
   ~HorHead() {
-    if (vers) delete vers;
+    hor_head_count--;
+    if (vers) {
+      hor_count--;
+      delete vers;
+    }
   }
 };
 
@@ -120,10 +133,16 @@ public:
   unsigned tag;
   vector<HorHead> *hors;
 
-  VerHead(unsigned tag_) : tag(tag_), hors(new vector<HorHead>()) {}
-  VerHead(VerHead&& old) : tag(old.tag), hors(old.hors) { old.hors = NULL; }
+  VerHead(unsigned tag_) : tag(tag_), hors(new vector<HorHead>()) {
+    ver_count++;
+  }
+  VerHead(VerHead&& old) : tag(old.tag), hors(old.hors) {
+    ver_count++;
+    old.hors = NULL;
+  }
 
   ~VerHead() {
+    ver_count--;
     if (hors) delete hors;
   }
 };
