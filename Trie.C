@@ -143,7 +143,7 @@ CutKnee Trie::onSat(Solver &S) {
   }
 
   VerHead &ver_head = active_hor->emplace_back(x.second);
-  ver_head.hors->reserve(var_count - my_zeroes.size());
+  ver_head.hors->reserve(added_vars.size() - 1);
 
   for (unsigned i = 1; i < added_vars.size(); i++) {
     ver_head.hors->emplace_back(added_vars[i].second);
