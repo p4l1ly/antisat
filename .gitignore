@@ -2,6 +2,7 @@
 /minisat-*
 vgcore.*
 *.o
+*.or
 *.mak
 draft/
 /tags
