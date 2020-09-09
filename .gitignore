@@ -1,8 +1,5 @@
-/minisat
-/minisat-*
 vgcore.*
-*.o
-*.or
-*.mak
 draft/
 /tags
+/old-bin
+/build
