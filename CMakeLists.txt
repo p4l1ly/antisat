@@ -7,6 +7,9 @@ project(
   LANGUAGES CXX
 )
 
+set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
+set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+
 find_package(CapnProto CONFIG REQUIRED)
 
 set(CAPNPC_SRC_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/schema" CACHE STRING "" FORCE)
@@ -26,4 +29,5 @@ add_executable(
 )
 target_include_directories(afaminisat PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/afa_schema")
 target_link_libraries(afaminisat PRIVATE z)
+target_link_libraries(afaminisat PRIVATE CapnProto::capnp)
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)

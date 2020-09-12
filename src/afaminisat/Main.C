@@ -22,6 +22,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Constraints.h"
 #include "Trie.h"
+#include "schema/cnfafa.capnp.h"
+
 #include <ctime>
 #include <unistd.h>
 #include <signal.h>
@@ -32,12 +34,16 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <string>
 #include <algorithm>
 
+#include <capnp/message.h>
+#include <capnp/serialize-packed.h>
+
 using std::cout;
 using std::endl;
 using std::vector;
 using std::string;
 namespace chrono = std::chrono;
 
+using namespace afaminisat;
 //=================================================================================================
 // Helpers:
 
@@ -89,46 +95,6 @@ static int parseInt(char*& in) {
         val = val*10 + (*in - '0'),
         in++;
     return neg ? -val : val; }
-
-static void readClause(char*& in, Solver& S, vec<Lit>& lits) {
-    int     parsed_lit, var;
-    lits.clear();
-    for (;;){
-        parsed_lit = parseInt(in);
-        if (parsed_lit == 0) break;
-        var = abs(parsed_lit)-1;
-        while (var >= S.nVars()) S.newVar();
-        lits.push( (parsed_lit > 0) ? Lit(var) : Lit(var, true) );
-    }
-}
-
-static bool parse_DIMACS_main(char* in, Solver& S) {
-    vec<Lit>    lits;
-    for (;;){
-        skipWhitespace(in);
-        if (*in == 0)
-            break;
-        else if (*in == 'c' || *in == 'p')
-            skipLine(in);
-        else{
-            readClause(in, S, lits);
-            S.addClause(lits);
-            if (!S.okay())
-                return false;
-        }
-    }
-    S.simplifyDB();
-    return S.okay();
-}
-
-// Inserts problem into solver. Returns FALSE upon immediate conflict.
-//
-bool parse_DIMACS(gzFile in, Solver& S) {
-    char* text = readFile(in);
-    bool ret = parse_DIMACS_main(text, S);
-    free(text);
-    return ret; }
-
 
 static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
     int var;
@@ -212,6 +178,43 @@ bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt) {
     free(text);
     return ret;
 }
+
+bool parse_cnfafa(const schema::CnfAfa::Reader &in, Solver& S, int* acnt) {
+    *acnt = in.getVariableCount();
+    auto outputs = in.getOutputs();
+    auto clauses = in.getClauses();
+
+    int nVars = *acnt + outputs.size() + clauses.size();
+    S.pures.growTo(nVars, false);
+    S.output_map.growTo(nVars, -1);
+
+    int i = 0;
+    for (auto output: outputs) {
+        int var = output.getVar();
+        S.output_map[var] = i;
+        Lit lit = output.getPositive() ? Lit(var) : Lit(var, true);
+        S.outputs.push(lit);
+        S.impure_outputs.push(lit);
+        i++;
+    }
+
+    while (nVars > S.nVars()) S.newVar();
+
+    vec<Lit>    lits;
+    for (auto clause: clauses) {
+        lits.clear();
+        for (auto lit: clause) {
+            int var = lit.getVar();
+            lits.push(lit.getPositive() ? Lit(var) : Lit(var, true));
+        }
+        S.addClause(lits);
+        if (!S.okay())
+            return false;
+    }
+
+    return S.okay();
+}
+
 //=================================================================================================
 
 
@@ -290,7 +293,7 @@ int main(int argc, char** argv)
 
     gzFile in = gzopen(argv[1], "rb");
     if (in == NULL)
-        fprintf(stderr, "ERROR! Could not open file: %s\n", argc == 1 ? "<stdin>" : argv[1]),
+        fprintf(stderr, "ERROR! Could not open file: %s\n", argv[1]),
         exit(1);
 
     st = parse_AFASAT(in, S, &initial, &acnt);
@@ -300,6 +303,10 @@ int main(int argc, char** argv)
         cout << "1 0 0 0 0 0 0 0 0" << endl;
         exit(0);
     }
+
+    // ::capnp::PackedFdMessageReader message(0);
+    // initial = 0;
+    // parse_cnfafa(message.getRoot<schema::CnfAfa>(), S, &acnt);
 
     signal(SIGINT,SIGINT_handler);
 

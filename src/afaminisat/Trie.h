@@ -188,7 +188,7 @@ public:
 
   Lit guess(Solver &S);
   CutKnee onSat(Solver &S);
-  void reset(Solver &S);
+  bool reset(Solver &S);
   void watch(Solver &S, int var_);
 
   void remove(Solver& S, bool just_dealloc);

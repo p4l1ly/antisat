@@ -392,7 +392,7 @@ void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 }
 
 
-void Trie::reset(Solver &S) {
+bool Trie::reset(Solver &S) {
   active_hor = &root;
   hor_ix = 0;
   ver_ix = -1;
@@ -405,10 +405,94 @@ void Trie::reset(Solver &S) {
 
   if (verbosity >= 2) printf("RESET\n");
 
-  if (root.size()) {
-    Lit out_lit = S.outputs[root[0].tag];
-    watch(S, var(out_lit));
-    if (verbosity >= 2) printf("WR " L_LIT "\n", L_lit(out_lit));
+  WhatToDo what_to_do = after_hors_change(S);
+  unsigned out;
+  Lit out_lit;
+
+  while (true) {
+    switch (what_to_do) {
+      case AGAIN: {
+        if (verbosity >= 2) printf("AGAIN %d %d\n", hor_ix, ver_ix);
+        out = ver_ix >= 0
+          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
+          : (*active_hor)[hor_ix].tag;
+        out_lit = S.outputs[out];
+        continue;
+      }
+
+      case WATCH: {
+        if (verbosity >= 2) printf("WATCH %d %d\n", hor_ix, ver_ix);
+        out_lit = S.outputs[ver_ix != -1
+          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
+          : (*active_hor)[hor_ix].tag
+        ];
+        watch(S, var(out_lit));
+        if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
+        return true;
+      }
+
+      case DONE: {
+        if (verbosity >= 2) printf("DONE %d %d, active_var: %d\n", hor_ix, ver_ix, active_var);
+        last_state_level = S.decisionLevel();
+        return true;
+      }
+
+      case PROPAGATE: {
+        if (verbosity >= 2) printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
+        out_lit = S.outputs[ver_ix != -1
+          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
+          : (*active_hor)[hor_ix].tag
+        ];
+
+        watch(S, var(out_lit));
+        if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(out_lit));
+
+        propagations.push_back(my_zeroes.size());
+        S.undos[var(out_lit)].push(&prop_undo);
+        return S.enqueue(out_lit, this);
+      }
+
+      case CONFLICT: {
+          if (verbosity >= 2) printf("CONFLICT %d %d\n", hor_ix, ver_ix);
+          return false;
+      }
+    }
+
+    if (ver_ix != -1) {
+      if (S.value(out_lit) == l_True) {
+        knees.emplace_back(active_hor, hor_ix, ver_ix);
+
+        vector<VerHead> *hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+        if (hor == NULL) {
+          move_right = true;
+          what_to_do = WhatToDo::DONE;
+        }
+        else {
+          active_hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+          hor_ix = 0;
+          ver_ix = -1;
+          what_to_do = after_hors_change(S);
+        }
+      }
+      else {
+        my_zeroes.push_back(out);
+
+        ver_ix++;
+        what_to_do = after_vers_change(S);
+      }
+    }
+    else {
+      if (S.value(out_lit) == l_True) {
+        hor_ix++;
+        what_to_do = after_hors_change(S);
+      }
+      else {
+        my_zeroes.push_back(out);
+
+        ver_ix++;
+        what_to_do = after_vers_change(S);
+      }
+    }
   }
 }
 

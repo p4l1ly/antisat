@@ -703,15 +703,11 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_learnts   = nConstrs() / 3;
 
     if (trie->root.size()) {
-      trie->reset(*this);
-      bool keep_watch;
-      Lit p = outputs[trie->root[0].tag];
-      if (value(var(p)) != l_Undef) {
-        if (!trie->propagate(*this, p, keep_watch) || propagate() != NULL) {
-          propQ.clear();
-          cancelUntil(0);
-          return false;
-        }
+      if (!trie->reset(*this) || propagate() != NULL) {
+        if (verbosity >= 2) printf("RESET_CONFLICT\n");
+        propQ.clear();
+        cancelUntil(0);
+        return false;
       }
     }
 
