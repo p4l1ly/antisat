@@ -27,7 +27,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <ctime>
 #include <unistd.h>
 #include <signal.h>
-#include <zlib.h>
 #include <chrono>
 #include <iostream>
 #include <vector>
@@ -44,140 +43,6 @@ using std::string;
 namespace chrono = std::chrono;
 
 using namespace afaminisat;
-//=================================================================================================
-// Helpers:
-
-
-// Reads an input stream to end-of-file and returns the result as a 'char*' terminated by '\0'
-// (dynamic allocation in case 'in' is standard input).
-//
-char* readFile(gzFile in)
-{
-    char*   data = xmalloc<char>(65536);
-    int     cap  = 65536;
-    int     size = 0;
-
-    while (!gzeof(in)){
-        if (size == cap){
-            cap *= 2;
-            data = xrealloc(data, cap); }
-        size += gzread(in, &data[size], 65536);
-    }
-    data = xrealloc(data, size+1);
-    data[size] = '\0';
-
-    return data;
-}
-
-
-//=================================================================================================
-// DIMACS Parser:
-
-
-static void skipWhitespace(char*& in) {
-    while ((*in >= 9 && *in <= 13) || *in == 32)
-        in++; }
-
-static void skipLine(char*& in) {
-    for (;;){
-        if (*in == 0) return;
-        if (*in == '\n') { in++; return; }
-        in++; } }
-
-static int parseInt(char*& in) {
-    int     val = 0;
-    bool    neg = false;
-    skipWhitespace(in);
-    if      (*in == '-') neg = true, in++;
-    else if (*in == '+') in++;
-    if (*in < '0' || *in > '9') fprintf(stderr, "PARSE ERROR! Unexpected char: %c\n", *in), exit(1);
-    while (*in >= '0' && *in <= '9')
-        val = val*10 + (*in - '0'),
-        in++;
-    return neg ? -val : val; }
-
-static void readClauseAfasat(char*& in, Solver& S, vec<Lit>& lits) {
-    int var;
-    bool neg, pure;
-
-    lits.clear();
-    while (*in != '\n') {
-        skipWhitespace(in);
-
-        pure = *in == 'p';
-        if (pure) in++;
-
-        neg = *in == '-';
-        if (neg) in++;
-
-        var = parseInt(in);
-        while (var >= S.pures.size()) S.pures.push(false);
-        while (var >= S.output_map.size()) S.output_map.push(-1);
-        while (var >= S.nVars()) S.newVar();
-
-        lits.push( neg ? Lit(var, true) : Lit(var) );
-    }
-    in++;
-}
-
-static bool parse_AFASAT_main(char* in, Solver& S, int* initial, int* acnt) {
-    *acnt = parseInt(in); in++;
-    skipLine(in); // blank
-
-    int maxvar = -1;
-
-    //pures
-    while (*in != '\n') {
-        int var = parseInt(in);
-        maxvar = std::max(maxvar, var);
-
-        while (var >= S.pures.size()) S.pures.push(false);
-        S.pures[var] = true;
-    }
-    skipLine(in); // blank
-
-    *initial = parseInt(in); in++;
-    skipLine(in); // blank
-
-    // out
-    while (*in != '\n') {
-        skipWhitespace(in);
-        bool neg = *in == '-';
-        if (neg) in++;
-
-        int var = parseInt(in);
-        maxvar = std::max(maxvar, var);
-
-        while (var >= S.output_map.size()) S.output_map.push(-1);
-        S.output_map[var] = S.outputs.size();
-
-        Lit lit = neg ? Lit(var, true) : Lit(var);
-        S.outputs.push(lit);
-        while (var >= S.pures.size()) S.pures.push(false);
-        if (!S.pures[var]) S.impure_outputs.push(lit);
-    }
-    in++;
-    skipLine(in); // blank
-
-    while (maxvar >= S.nVars()) S.newVar();
-
-    // clauses
-    vec<Lit>    lits;
-    while (*in != '\n') {
-        readClauseAfasat(in, S, lits);
-        S.addClause(lits);
-        if (!S.okay())
-            return false;
-    }
-    return S.okay();
-}
-
-bool parse_AFASAT(gzFile in, Solver& S, int* initial, int* acnt) {
-    char* text = readFile(in);
-    bool ret = parse_AFASAT_main(text, S, initial, acnt);
-    free(text);
-    return ret;
-}
 
 bool parse_cnfafa(const schema::CnfAfa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
@@ -291,22 +156,9 @@ int main(int argc, char** argv)
     bool        st;
     int initial, acnt;
 
-    gzFile in = gzopen(argv[1], "rb");
-    if (in == NULL)
-        fprintf(stderr, "ERROR! Could not open file: %s\n", argv[1]),
-        exit(1);
-
-    st = parse_AFASAT(in, S, &initial, &acnt);
-    gzclose(in);
-
-    if (!st) {
-        cout << "1 0 0 0 0 0 0 0 0" << endl;
-        exit(0);
-    }
-
-    // ::capnp::PackedFdMessageReader message(0);
-    // initial = 0;
-    // parse_cnfafa(message.getRoot<schema::CnfAfa>(), S, &acnt);
+    ::capnp::PackedFdMessageReader message(0);
+    initial = 0;
+    parse_cnfafa(message.getRoot<schema::CnfAfa>(), S, &acnt);
 
     signal(SIGINT,SIGINT_handler);
 

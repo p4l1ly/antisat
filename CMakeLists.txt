@@ -28,6 +28,5 @@ add_executable(
   ${afaSources}
 )
 target_include_directories(afaminisat PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/afa_schema")
-target_link_libraries(afaminisat PRIVATE z)
 target_link_libraries(afaminisat PRIVATE CapnProto::capnp)
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
