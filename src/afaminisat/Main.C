@@ -22,7 +22,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Constraints.h"
 #include "Trie.h"
-#include "schema/cnfafa.capnp.h"
+#include <automata-safa-capnp/CnfAfa.capnp.h>
 
 #include <ctime>
 #include <unistd.h>
@@ -42,7 +42,7 @@ using std::vector;
 using std::string;
 namespace chrono = std::chrono;
 
-using namespace afaminisat;
+namespace schema = automata_safa_capnp::cnf_afa;
 
 bool parse_cnfafa(const schema::CnfAfa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();

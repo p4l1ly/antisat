@@ -7,16 +7,12 @@ project(
   LANGUAGES CXX
 )
 
+find_package(CapnProto REQUIRED)
+find_library(AutomataSafaCapnp automata-safa-capnp REQUIRED)
+find_path(AutomataSafaCapnpInclude automata-safa-capnp REQUIRED)
+
 set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-
-find_package(CapnProto CONFIG REQUIRED)
-
-set(CAPNPC_SRC_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/schema" CACHE STRING "" FORCE)
-set(CAPNPC_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/afa_schema/schema" CACHE STRING "" FORCE)
-file(MAKE_DIRECTORY "${CAPNPC_OUTPUT_DIR}")
-
-capnp_generate_cpp(afaSources afaHeaders schema/cnfafa.capnp)
 
 add_executable(
   afaminisat
@@ -25,8 +21,8 @@ add_executable(
   src/afaminisat/Trie.C
   src/afaminisat/SupQ.C
   src/afaminisat/Constraints.C
-  ${afaSources}
 )
-target_include_directories(afaminisat PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/afa_schema")
+target_link_libraries(afaminisat PRIVATE "${AutomataSafaCapnp}")
+target_include_directories(afaminisat PRIVATE "${AutomataSafaCapnpInclude}")
 target_link_libraries(afaminisat PRIVATE CapnProto::capnp)
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
