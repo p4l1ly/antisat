@@ -23,6 +23,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Constraints.h"
 #include "Trie.h"
 #include <automata-safa-capnp/CnfAfa.capnp.h>
+#include <automata-safa-capnp/CnfAfaRpc.capnp.h>
 
 #include <ctime>
 #include <unistd.h>
@@ -35,6 +36,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include <capnp/message.h>
 #include <capnp/serialize-packed.h>
+#include <capnp/ez-rpc.h>
 
 using std::cout;
 using std::endl;
@@ -43,6 +45,7 @@ using std::string;
 namespace chrono = std::chrono;
 
 namespace schema = automata_safa_capnp::cnf_afa;
+namespace rpcschema = automata_safa_capnp::cnf_afa_rpc;
 
 bool parse_cnfafa(const schema::CnfAfa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
@@ -106,7 +109,6 @@ static void SIGINT_handler(int signum) {
 bool extract_sat_result(
     Solver &S,
     vector<int> &cell,
-    int initial,
     // only for logging purposes:
     chrono::duration<double> &elapsed_sat,
     const CellContainer &cell_container,
@@ -122,7 +124,7 @@ bool extract_sat_result(
             if (verbosity >= -1) printf("0");
             cell.push_back(i);
         }
-        else if (i == initial) return true;
+        else if (i == 0) return true;
         else if (verbosity >= -1)
             printf("%c", S.value(out) == l_Undef ? 'x' : '1');
     }
@@ -148,161 +150,185 @@ bool extract_sat_result(
     return false;
 }
 
-
-int main(int argc, char** argv)
-{
-    GlobSolver  GS;
-    Solver      S(GS);
-    bool        st;
-    int initial, acnt;
-
-    ::capnp::PackedFdMessageReader message(0);
-    initial = 0;
-    parse_cnfafa(message.getRoot<schema::CnfAfa>(), S, &acnt);
-
-    signal(SIGINT,SIGINT_handler);
-
+class LoadedModelImpl final: public rpcschema::LoadedModel::Server {
+    GlobSolver GS;
+    Solver S;
+    int acnt;
     CellContainerSet cell_container;
+    vector<int> *cell;
+    Trie *trie;
+    vec<Lit> solver_input;
+    MeasuredSupQ container_supq;
 
-    vector<int> *cell = new vector<int>(S.outputs.size());
-    for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
-    if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-
-    Trie trie(S.outputs.size(), S.nVars() * 2);
-    S.trie = &trie;
-    S.addConstr(&trie);
-
-    if (verbosity >= 2) {
-      for (int x = 0; x < S.outputs.size(); x++) {
-        printf("VAR %d " L_LIT "\n", x, L_lit(S.outputs[x]));
-      }
-    }
-
-    chrono::duration<double> elapsed_sat = chrono::duration<double>::zero();
-    auto tic_all = chrono::steady_clock::now();
+    chrono::duration<double> elapsed_sat;
+    chrono::time_point<chrono::steady_clock> tic_all;
+    chrono::time_point<chrono::steady_clock> tic;
     int satCnt = 0;
     int unsatCnt = 0;
     int maxDepth = 0;
-
-    auto tic = chrono::steady_clock::now();
-
-    MeasuredSupQ container_supq;
-
     int omitted = 0;
-    vec<Lit> solver_input(S.outputs.size());
+    int reset_count = 0;
 
-    unsigned reset_count = 0;
+public:
+    LoadedModelImpl(schema::CnfAfa::Reader cnfafa)
+    : GS()
+    , S(GS)
+    , cell_container()
+    , elapsed_sat(chrono::duration<double>::zero())
+    , solver_input(cnfafa.getOutputs().size())
+    , container_supq()
+    {
+        parse_cnfafa(cnfafa, S, &acnt);
 
-    while (true) {
-        if (false) { // (container_supq.get_or_add(*cell)) {
-          if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-          delete cell;
-          omitted++;
-        } else {
-          solver_input.clear();
-          for(int i: *cell) {
-            solver_input.push(Lit(i, true));
-          }
+        cell = new vector<int>(S.outputs.size());
+        for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
+        if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-          if (verbosity >= -1) {
-            printf("==================\ni ");
-            unsigned j = 0;
-            for (int i = 0; i < S.outputs.size(); i++) {
-              if (j < cell->size() && (*cell)[j] == i) {
-                printf("0");
-                j++;
-              }
-              else {
-                printf("x");
-              }
+
+        trie = new Trie(S.outputs.size(), S.nVars() * 2);
+        S.trie = trie;
+        S.addConstr(trie);
+
+        if (verbosity >= 2) {
+            for (int x = 0; x < S.outputs.size(); x++) {
+                printf("VAR %d " L_LIT "\n", x, L_lit(S.outputs[x]));
             }
-            printf("\n==================\n");
-          }
-
-          tic = chrono::steady_clock::now();
-          st = S.solve(solver_input);
-          elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-
-          if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-          delete cell;
-
-          if (st) {
-              tic = chrono::steady_clock::now();
-              while (S.resume()) {
-                  elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-                  satCnt++;
-
-                  cell = new vector<int>();
-
-                  if (extract_sat_result(
-                          S, *cell, initial, elapsed_sat,
-                          cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                          omitted)) {
-                      if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-                      if (verbosity >= 2) {printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-                      delete cell;
-                      goto l_reach;
-                  }
-                  if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-
-                  cell_container.add(cell);
-
-                  tic = chrono::steady_clock::now();
-                  CutKnee cut_knee = trie.onSat(S);
-                  if (!S.onSatConflict(*cell)) {
-                    if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
-                    if (cut_knee.enabled) cut_knee.knee.cut();
-                    break;
-                  }
-                  if (verbosity >= 2) printf("NEXT\n");
-                  if (cut_knee.enabled) cut_knee.knee.cut();
-              };
-              elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-          }
-        }
-
-        unsatCnt++;
-
-        if (!cell_container.size()) break;
-        cell = cell_container.pop();
-        if (verbosity >= 2) {printf("pcell"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-
-        tic = chrono::steady_clock::now();
-        S.reset();
-        elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
-
-        if (verbosity >= -2) {
-          reset_count++;
-          if (reset_count % 10000 == 0) {
-            printf("memstats %u %d %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count, S.nLearnts());
-          }
         }
     }
 
-    goto l_unreach;
+    kj::Promise<void> solve(SolveContext context) override {
+        context.getResults().setEmpty(modelCheck());
+        return kj::READY_NOW;
+    }
 
-l_unreach:
-    printf("1 ");
-    goto finally;
+private:
+    bool modelCheck() {
+        bool st;
+        bool is_empty;
 
-l_reach:
-    printf("0 ");
-    goto finally;
+        tic_all = chrono::steady_clock::now();
+        tic = chrono::steady_clock::now();
 
-finally:
-    // printStats(S.stats, cpuTime());
-    chrono::duration<double> elapsed_all = chrono::steady_clock::now() - tic_all;
-    cout
-      << satCnt << " "
-      << unsatCnt << " "
-      << maxDepth << " "
-      << omitted << " "
-      << elapsed_sat.count() << " "
-      << elapsed_all.count() << " "
-      << container_supq.elapsed_add.count() << " "
-      << container_supq.elapsed_get.count() << " "
-      << endl;
+        while (true) {
+            if (false) { // (container_supq.get_or_add(*cell)) {
+              if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+              delete cell;
+              omitted++;
+            } else {
+              solver_input.clear();
+              for(int i: *cell) {
+                solver_input.push(Lit(i, true));
+              }
 
-    S.constrs.pop();
-    return 0;
+              if (verbosity >= -1) {
+                printf("==================\ni ");
+                unsigned j = 0;
+                for (int i = 0; i < S.outputs.size(); i++) {
+                  if (j < cell->size() && (*cell)[j] == i) {
+                    printf("0");
+                    j++;
+                  }
+                  else {
+                    printf("x");
+                  }
+                }
+                printf("\n==================\n");
+              }
+
+              tic = chrono::steady_clock::now();
+              st = S.solve(solver_input);
+              elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+
+              if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+              delete cell;
+
+              if (st) {
+                  tic = chrono::steady_clock::now();
+                  while (S.resume()) {
+                      elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+                      satCnt++;
+
+                      cell = new vector<int>();
+
+                      if (extract_sat_result(
+                              S, *cell, elapsed_sat,
+                              cell_container, acnt, satCnt, unsatCnt, maxDepth,
+                              omitted)) {
+                          if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+                          if (verbosity >= 2) {printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+                          delete cell;
+                          is_empty = false;
+                          goto finally;
+                      }
+                      if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+
+                      cell_container.add(cell);
+
+                      tic = chrono::steady_clock::now();
+                      CutKnee cut_knee = trie->onSat(S);
+                      if (!S.onSatConflict(*cell)) {
+                        if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
+                        if (cut_knee.enabled) cut_knee.knee.cut();
+                        break;
+                      }
+                      if (verbosity >= 2) printf("NEXT\n");
+                      if (cut_knee.enabled) cut_knee.knee.cut();
+                  };
+                  elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+              }
+            }
+
+            unsatCnt++;
+
+            if (!cell_container.size()) break;
+            cell = cell_container.pop();
+            if (verbosity >= 2) {printf("pcell"); for(int i: *cell){printf(" %d", i);} printf("\n");}
+
+            tic = chrono::steady_clock::now();
+            S.reset();
+            elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
+
+            if (verbosity >= -2) {
+              reset_count++;
+              if (reset_count % 10000 == 0) {
+                printf("memstats %u %d %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count, S.nLearnts());
+              }
+            }
+        }
+
+        is_empty = true;
+
+    finally:
+        // printStats(S.stats, cpuTime());
+        chrono::duration<double> elapsed_all = chrono::steady_clock::now() - tic_all;
+        if (verbosity >= 2) {
+            cout
+            << satCnt << " "
+            << unsatCnt << " "
+            << maxDepth << " "
+            << omitted << " "
+            << elapsed_sat.count() << " "
+            << elapsed_all.count() << " "
+            << container_supq.elapsed_add.count() << " "
+            << container_supq.elapsed_get.count() << " "
+            << endl;
+        }
+
+        return is_empty;
+    }
+};
+
+class LoaderImpl final: public rpcschema::Loader::Server {
+public:
+    kj::Promise<void> load(LoadContext context) override {
+        schema::CnfAfa::Reader cnfafa = context.getParams().getModel();
+        context.getResults().setLoadedModel(kj::heap<LoadedModelImpl>(cnfafa));
+        return kj::READY_NOW;
+    }
+};
+
+int main() {
+    capnp::EzRpcServer server(kj::heap<LoaderImpl>(), "127.0.0.1", 4000);
+    auto& waitScope = server.getWaitScope();
+    kj::NEVER_DONE.wait(waitScope);
 }

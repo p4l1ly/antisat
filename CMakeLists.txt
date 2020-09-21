@@ -22,7 +22,8 @@ add_executable(
   src/afaminisat/SupQ.C
   src/afaminisat/Constraints.C
 )
-target_link_libraries(afaminisat PRIVATE "${AutomataSafaCapnp}")
 target_include_directories(afaminisat PRIVATE "${AutomataSafaCapnpInclude}")
-target_link_libraries(afaminisat PRIVATE CapnProto::capnp)
+target_link_libraries(
+    afaminisat PRIVATE CapnProto::capnp CapnProto::capnp-rpc "${AutomataSafaCapnp}"
+)
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
