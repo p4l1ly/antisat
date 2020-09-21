@@ -328,7 +328,7 @@ public:
 };
 
 int main() {
-    capnp::EzRpcServer server(kj::heap<LoaderImpl>(), "127.0.0.1", 4000);
+    capnp::EzRpcServer server(kj::heap<LoaderImpl>(), "0.0.0.0", 4000);
     auto& waitScope = server.getWaitScope();
     kj::NEVER_DONE.wait(waitScope);
 }
