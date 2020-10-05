@@ -23,6 +23,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <climits>
 #include <cstring>
 #include <iostream>
+#include <atomic>
+#include <mutex>
+#include <chrono>
 
 #include "SolverTypes.h"
 #include "Constraints.h"
@@ -52,8 +55,21 @@ struct SearchParams {
     SearchParams(double v = 1, double c = 1, double r = 0) : var_decay(v), clause_decay(c), random_var_freq(r) { }
 };
 
-struct GlobSolver {
+#define Solver_RUNNING 0
+#define Solver_PAUSED 1
+#define Solver_CANCELLED 2
+#define Solver_INIT 3
+
+class Cancelled {
+};
+
+class Solver {
 public:
+    bool                ok;             // If FALSE, the constraints are already unsatisfiable. No part of the solver state may be used!
+    std::atomic_int     status;
+    std::mutex          runningMutex;
+    std::mutex          pauseMutex;
+
     vec<Constr*>        constrs;        // List of problem constraints.
     vec<Clause*>        learnts;        // List of learnt clauses.
     double              cla_inc;        // Amount to bump next clause with.
@@ -67,33 +83,6 @@ public:
     vec<int>            output_map;    // The mask of output variables.
     vec<Lit>            outputs;        // The output literals.
     vec<Lit>            impure_outputs;  // The output literals.
-
-    GlobSolver(void) : cla_inc(1), cla_decay(1), var_inc(1), var_decay(1)
-    { }
-
-    ~GlobSolver(void) {
-        for (int i = 0; i < learnts.size(); i++) xfree(learnts[i]);
-        for (int i = 0; i < constrs.size(); i++) xfree(constrs[i]);
-    }
-};
-
-class Solver {
-public:
-    bool                ok;             // If FALSE, the constraints are already unsatisfiable. No part of the solver state may be used!
-
-    vec<Constr*>&       constrs;        // List of problem constraints.
-    vec<Clause*>&       learnts;        // List of learnt clauses.
-    double      &       cla_inc;        // Amount to bump next clause with.
-    double      &       cla_decay;      // INVERSE decay factor for clause activity: stores 1/decay.
-
-    vec<double> &       activity;       // A heuristic measurement of the activity of a variable.
-    double      &       var_inc;        // Amount to bump next variable with.
-    double      &       var_decay;      // INVERSE decay factor for variable activity: stores 1/decay. Use negative value for static variable order.
-
-    vec<bool>   &       pures;          // The pure literals (undef === one).
-    vec<int>    &       output_map;    // The mask of output variables.
-    vec<Lit>    &       outputs;        // The output literals.
-    vec<Lit>    &       impure_outputs;  // The output literals.
 
     VarOrder            order;          // Keeps track of the decision variable order.
 
@@ -114,6 +103,9 @@ public:
     double nof_conflicts, nof_learnts;
 
     Trie *trie;
+
+    chrono::duration<double> elapsed = chrono::duration<double>::zero();
+    chrono::time_point<chrono::steady_clock> tic;
 
     // Temporaries (to reduce allocation overhead):
     //
@@ -152,55 +144,24 @@ public:
     int     decisionLevel(void) { return trail_lim.size(); }
 
 public:
-    Solver(GlobSolver &gs)
-      : ok               (true)
-      , constrs(gs.constrs)
-      , learnts(gs.learnts)
-      , cla_inc(gs.cla_inc)
-      , cla_decay(gs.cla_decay)
-      , activity(gs.activity)
-      , var_inc(gs.var_inc)
-      , var_decay(gs.var_decay)
-      , pures(gs.pures)
-      , output_map(gs.output_map)
-      , outputs(gs.outputs)
-      , impure_outputs(gs.impure_outputs)
-
-      , order            (assigns, activity, pures, output_map)
-      , last_simplify    (-1)
+    Solver()
+      : ok(true)
+      , status(Solver_INIT)
+      , cla_inc(1)
+      , cla_decay(1)
+      , var_inc(1)
+      , var_decay(1)
+      , order(assigns, activity, pures, output_map)
+      , last_simplify(-1)
       , params(1, 1, 0)
-      { }
+      {
+        runningMutex.lock();
+    }
 
-    Solver(const Solver& s)
-    : ok(s.ok)
-
-    , constrs(s.constrs)
-    , learnts(s.learnts)
-    , cla_inc(s.cla_inc)
-    , cla_decay(s.cla_decay)
-    , activity(s.activity)
-    , var_inc(s.var_inc)
-    , var_decay(s.var_decay)
-    , pures(s.pures)
-    , output_map(s.output_map)
-    , outputs(s.outputs)
-    , impure_outputs(s.impure_outputs)
-
-    , order            (assigns, s.order)
-
-    , watches(s.watches)
-    , undos(s.undos)
-
-    , assigns(s.assigns)
-    , trail(s.trail)
-    , trail_lim(s.trail_lim)
-    , reason(s.reason)
-    , level(s.level)
-    , root_level(s.root_level)
-
-    , last_simplify    (s.last_simplify)
-    , params(1, 1, 0)
-    { }
+    ~Solver(void) {
+        for (int i = 0; i < learnts.size(); i++) xfree(learnts[i]);
+        for (int i = 0; i < constrs.size(); i++) xfree(constrs[i]);
+    }
 
     // Helpers: (semi-internal)
     //

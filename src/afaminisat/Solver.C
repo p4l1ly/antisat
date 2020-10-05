@@ -600,6 +600,19 @@ lbool Solver::search()
     cla_decay = 1 / params.clause_decay;
 
     for (;;){
+        if (status != Solver_RUNNING) {
+          if (status == Solver_PAUSED) {
+            elapsed += chrono::steady_clock::now() - tic;
+            runningMutex.unlock();
+            pauseMutex.lock();
+            runningMutex.lock();
+            pauseMutex.unlock();
+            tic = chrono::steady_clock::now();
+          }
+          if (status == Solver_CANCELLED) {
+            throw Cancelled();
+          }
+        }
         Constr* confl = propagate();
         if (confl != NULL){
             // CONFLICT

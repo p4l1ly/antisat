@@ -24,6 +24,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Trie.h"
 #include <automata-safa-capnp/CnfAfa.capnp.h>
 #include <automata-safa-capnp/CnfAfaRpc.capnp.h>
+#include <automata-safa-capnp/LoadedModelRpc.capnp.h>
 
 #include <ctime>
 #include <unistd.h>
@@ -34,9 +35,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <string>
 #include <algorithm>
 
-#include <capnp/message.h>
-#include <capnp/serialize-packed.h>
 #include <capnp/ez-rpc.h>
+#include <kj/thread.h>
 
 using std::cout;
 using std::endl;
@@ -45,7 +45,8 @@ using std::string;
 namespace chrono = std::chrono;
 
 namespace schema = automata_safa_capnp::cnf_afa;
-namespace rpcschema = automata_safa_capnp::cnf_afa_rpc;
+namespace rpc = automata_safa_capnp::rpc;
+namespace rpcschema = automata_safa_capnp::rpc::cnf_afa;
 
 bool parse_cnfafa(const schema::CnfAfa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
@@ -110,7 +111,6 @@ bool extract_sat_result(
     Solver &S,
     vector<int> &cell,
     // only for logging purposes:
-    chrono::duration<double> &elapsed_sat,
     const CellContainer &cell_container,
     int acnt, int satCnt, int unsatCnt, int &maxDepth, int omitted
 ) {
@@ -142,7 +142,7 @@ bool extract_sat_result(
         }
         printf("\n\n");
         cout << satCnt << " " << unsatCnt << " " << omitted
-          << " " << cell_container.size() << " " << elapsed_sat.count() << endl;
+          << " " << cell_container.size() << endl;
         printf("-----------------------------------------------\n\n");
     }
     maxDepth = max(cell_container.size(), maxDepth);
@@ -150,8 +150,73 @@ bool extract_sat_result(
     return false;
 }
 
-class LoadedModelImpl final: public rpcschema::LoadedModel::Server {
-    GlobSolver GS;
+class ControlImpl final: public rpc::ModelChecking::Control::Server {
+    Solver* S;
+
+public:
+    ControlImpl(Solver* S_) : S(S_) {}
+
+    kj::Promise<void> pause(PauseContext context) override {
+        setStatus(context.getResults().getOldStatus());
+        if (S->status == Solver_RUNNING) {
+            S->pauseMutex.lock();
+            S->status = Solver_PAUSED;
+            S->runningMutex.lock();
+            S->pauseMutex.unlock();
+        };
+        return kj::READY_NOW;
+    }
+
+    kj::Promise<void> resume(ResumeContext context) override {
+        setStatus(context.getResults().getOldStatus());
+        if (S->status == Solver_PAUSED) {
+            S->status = Solver_RUNNING;
+            S->runningMutex.unlock();
+        }
+        return kj::READY_NOW;
+    }
+
+    kj::Promise<void> cancel(CancelContext context) override {
+        setStatus(context.getResults().getOldStatus());
+        int old_status = S->status;
+        S->status = Solver_CANCELLED;
+        if (old_status == Solver_PAUSED) {
+            S->runningMutex.unlock();
+        }
+        return kj::READY_NOW;
+    }
+
+    kj::Promise<void> getStatus(GetStatusContext context) override {
+        setStatus(context.getResults().getStatus());
+        return kj::READY_NOW;
+    }
+
+private:
+    void setStatus(rpc::ModelChecking::Status::Builder status) {
+        std::chrono::duration<double> t;
+        if (S->status == Solver_PAUSED) t = S->elapsed;
+        else t = S->elapsed + chrono::steady_clock::now() - S->tic;
+
+        status.setTime(t.count()*1000);
+
+        switch(S->status) {
+            case Solver_RUNNING:
+                status.setState(rpc::ModelChecking::Status::State::RUNNING);
+                return;
+            case Solver_INIT:
+                status.setState(rpc::ModelChecking::Status::State::INIT);
+                return;
+            case Solver_CANCELLED:
+                status.setState(rpc::ModelChecking::Status::State::CANCELLED);
+                return;
+            case Solver_PAUSED:
+                status.setState(rpc::ModelChecking::Status::State::PAUSED);
+                return;
+        }
+    }
+};
+
+class LoadedModelImpl final: public rpc::ModelChecking::Server {
     Solver S;
     int acnt;
     CellContainerSet cell_container;
@@ -160,9 +225,6 @@ class LoadedModelImpl final: public rpcschema::LoadedModel::Server {
     vec<Lit> solver_input;
     MeasuredSupQ container_supq;
 
-    chrono::duration<double> elapsed_sat;
-    chrono::time_point<chrono::steady_clock> tic_all;
-    chrono::time_point<chrono::steady_clock> tic;
     int satCnt = 0;
     int unsatCnt = 0;
     int maxDepth = 0;
@@ -171,11 +233,7 @@ class LoadedModelImpl final: public rpcschema::LoadedModel::Server {
 
 public:
     LoadedModelImpl(schema::CnfAfa::Reader cnfafa)
-    : GS()
-    , S(GS)
-    , cell_container()
-    , elapsed_sat(chrono::duration<double>::zero())
-    , solver_input(cnfafa.getOutputs().size())
+    : solver_input(cnfafa.getOutputs().size())
     , container_supq()
     {
         parse_cnfafa(cnfafa, S, &acnt);
@@ -183,7 +241,6 @@ public:
         cell = new vector<int>(S.outputs.size());
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-
 
         trie = new Trie(S.outputs.size(), S.nVars() * 2);
         S.trie = trie;
@@ -197,17 +254,60 @@ public:
     }
 
     kj::Promise<void> solve(SolveContext context) override {
-        context.getResults().setEmpty(modelCheck());
+        kj::MutexGuarded<kj::Maybe<const kj::Executor&>> executor;
+        kj::Own<kj::PromiseFulfiller<void>> fulfiller;
+
+        kj::Thread([&]() noexcept {
+            kj::EventLoop loop;
+            kj::WaitScope scope(loop);
+            *executor.lockExclusive() = kj::getCurrentThreadExecutor();
+
+            auto paf = kj::newPromiseAndFulfiller<void>();
+            fulfiller = kj::mv(paf.fulfiller);
+            paf.promise.wait(scope);
+        }).detach();
+
+        const kj::Executor *exec;
+        {
+            auto lock = executor.lockExclusive();
+            lock.wait([&](kj::Maybe<const kj::Executor&> value) {
+                return value != nullptr;
+            });
+            exec = &KJ_ASSERT_NONNULL(*lock);
+        }
+
+        rpc::ModelChecking::SolveResults::Builder result = context.getResults();
+
+        return exec->executeAsync(
+            [this, result, fulfiller{kj::mv(fulfiller)}]() mutable {
+                try {
+                    result.setResult(modelCheck());
+                }
+                catch(Cancelled c) {
+                    result.setResult(rpc::ModelChecking::Result::CANCELLED);
+                }
+
+                std::chrono::duration<double> t;
+                t = S.elapsed + chrono::steady_clock::now() - S.tic;
+                result.setTime(t.count()*1000);
+
+                fulfiller->fulfill();
+            }
+        );
+    }
+
+    kj::Promise<void> getControl(GetControlContext context) override {
+        context.getResults().setControl(kj::heap<ControlImpl>(&S));
         return kj::READY_NOW;
     }
 
 private:
-    bool modelCheck() {
-        bool st;
-        bool is_empty;
+    rpc::ModelChecking::Result modelCheck() {
+        S.status = Solver_RUNNING;
+        S.tic = chrono::steady_clock::now();
 
-        tic_all = chrono::steady_clock::now();
-        tic = chrono::steady_clock::now();
+        bool st;
+        rpc::ModelChecking::Result result;
 
         while (true) {
             if (false) { // (container_supq.get_or_add(*cell)) {
@@ -235,36 +335,32 @@ private:
                 printf("\n==================\n");
               }
 
-              tic = chrono::steady_clock::now();
               st = S.solve(solver_input);
-              elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
 
               if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
               delete cell;
 
               if (st) {
-                  tic = chrono::steady_clock::now();
                   while (S.resume()) {
-                      elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
                       satCnt++;
 
                       cell = new vector<int>();
 
                       if (extract_sat_result(
-                              S, *cell, elapsed_sat,
-                              cell_container, acnt, satCnt, unsatCnt, maxDepth,
-                              omitted)) {
+                              S, *cell,
+                              cell_container, acnt, satCnt,
+                              unsatCnt, maxDepth, omitted
+                      )) {
                           if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
                           if (verbosity >= 2) {printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
                           delete cell;
-                          is_empty = false;
+                          result = rpc::ModelChecking::Result::NONEMPTY;
                           goto finally;
                       }
                       if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
                       cell_container.add(cell);
 
-                      tic = chrono::steady_clock::now();
                       CutKnee cut_knee = trie->onSat(S);
                       if (!S.onSatConflict(*cell)) {
                         if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
@@ -274,7 +370,6 @@ private:
                       if (verbosity >= 2) printf("NEXT\n");
                       if (cut_knee.enabled) cut_knee.knee.cut();
                   };
-                  elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
               }
             }
 
@@ -284,9 +379,7 @@ private:
             cell = cell_container.pop();
             if (verbosity >= 2) {printf("pcell"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-            tic = chrono::steady_clock::now();
             S.reset();
-            elapsed_sat = elapsed_sat + chrono::steady_clock::now() - tic;
 
             if (verbosity >= -2) {
               reset_count++;
@@ -296,25 +389,22 @@ private:
             }
         }
 
-        is_empty = true;
+        result = rpc::ModelChecking::Result::EMPTY;
 
     finally:
         // printStats(S.stats, cpuTime());
-        chrono::duration<double> elapsed_all = chrono::steady_clock::now() - tic_all;
         if (verbosity >= 2) {
             cout
             << satCnt << " "
             << unsatCnt << " "
             << maxDepth << " "
             << omitted << " "
-            << elapsed_sat.count() << " "
-            << elapsed_all.count() << " "
             << container_supq.elapsed_add.count() << " "
             << container_supq.elapsed_get.count() << " "
             << endl;
         }
 
-        return is_empty;
+        return result;
     }
 };
 
@@ -328,7 +418,7 @@ public:
 };
 
 int main() {
-    capnp::EzRpcServer server(kj::heap<LoaderImpl>(), "0.0.0.0", 4000);
+    capnp::EzRpcServer server(kj::heap<LoaderImpl>(), "0.0.0.0", 4002);
     auto& waitScope = server.getWaitScope();
     kj::NEVER_DONE.wait(waitScope);
 }
