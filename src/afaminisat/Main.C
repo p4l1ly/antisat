@@ -253,6 +253,11 @@ public:
         }
     }
 
+    ~LoadedModelImpl() {
+        S.constrs.pop();
+        delete trie;
+    }
+
     kj::Promise<void> solve(SolveContext context) override {
         kj::MutexGuarded<kj::Maybe<const kj::Executor&>> executor;
         kj::Own<kj::PromiseFulfiller<void>> fulfiller;
@@ -260,10 +265,11 @@ public:
         kj::Thread([&]() noexcept {
             kj::EventLoop loop;
             kj::WaitScope scope(loop);
-            *executor.lockExclusive() = kj::getCurrentThreadExecutor();
 
             auto paf = kj::newPromiseAndFulfiller<void>();
             fulfiller = kj::mv(paf.fulfiller);
+
+            *executor.lockExclusive() = kj::getCurrentThreadExecutor();
             paf.promise.wait(scope);
         }).detach();
 
