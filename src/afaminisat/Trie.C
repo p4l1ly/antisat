@@ -417,7 +417,7 @@ bool Trie::reset(Solver &S) {
           ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
           : (*active_hor)[hor_ix].tag;
         out_lit = S.outputs[out];
-        continue;
+        break;
       }
 
       case WATCH: {
