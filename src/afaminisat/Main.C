@@ -22,9 +22,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Constraints.h"
 #include "Trie.h"
-#include <automata-safa-capnp/CnfAfa.capnp.h>
-#include <automata-safa-capnp/CnfAfaRpc.capnp.h>
-#include <automata-safa-capnp/LoadedModelRpc.capnp.h>
+#include <automata-safa-capnp/Model/CnfAfa.capnp.h>
+#include <automata-safa-capnp/Rpc/ModelChecker.capnp.h>
+#include <automata-safa-capnp/Rpc/ModelCheckers.capnp.h>
 
 #include <ctime>
 #include <unistd.h>
@@ -44,11 +44,11 @@ using std::vector;
 using std::string;
 namespace chrono = std::chrono;
 
-namespace schema = automata_safa_capnp::cnf_afa;
-namespace rpc = automata_safa_capnp::rpc;
-namespace rpcschema = automata_safa_capnp::rpc::cnf_afa;
+namespace cnfafa = automata_safa_capnp::model::cnf_afa;
+namespace mc = automata_safa_capnp::rpc::model_checker;
+namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
-bool parse_cnfafa(const schema::CnfAfa::Reader &in, Solver& S, int* acnt) {
+bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
     auto outputs = in.getOutputs();
     auto clauses = in.getClauses();
@@ -150,7 +150,7 @@ bool extract_sat_result(
     return false;
 }
 
-class ControlImpl final: public rpc::ModelChecking::Control::Server {
+class ControlImpl final: public mc::Control::Server {
     Solver* S;
 
 public:
@@ -192,7 +192,7 @@ public:
     }
 
 private:
-    void setStatus(rpc::ModelChecking::Status::Builder status) {
+    void setStatus(mc::Status::Builder status) {
         std::chrono::duration<double> t;
         if (S->status == Solver_PAUSED) t = S->elapsed;
         else t = S->elapsed + chrono::steady_clock::now() - S->tic;
@@ -201,22 +201,22 @@ private:
 
         switch(S->status) {
             case Solver_RUNNING:
-                status.setState(rpc::ModelChecking::Status::State::RUNNING);
+                status.setState(mc::State::RUNNING);
                 return;
             case Solver_INIT:
-                status.setState(rpc::ModelChecking::Status::State::INIT);
+                status.setState(mc::State::INIT);
                 return;
             case Solver_CANCELLED:
-                status.setState(rpc::ModelChecking::Status::State::CANCELLED);
+                status.setState(mc::State::CANCELLED);
                 return;
             case Solver_PAUSED:
-                status.setState(rpc::ModelChecking::Status::State::PAUSED);
+                status.setState(mc::State::PAUSED);
                 return;
         }
     }
 };
 
-class LoadedModelImpl final: public rpc::ModelChecking::Server {
+class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server {
     Solver S;
     int acnt;
     CellContainerSet cell_container;
@@ -232,7 +232,7 @@ class LoadedModelImpl final: public rpc::ModelChecking::Server {
     int reset_count = 0;
 
 public:
-    LoadedModelImpl(schema::CnfAfa::Reader cnfafa)
+    ModelCheckingImpl(cnfafa::Afa::Reader cnfafa)
     : solver_input(cnfafa.getOutputs().size())
     , container_supq()
     {
@@ -253,7 +253,7 @@ public:
         }
     }
 
-    ~LoadedModelImpl() {
+    ~ModelCheckingImpl() {
         S.constrs.pop();
         delete trie;
     }
@@ -282,15 +282,15 @@ public:
             exec = &KJ_ASSERT_NONNULL(*lock);
         }
 
-        rpc::ModelChecking::SolveResults::Builder result = context.getResults();
+        auto result = context.getResults();
 
         return exec->executeAsync(
             [this, result, fulfiller{kj::mv(fulfiller)}]() mutable {
                 try {
-                    result.setResult(modelCheck());
+                    result.getMeta().setEmpty(modelCheck());
                 }
                 catch(Cancelled c) {
-                    result.setResult(rpc::ModelChecking::Result::CANCELLED);
+                    result.setCancelled(true);
                 }
 
                 std::chrono::duration<double> t;
@@ -308,12 +308,12 @@ public:
     }
 
 private:
-    rpc::ModelChecking::Result modelCheck() {
+    bool modelCheck() {
         S.status = Solver_RUNNING;
         S.tic = chrono::steady_clock::now();
 
         bool st;
-        rpc::ModelChecking::Result result;
+        bool empty;
 
         while (true) {
             if (false) { // (container_supq.get_or_add(*cell)) {
@@ -360,7 +360,7 @@ private:
                           if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
                           if (verbosity >= 2) {printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
                           delete cell;
-                          result = rpc::ModelChecking::Result::NONEMPTY;
+                          empty = false;
                           goto finally;
                       }
                       if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
@@ -395,7 +395,7 @@ private:
             }
         }
 
-        result = rpc::ModelChecking::Result::EMPTY;
+        empty = true;
 
     finally:
         // printStats(S.stats, cpuTime());
@@ -410,21 +410,21 @@ private:
             << endl;
         }
 
-        return result;
+        return empty;
     }
 };
 
-class LoaderImpl final: public rpcschema::Loader::Server {
+class ModelCheckerImpl final: public mc::ModelChecker<cnfafa::Afa, mcs::Emptiness>::Server {
 public:
     kj::Promise<void> load(LoadContext context) override {
-        schema::CnfAfa::Reader cnfafa = context.getParams().getModel();
-        context.getResults().setLoadedModel(kj::heap<LoadedModelImpl>(cnfafa));
+        cnfafa::Afa::Reader cnfafa = context.getParams().getModel();
+        context.getResults().setChecking(kj::heap<ModelCheckingImpl>(cnfafa));
         return kj::READY_NOW;
     }
 };
 
 int main() {
-    capnp::EzRpcServer server(kj::heap<LoaderImpl>(), "0.0.0.0", 4002);
+    capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", 4002);
     auto& waitScope = server.getWaitScope();
     kj::NEVER_DONE.wait(waitScope);
 }
