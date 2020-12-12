@@ -48,6 +48,9 @@ namespace cnfafa = automata_safa_capnp::model::cnf_afa;
 namespace mc = automata_safa_capnp::rpc::model_checker;
 namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
+bool use_trie = true;
+int port = 4002;
+
 bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
     auto outputs = in.getOutputs();
@@ -221,6 +224,7 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     int acnt;
     CellContainerSet cell_container;
     vector<int> *cell;
+    vec<Lit> cell_out;
     Trie *trie;
     vec<Lit> solver_input;
     MeasuredSupQ container_supq;
@@ -242,7 +246,8 @@ public:
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        trie = new Trie(S.outputs.size(), S.nVars() * 2);
+        void* mem = xmalloc<char>(sizeof(Trie));
+        trie = new (mem) Trie(S.outputs.size(), S.nVars() * 2);
         S.trie = trie;
         S.addConstr(trie);
 
@@ -251,11 +256,6 @@ public:
                 printf("VAR %d " L_LIT "\n", x, L_lit(S.outputs[x]));
             }
         }
-    }
-
-    ~ModelCheckingImpl() {
-        S.constrs.pop();
-        delete trie;
     }
 
     kj::Promise<void> solve(SolveContext context) override {
@@ -367,7 +367,23 @@ private:
 
                       cell_container.add(cell);
 
-                      CutKnee cut_knee = trie->onSat(S);
+                      CutKnee cut_knee;
+
+                      if (use_trie) {
+                        cut_knee = trie->onSat(S);
+                      } else {
+                            cell_out.clear();
+                            for (int i: *cell) {
+                                cell_out.push(S.outputs[i]);
+                            }
+
+                            Clause *c;
+                            bool ok_ = Clause_new_handleConflict(S, cell_out, c);
+                            assert(!ok_);
+                            if (c == NULL) break;
+                            S.addConstr(c);
+                      }
+
                       if (!S.onSatConflict(*cell)) {
                         if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
                         if (cut_knee.enabled) cut_knee.knee.cut();
@@ -423,8 +439,11 @@ public:
     }
 };
 
-int main() {
-    capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", 4002);
+int main(int argc, char** argv) {
+    if (argc >= 2 && argv[1][0] == '0') use_trie = false;
+    if (argc >= 3) port = atoi(argv[2]);
+
+    capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", port);
     auto& waitScope = server.getWaitScope();
     kj::NEVER_DONE.wait(waitScope);
 }

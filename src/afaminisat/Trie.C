@@ -94,7 +94,6 @@ inline unsigned pair_snd(const std::pair<int, unsigned> &x) {
 
 CutKnee Trie::onSat(Solver &S) {
   if (verbosity >= 2) printf("ON_SAT\n");
-  S.stats.conflicts++;
 
   unordered_set<unsigned> my_zeroes_set(my_zeroes.begin(), my_zeroes.end());
 

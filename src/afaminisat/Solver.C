@@ -117,6 +117,8 @@ void Solver::record(const vec<Lit>& clause)
 // Major methods:
 
 bool Solver::onSatConflict(const vector<int>& cell) {
+  stats.conflicts++;
+
   if (verbosity >= 2) {
       printf(L_IND "**CONFLICT2**", L_ind);
       printf("{");
