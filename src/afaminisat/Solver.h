@@ -158,10 +158,7 @@ public:
         runningMutex.lock();
     }
 
-    ~Solver(void) {
-        for (int i = 0; i < learnts.size(); i++) xfree(learnts[i]);
-        for (int i = 0; i < constrs.size(); i++) xfree(constrs[i]);
-    }
+    ~Solver();
 
     // Helpers: (semi-internal)
     //

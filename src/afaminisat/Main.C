@@ -246,8 +246,7 @@ public:
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        void* mem = xmalloc<char>(sizeof(Trie));
-        trie = new (mem) Trie(S.outputs.size(), S.nVars() * 2);
+        trie = new Trie(S.outputs.size(), S.nVars() * 2);
         S.trie = trie;
         S.addConstr(trie);
 
@@ -370,18 +369,18 @@ private:
                       CutKnee cut_knee;
 
                       if (use_trie) {
-                        cut_knee = trie->onSat(S);
+                          cut_knee = trie->onSat(S);
                       } else {
-                            cell_out.clear();
-                            for (int i: *cell) {
-                                cell_out.push(S.outputs[i]);
-                            }
+                          cell_out.clear();
+                          for (int i: *cell) {
+                              cell_out.push(S.outputs[i]);
+                          }
 
-                            Clause *c;
-                            bool ok_ = Clause_new_handleConflict(S, cell_out, c);
-                            assert(!ok_);
-                            if (c == NULL) break;
-                            S.addConstr(c);
+                          Clause *c;
+                          bool ok_ = Clause_new_handleConflict(S, cell_out, c);
+                          assert(!ok_);
+                          if (c == NULL) break;
+                          S.addConstr(c);
                       }
 
                       if (!S.onSatConflict(*cell)) {

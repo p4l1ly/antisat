@@ -19,6 +19,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include "Solver.h"
 #include "Sort.h"
+#include "Trie.h"
 #include <cmath>
 #include <iostream>
 #include <cstdlib>
@@ -34,6 +35,16 @@ inline void check(bool expr) { assert(expr); }
 //=================================================================================================
 // Minor methods:
 
+
+Solver::~Solver(void) {
+    for (int i = 0; i < learnts.size(); i++) xfree(learnts[i]);
+    for (int i = 0; i < constrs.size(); i++) {
+      if (constrs[i] != (Constr*)trie) {
+        xfree(constrs[i]);
+      }
+    }
+    delete trie;
+}
 
 // Creates a new SAT variable in the solver. If 'decision_var' is cleared, variable will not be
 // used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
