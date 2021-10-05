@@ -22,9 +22,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Constraints.h"
 #include "Trie.h"
-#include <automata-safa-capnp/Model/CnfAfa.capnp.h>
-#include <automata-safa-capnp/Rpc/ModelChecker.capnp.h>
-#include <automata-safa-capnp/Rpc/ModelCheckers.capnp.h>
+#include <automata-safa-capnp/Afa/Model/CnfAfa.capnp.h>
+#include <automata-safa-capnp/Afa/Rpc/ModelChecker.capnp.h>
+#include <automata-safa-capnp/Afa/Rpc/ModelCheckers.capnp.h>
 
 #include <ctime>
 #include <unistd.h>
