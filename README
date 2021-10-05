@@ -1,3 +1,11 @@
+AFAMINISAT
+==========
+
+Antichain solver for alternating finite automata, created by modification of
+MiniSat v1.12b. See https://github.com/p4l1ly/automata-safa and our paper:
+Simplifying Alternating Automata for Emptiness Testing, Pavol Vargovčík, Lukáš
+Holík
+
 MiniSat v1.12b
 ========================================
 
