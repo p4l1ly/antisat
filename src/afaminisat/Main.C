@@ -17,26 +17,29 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#include "SupQ.h"
-#include "CellContainer.h"
-#include "Solver.h"
-#include "Constraints.h"
-#include "Trie.h"
-#include <automata-safa-capnp/Afa/Model/CnfAfa.capnp.h>
-#include <automata-safa-capnp/Afa/Rpc/ModelChecker.capnp.h>
-#include <automata-safa-capnp/Afa/Rpc/ModelCheckers.capnp.h>
 
-#include <ctime>
-#include <unistd.h>
-#include <signal.h>
 #include <chrono>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <ctime>
 
-#include <capnp/ez-rpc.h>
-#include <kj/thread.h>
+#include <unistd.h>
+#include <signal.h>
+#include <fcntl.h>
+
+// #include <capnp/ez-rpc.h>
+// #include <kj/thread.h>
+#include <capnp/serialize.h>
+
+#include "SupQ.h"
+#include "CellContainer.h"
+#include "Solver.h"
+#include "Constraints.h"
+#include "Trie.h"
+#include "CnfAfa.capnp.h"
+
 
 using std::cout;
 using std::endl;
@@ -45,11 +48,8 @@ using std::string;
 namespace chrono = std::chrono;
 
 namespace cnfafa = automata_safa_capnp::model::cnf_afa;
-namespace mc = automata_safa_capnp::rpc::model_checker;
-namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
 bool use_trie = true;
-int port = 4002;
 
 bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
@@ -153,73 +153,7 @@ bool extract_sat_result(
     return false;
 }
 
-class ControlImpl final: public mc::Control::Server {
-    Solver* S;
-
-public:
-    ControlImpl(Solver* S_) : S(S_) {}
-
-    kj::Promise<void> pause(PauseContext context) override {
-        setStatus(context.getResults().getOldStatus());
-        if (S->status == Solver_RUNNING) {
-            S->pauseMutex.lock();
-            S->status = Solver_PAUSED;
-            S->runningMutex.lock();
-            S->pauseMutex.unlock();
-        };
-        return kj::READY_NOW;
-    }
-
-    kj::Promise<void> resume(ResumeContext context) override {
-        setStatus(context.getResults().getOldStatus());
-        if (S->status == Solver_PAUSED) {
-            S->status = Solver_RUNNING;
-            S->runningMutex.unlock();
-        }
-        return kj::READY_NOW;
-    }
-
-    kj::Promise<void> cancel(CancelContext context) override {
-        setStatus(context.getResults().getOldStatus());
-        int old_status = S->status;
-        S->status = Solver_CANCELLED;
-        if (old_status == Solver_PAUSED) {
-            S->runningMutex.unlock();
-        }
-        return kj::READY_NOW;
-    }
-
-    kj::Promise<void> getStatus(GetStatusContext context) override {
-        setStatus(context.getResults().getStatus());
-        return kj::READY_NOW;
-    }
-
-private:
-    void setStatus(mc::Status::Builder status) {
-        std::chrono::duration<double> t;
-        if (S->status == Solver_PAUSED) t = S->elapsed;
-        else t = S->elapsed + chrono::steady_clock::now() - S->tic;
-
-        status.setTime(t.count()*1000);
-
-        switch(S->status) {
-            case Solver_RUNNING:
-                status.setState(mc::State::RUNNING);
-                return;
-            case Solver_INIT:
-                status.setState(mc::State::INIT);
-                return;
-            case Solver_CANCELLED:
-                status.setState(mc::State::CANCELLED);
-                return;
-            case Solver_PAUSED:
-                status.setState(mc::State::PAUSED);
-                return;
-        }
-    }
-};
-
-class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server {
+class ModelCheckingImpl {
     Solver S;
     int acnt;
     CellContainerSet cell_container;
@@ -257,56 +191,6 @@ public:
         }
     }
 
-    kj::Promise<void> solve(SolveContext context) override {
-        kj::MutexGuarded<kj::Maybe<const kj::Executor&>> executor;
-        kj::Own<kj::PromiseFulfiller<void>> fulfiller;
-
-        kj::Thread([&]() noexcept {
-            kj::EventLoop loop;
-            kj::WaitScope scope(loop);
-
-            auto paf = kj::newPromiseAndFulfiller<void>();
-            fulfiller = kj::mv(paf.fulfiller);
-
-            *executor.lockExclusive() = kj::getCurrentThreadExecutor();
-            paf.promise.wait(scope);
-        }).detach();
-
-        const kj::Executor *exec;
-        {
-            auto lock = executor.lockExclusive();
-            lock.wait([&](kj::Maybe<const kj::Executor&> value) {
-                return value != nullptr;
-            });
-            exec = &KJ_ASSERT_NONNULL(*lock);
-        }
-
-        auto result = context.getResults();
-
-        return exec->executeAsync(
-            [this, result, fulfiller{kj::mv(fulfiller)}]() mutable {
-                try {
-                    result.getMeta().setEmpty(modelCheck());
-                }
-                catch(Cancelled c) {
-                    result.setCancelled(true);
-                }
-
-                std::chrono::duration<double> t;
-                t = S.elapsed + chrono::steady_clock::now() - S.tic;
-                result.setTime(t.count()*1000);
-
-                fulfiller->fulfill();
-            }
-        );
-    }
-
-    kj::Promise<void> getControl(GetControlContext context) override {
-        context.getResults().setControl(kj::heap<ControlImpl>(&S));
-        return kj::READY_NOW;
-    }
-
-private:
     bool modelCheck() {
         S.status = Solver_RUNNING;
         S.tic = chrono::steady_clock::now();
@@ -429,20 +313,24 @@ private:
     }
 };
 
-class ModelCheckerImpl final: public mc::ModelChecker<cnfafa::Afa, mcs::Emptiness>::Server {
-public:
-    kj::Promise<void> load(LoadContext context) override {
-        cnfafa::Afa::Reader cnfafa = context.getParams().getModel();
-        context.getResults().setChecking(kj::heap<ModelCheckingImpl>(cnfafa));
-        return kj::READY_NOW;
-    }
-};
-
 int main(int argc, char** argv) {
-    if (argc >= 2 && argv[1][0] == '0') use_trie = false;
-    if (argc >= 3) port = atoi(argv[2]);
+    if (argc < 2) {
+        std::cout << "ERROR: Expecting .afasat file as argument" << std::endl;
+        return -1;
+    } else {
+        int fd = open(argv[1], O_RDONLY);
+        if (fd < 0) {
+            std::cout << "ERROR: Could not open file" << std::endl;
+            return -1;
+        }
 
-    capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", port);
-    auto& waitScope = server.getWaitScope();
-    kj::NEVER_DONE.wait(waitScope);
+        capnp::StreamFdMessageReader message(fd);
+        auto mc = ModelCheckingImpl(message.getRoot<cnfafa::Afa>());
+        close(fd);
+        if (mc.modelCheck()) {
+            std::cout << "EMPTY" << std::endl;
+        } else {
+            std::cout << "NOT EMPTY" << std::endl;
+        }
+    }
 }
