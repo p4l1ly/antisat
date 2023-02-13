@@ -234,13 +234,17 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     int maxDepth = 0;
     int omitted = 0;
     int reset_count = 0;
+    bool short_unsat = false;
 
 public:
     ModelCheckingImpl(cnfafa::Afa::Reader cnfafa)
     : solver_input(cnfafa.getOutputs().size())
     , container_supq()
     {
-        parse_cnfafa(cnfafa, S, &acnt);
+        short_unsat = !parse_cnfafa(cnfafa, S, &acnt);
+        if (short_unsat) {
+            return;
+        }
 
         cell = new vector<int>(S.outputs.size());
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
@@ -258,6 +262,14 @@ public:
     }
 
     kj::Promise<void> solve(SolveContext context) override {
+        auto result = context.getResults();
+
+        if (short_unsat) {
+            result.getMeta().setEmpty(true);
+            result.setTime(0);
+            return kj::READY_NOW;
+        }
+
         kj::MutexGuarded<kj::Maybe<const kj::Executor&>> executor;
         kj::Own<kj::PromiseFulfiller<void>> fulfiller;
 
@@ -280,8 +292,6 @@ public:
             });
             exec = &KJ_ASSERT_NONNULL(*lock);
         }
-
-        auto result = context.getResults();
 
         return exec->executeAsync(
             [this, result, fulfiller{kj::mv(fulfiller)}]() mutable {
@@ -308,6 +318,10 @@ public:
 
 private:
     bool modelCheck() {
+        if (short_unsat) {
+            return false;
+        }
+
         S.status = Solver_RUNNING;
         S.tic = chrono::steady_clock::now();
 
