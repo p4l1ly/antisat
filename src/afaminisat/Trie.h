@@ -164,16 +164,27 @@ struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 
 class Trie : public Constr {
 public:
+  // the underlying automaton
   vector<VerHead> root;
   vector<VerHead> *active_hor;
   unsigned hor_ix = 0;
   int ver_ix = -1;
+
+  // constant - the number of states of the analysed AFA
   unsigned var_count;
+
+  // There is one back_ptr for each variable (= state of the analysed AFA).
+  // If the trie is already in the accepting condition (all places have accepted),
+  // undef-valued variables get guessed to 1 and these pointers connect them
+  // into a list (where the last element is the firstly guessed variable). When
+  // undoing guesses, the list is popped, of course.
+  // A back_ptr contains the index of the next list item + 1.
   vector<unsigned> back_ptrs;
+
   unsigned active_var = 0;
   unsigned active_var_old = 0;
   vector<unsigned> my_zeroes;
-  vector<unsigned> propagations;
+  vector<unsigned> propagations;  // for calcReason
   PropUndo prop_undo = {};
   ActiveVarDoneUndo active_var_done_undo = {};
   BackJumperUndo backjumper_undo = {};

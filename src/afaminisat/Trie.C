@@ -97,21 +97,28 @@ CutKnee Trie::onSat(Solver &S) {
 
   unordered_set<unsigned> my_zeroes_set(my_zeroes.begin(), my_zeroes.end());
 
+  // max level of added_vars+my_zeroes
   int max_level = -1;
+
+  // added_vars are (level, variable) pairs, of zero variables added in the
+  // accepting condition (= not included in my_zeroes)
   vector<std::pair<int, unsigned>> added_vars;
   added_vars.reserve(var_count);
-
   for (unsigned x = 0; x < var_count; x++) {
     if (S.value(S.outputs[x]) == l_False) {
-      max_level = max(max_level, S.level[var(S.outputs[x])]);
+      int lvl = S.level[var(S.outputs[x])];
+      max_level = max(max_level, lvl);
       if (!my_zeroes_set.contains(x)) {
-        added_vars.emplace_back(S.level[var(S.outputs[x])], x);
+        added_vars.emplace_back(lvl, x);
       }
     }
   }
 
   if (verbosity >= 2) printf("MAX_LEVEL %d\n", max_level);
 
+  // We have found a solution that covers the last traversed clause => we
+  // shrink the clause (cut it up to the knee) instead of adding a new branch
+  // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
     CutKnee result(knees.back());
@@ -119,8 +126,7 @@ CutKnee Trie::onSat(Solver &S) {
     return result;
   }
 
-  max_level = max(max_level, std::get<0>(added_vars.back()));
-
+  // sort added_vars by level
   std::sort(added_vars.begin(), added_vars.end());
 
   if (verbosity >= 2) {
@@ -132,6 +138,9 @@ CutKnee Trie::onSat(Solver &S) {
   const std::pair<int, unsigned>& x = added_vars[0];
 
   if (move_right) {
+    // We create a new horizontal empty branch right to the current final place
+    // (which is vertical because move_right is set only when accepting at
+    // vertical places).
     move_right = false;
     vector<VerHead> *new_active_hor = new vector<VerHead>();
     if (verbosity >= -2) hor_count++;
@@ -141,51 +150,63 @@ CutKnee Trie::onSat(Solver &S) {
     ver_ix = -1;
   }
 
+  // Add the first added_var to the current horizontal branch.
   VerHead &ver_head = active_hor->emplace_back(x.second);
   ver_head.hors->reserve(added_vars.size() - 1);
 
+  // Continue down with a vertical branch containing the remaining added_vars.
+  ver_head.hors->reserve(added_vars.size() - 1);
   for (unsigned i = 1; i < added_vars.size(); i++) {
     ver_head.hors->emplace_back(added_vars[i].second);
   }
 
   unsigned i = added_vars.size();
-  const std::pair<int, unsigned>* x_pre = &added_vars[i - 1];
 
+  // We go from the lastly guessed variable to the firstly guessed one.
+  // To each guessed variable, we assign a backjumper that points to the
+  // latest place with a level lower than the level of the guessed variable.
+  //
+  // Why is this so complicated? Shouldn't that always be just the added_var
+  // immediately before the guessed added var? No because guessed variables are
+  // of course not in added_vars, as they are 1-valued.
   for (unsigned acc_ptr = active_var_old; acc_ptr--; acc_ptr = back_ptrs[acc_ptr]) {
     int svar = var(S.outputs[acc_ptr]);
     int lvl = S.level[svar];
+
+    // How could this be even possible? If the new branch is added, the list
+    // of the guessed variables does not get fully erased in the conflict
+    // triggered by the new branch.
     if (lvl <= last_state_level) break;
 
     if (verbosity >= 0) printf("LVL %d %d " L_LIT " %d\n", lvl, acc_ptr, L_lit(S.outputs[acc_ptr]), back_ptrs[acc_ptr]);
 
     while (true) {
-      const std::pair<int, unsigned>& x = *x_pre;
+      const std::pair<int, unsigned>& x = added_vars[i - 1];
       if (x.first < lvl) {
-        if (i != added_vars.size())
+        if (i != added_vars.size()) {
           acc_backjumpers[acc_ptr].enable(
               active_hor, hor_ix, int(i) - 1, my_zeroes.size() + i, knees.size());
+        }
         break;
       }
 
       if (verbosity >= 0) printf("I %d\n", i - 1);
 
+      // If there is no added_var before the guessed variable, set its backjumper to the
+      // start of the added branch.
       if (i == 1) {
         acc_backjumpers[acc_ptr].enable(
             active_hor, hor_ix, -1, my_zeroes.size(), knees.size());
-        break;
+        goto total_break;
       }
-
-      i--;
-      x_pre = &added_vars[i - 1];
 
       assert(x.first == lvl);
-      if (x_pre->first < lvl) {
-        acc_backjumpers[acc_ptr].enable(
-            active_hor, hor_ix, i - 1, my_zeroes.size(), knees.size());
-      }
+      i--;
     }
   }
+total_break:
 
+  // append added_vars to my_zeroes
   auto beg = boost::make_transform_iterator(added_vars.begin(), pair_snd);
   auto end = boost::make_transform_iterator(added_vars.end(), pair_snd);
   my_zeroes.reserve(my_zeroes.size() + added_vars.size());
@@ -194,6 +215,7 @@ CutKnee Trie::onSat(Solver &S) {
   S.cancelUntil(max_level);
   return CutKnee();
 }
+
 
 void Knee::cut() {
   vector<HorHead> &hors = *(*active_hor)[hor_ix].hors;
@@ -205,6 +227,7 @@ void Knee::cut() {
 void Trie::remove(Solver& S, bool just_dealloc) {
   std::cerr << "SubsetQ removed!\n";
 }
+
 
 bool Trie::simplify(Solver& S) {
   return false;
