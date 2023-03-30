@@ -48,7 +48,7 @@ Trie::Trie(unsigned var_count_, int index_count)
 // TODO (optional) support impure_outputs
 Lit Trie::guess(Solver &S) {
   if (!move_right && ver_ix != -1) {
-    HorHead &hor_head = (*(*active_hor)[hor_ix].hors)[ver_ix];
+    HorHead &hor_head = active_hor->elems[hor_ix].hors[ver_ix];
     Lit out_lit = S.outputs[hor_head.tag];
 
     backjumpers.emplace_back(active_hor, hor_ix, ver_ix, my_zeroes.size(), knees.size());
@@ -57,8 +57,8 @@ Lit Trie::guess(Solver &S) {
     if (verbosity >= 2) printf("GUESS_VER %d %d %d " L_LIT "\n", hor_ix, ver_ix, hor_head.tag, L_lit(out_lit));
     return out_lit;
   }
-  if (!move_right && hor_ix < active_hor->size()) {
-    VerHead &ver_head = (*active_hor)[hor_ix];
+  if (!move_right && hor_ix < active_hor->elems.size()) {
+    VerHead &ver_head = active_hor->elems[hor_ix];
     Lit out_lit = S.outputs[ver_head.tag];
 
     backjumpers.emplace_back(active_hor, hor_ix, ver_ix, my_zeroes.size(), knees.size());
@@ -142,22 +142,22 @@ CutKnee Trie::onSat(Solver &S) {
     // (which is vertical because move_right is set only when accepting at
     // vertical places).
     move_right = false;
-    vector<VerHead> *new_active_hor = new vector<VerHead>();
+    HorLine *new_active_hor = new HorLine{active_hor, hor_ix, (unsigned)ver_ix};
     if (verbosity >= -2) hor_count++;
-    (*(*active_hor)[hor_ix].hors)[ver_ix].vers = new_active_hor;
+    active_hor->elems[hor_ix].hors[ver_ix].vers = new_active_hor;
     active_hor = new_active_hor;
     hor_ix = 0;
     ver_ix = -1;
   }
 
   // Add the first added_var to the current horizontal branch.
-  VerHead &ver_head = active_hor->emplace_back(x.second);
-  ver_head.hors->reserve(added_vars.size() - 1);
+  VerHead &ver_head = active_hor->elems.emplace_back(x.second);
+  ver_head.hors.reserve(added_vars.size() - 1);
 
   // Continue down with a vertical branch containing the remaining added_vars.
-  ver_head.hors->reserve(added_vars.size() - 1);
+  ver_head.hors.reserve(added_vars.size() - 1);
   for (unsigned i = 1; i < added_vars.size(); i++) {
-    ver_head.hors->emplace_back(added_vars[i].second);
+    ver_head.hors.emplace_back(added_vars[i].second);
   }
 
   unsigned i = added_vars.size();
@@ -218,7 +218,7 @@ total_break:
 
 
 void Knee::cut() {
-  vector<HorHead> &hors = *(*active_hor)[hor_ix].hors;
+  vector<HorHead> &hors = active_hor->elems[hor_ix].hors;
   if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
   hors.erase(hors.begin() + ver_ix, hors.end());
 }
@@ -235,19 +235,19 @@ bool Trie::simplify(Solver& S) {
 
 
 WhatToDo Trie::after_hors_change(Solver &S) {
-  if (hor_ix == active_hor->size()) {
+  if (hor_ix == active_hor->elems.size()) {
     return WhatToDo::DONE;
   }
 
-  VerHead &ver_head = (*active_hor)[hor_ix];
+  VerHead &ver_head = active_hor->elems[hor_ix];
   int out = ver_head.tag;
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
-    if (ver_head.hors->size() == 0) return WhatToDo::PROPAGATE;
+    if (ver_head.hors.size() == 0) return WhatToDo::PROPAGATE;
     return WhatToDo::WATCH;
   }
-  if (val == l_False && ver_head.hors->size() == 0) {
+  if (val == l_False && ver_head.hors.size() == 0) {
     my_zeroes.push_back(out);
     return WhatToDo::CONFLICT;
   }
@@ -256,18 +256,18 @@ WhatToDo Trie::after_hors_change(Solver &S) {
 
 
 WhatToDo Trie::after_vers_change(Solver &S) {
-  VerHead &ver_head = (*active_hor)[hor_ix];
-  int out = (*ver_head.hors)[ver_ix].tag;
+  VerHead &ver_head = active_hor->elems[hor_ix];
+  int out = ver_head.hors[ver_ix].tag;
   if (verbosity >= 2) printf("OUT %d\n", out);
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
-    if (ver_ix == int(ver_head.hors->size()) - 1) {
+    if (ver_ix == int(ver_head.hors.size()) - 1) {
       return WhatToDo::PROPAGATE;
     }
     return WhatToDo::WATCH;
   }
-  if (val == l_False && ver_ix == int(ver_head.hors->size()) - 1) {
+  if (val == l_False && ver_ix == int(ver_head.hors.size()) - 1) {
     my_zeroes.push_back(out);
     return WhatToDo::CONFLICT;
   }
@@ -279,11 +279,11 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) printf("PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
 
   watch_mask[index(p)] = false;
-  if (hor_ix >= active_hor->size()) return true;
+  if (hor_ix >= active_hor->elems.size()) return true;
 
   unsigned out = ver_ix >= 0
-    ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-    : (*active_hor)[hor_ix].tag;
+    ? active_hor->elems[hor_ix].hors[ver_ix].tag
+    : active_hor->elems[hor_ix].tag;
   Lit out_lit = S.outputs[out];
 
   if (var(out_lit) != var(p)) return true;
@@ -295,13 +295,13 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       if (S.value(out_lit) == l_True) {
         knees.emplace_back(active_hor, hor_ix, ver_ix);
 
-        vector<VerHead> *hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+        HorLine *hor = active_hor->elems[hor_ix].hors[ver_ix].vers;
         if (hor == NULL) {
           move_right = true;
           what_to_do = WhatToDo::DONE;
         }
         else {
-          active_hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+          active_hor = hor;
           hor_ix = 0;
           ver_ix = -1;
           what_to_do = after_hors_change(S);
@@ -331,8 +331,8 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       case AGAIN: {
         if (verbosity >= 2) printf("AGAIN %d %d\n", hor_ix, ver_ix);
         out = ver_ix >= 0
-          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-          : (*active_hor)[hor_ix].tag;
+          ? active_hor->elems[hor_ix].hors[ver_ix].tag
+          : active_hor->elems[hor_ix].tag;
         out_lit = S.outputs[out];
         continue;
       }
@@ -340,8 +340,8 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       case WATCH: {
         if (verbosity >= 2) printf("WATCH %d %d\n", hor_ix, ver_ix);
         out_lit = S.outputs[ver_ix != -1
-          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-          : (*active_hor)[hor_ix].tag
+          ? active_hor->elems[hor_ix].hors[ver_ix].tag
+          : active_hor->elems[hor_ix].tag
         ];
         watch(S, var(out_lit));
         if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
@@ -357,8 +357,8 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
       case PROPAGATE: {
         if (verbosity >= 2) printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
         out_lit = S.outputs[ver_ix != -1
-          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-          : (*active_hor)[hor_ix].tag
+          ? active_hor->elems[hor_ix].hors[ver_ix].tag
+          : active_hor->elems[hor_ix].tag
         ];
 
         watch(S, var(out_lit));
@@ -436,8 +436,8 @@ bool Trie::reset(Solver &S) {
       case AGAIN: {
         if (verbosity >= 2) printf("AGAIN %d %d\n", hor_ix, ver_ix);
         out = ver_ix >= 0
-          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-          : (*active_hor)[hor_ix].tag;
+          ? active_hor->elems[hor_ix].hors[ver_ix].tag
+          : active_hor->elems[hor_ix].tag;
         out_lit = S.outputs[out];
         break;
       }
@@ -445,8 +445,8 @@ bool Trie::reset(Solver &S) {
       case WATCH: {
         if (verbosity >= 2) printf("WATCH %d %d\n", hor_ix, ver_ix);
         out_lit = S.outputs[ver_ix != -1
-          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-          : (*active_hor)[hor_ix].tag
+          ? active_hor->elems[hor_ix].hors[ver_ix].tag
+          : active_hor->elems[hor_ix].tag
         ];
         watch(S, var(out_lit));
         if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
@@ -462,8 +462,8 @@ bool Trie::reset(Solver &S) {
       case PROPAGATE: {
         if (verbosity >= 2) printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
         out_lit = S.outputs[ver_ix != -1
-          ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-          : (*active_hor)[hor_ix].tag
+          ? active_hor->elems[hor_ix].hors[ver_ix].tag
+          : active_hor->elems[hor_ix].tag
         ];
 
         watch(S, var(out_lit));
@@ -484,13 +484,13 @@ bool Trie::reset(Solver &S) {
       if (S.value(out_lit) == l_True) {
         knees.emplace_back(active_hor, hor_ix, ver_ix);
 
-        vector<VerHead> *hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+        HorLine *hor = active_hor->elems[hor_ix].hors[ver_ix].vers;
         if (hor == NULL) {
           move_right = true;
           what_to_do = WhatToDo::DONE;
         }
         else {
-          active_hor = (*(*active_hor)[hor_ix].hors)[ver_ix].vers;
+          active_hor = hor;
           hor_ix = 0;
           ver_ix = -1;
           what_to_do = after_hors_change(S);
@@ -552,10 +552,10 @@ void BackJumper::jump(Solver &S) {
       trie.knees.end()
   );
 
-  if (verbosity >= 2) printf("UNDO %d %d %lu\n", hor_ix, ver_ix, active_hor->size());
+  if (verbosity >= 2) printf("UNDO %d %d %lu\n", hor_ix, ver_ix, active_hor->elems.size());
   Lit out_lit = S.outputs[ver_ix >= 0
-    ? (*(*active_hor)[hor_ix].hors)[ver_ix].tag
-    : (*active_hor)[hor_ix].tag
+    ? active_hor->elems[hor_ix].hors[ver_ix].tag
+    : active_hor->elems[hor_ix].tag
   ];
   trie.watch(S, var(out_lit));
   if (verbosity >= 2) printf("WU " L_LIT "\n", L_lit(out_lit));

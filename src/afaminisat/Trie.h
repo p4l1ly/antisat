@@ -15,20 +15,21 @@ using std::unordered_set;
 //=================================================================================================
 
 class VerHead;
+class HorLine;
 
 extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
 struct Knee {
-  vector<VerHead> *active_hor;
+  HorLine *active_hor;
   unsigned hor_ix;
   unsigned ver_ix;
 
   Knee() {}
 
   Knee
-  ( vector<VerHead> *active_hor_
+  ( HorLine *active_hor_
   , unsigned hor_ix_
   , int ver_ix_
   )
@@ -52,7 +53,7 @@ struct CutKnee {
 };
 
 struct BackJumper {
-    vector<VerHead> *active_hor;
+    HorLine *active_hor;
     unsigned hor_ix;
     int ver_ix;
     unsigned my_zeroes_size;
@@ -61,7 +62,7 @@ struct BackJumper {
     BackJumper() {}
 
     BackJumper
-    ( vector<VerHead> *active_hor_
+    ( HorLine *active_hor_
     , unsigned hor_ix_
     , int ver_ix_
     , unsigned my_zeroes_size_
@@ -85,7 +86,7 @@ struct AccBackJumper {
   AccBackJumper() : enabled(false) {}
 
   void enable
-  ( vector<VerHead> *active_hor
+  ( HorLine *active_hor
   , unsigned hor_ix
   , int ver_ix
   , unsigned my_zeroes_size
@@ -101,10 +102,18 @@ struct AccBackJumper {
 };
 
 
+struct HorLine {
+  HorLine *back_hor;
+  unsigned back_hor_ix;
+  unsigned back_ver_ix;
+  vector<VerHead> elems;
+};
+
+
 class HorHead {
 public:
   unsigned tag;
-  vector<VerHead> *vers;
+  HorLine *vers;
 
   HorHead(unsigned tag_) : tag(tag_), vers(NULL) {
     if (verbosity >= -2) hor_head_count++;
@@ -131,19 +140,16 @@ public:
 class VerHead {
 public:
   unsigned tag;
-  vector<HorHead> *hors;
+  vector<HorHead> hors;
 
-  VerHead(unsigned tag_) : tag(tag_), hors(new vector<HorHead>()) {
+  VerHead(unsigned tag_) : tag(tag_), hors() {
     if (verbosity >= -2) ver_count++;
   }
-  VerHead(VerHead&& old) : tag(old.tag), hors(old.hors) {
-    if (verbosity >= -2) ver_count++;
-    old.hors = NULL;
+  VerHead(VerHead&& old) : tag(old.tag), hors(std::move(old.hors)) {
   }
 
   ~VerHead() {
     if (verbosity >= -2) ver_count--;
-    if (hors) delete hors;
   }
 };
 
@@ -165,8 +171,8 @@ struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 class Trie : public Constr {
 public:
   // the underlying automaton
-  vector<VerHead> root;
-  vector<VerHead> *active_hor;
+  HorLine root;
+  HorLine *active_hor;
   unsigned hor_ix = 0;
   int ver_ix = -1;
 
