@@ -56,7 +56,6 @@ struct BackJumper {
     HorLine *active_hor;
     unsigned hor_ix;
     int ver_ix;
-    unsigned my_zeroes_size;
     unsigned knees_size;
 
     BackJumper() {}
@@ -65,13 +64,11 @@ struct BackJumper {
     ( HorLine *active_hor_
     , unsigned hor_ix_
     , int ver_ix_
-    , unsigned my_zeroes_size_
     , unsigned knees_size_
     )
     : active_hor(active_hor_)
     , hor_ix(hor_ix_)
     , ver_ix(ver_ix_)
-    , my_zeroes_size(my_zeroes_size_)
     , knees_size(knees_size_)
     {}
 
@@ -89,14 +86,12 @@ struct AccBackJumper {
   ( HorLine *active_hor
   , unsigned hor_ix
   , int ver_ix
-  , unsigned my_zeroes_size
   , unsigned knees_size
   ) {
     enabled = true;
     backjumper.active_hor = active_hor;
     backjumper.hor_ix = hor_ix;
     backjumper.ver_ix = ver_ix;
-    backjumper.my_zeroes_size = my_zeroes_size;
     backjumper.knees_size = knees_size;
   }
 };
@@ -167,6 +162,11 @@ struct PropUndo : public Undoable { void undo(Solver &S, Lit _p); };
 struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
 struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 
+struct Place {
+  HorLine *active_hor;
+  unsigned hor_ix;
+  int ver_ix;
+};
 
 class Trie : public Constr {
 public:
@@ -189,8 +189,7 @@ public:
 
   unsigned active_var = 0;
   unsigned active_var_old = 0;
-  vector<unsigned> my_zeroes;
-  vector<unsigned> propagations;  // for calcReason
+  vector<Place> propagations;  // for calcReason
   PropUndo prop_undo = {};
   ActiveVarDoneUndo active_var_done_undo = {};
   BackJumperUndo backjumper_undo = {};
@@ -218,6 +217,24 @@ public:
   WhatToDo after_vers_change(Solver &S);
   void back();
 };
+
+
+#define ITER_MY_ZEROES(active_hor, hor_ix, ver_ix, x, fn) { \
+  unsigned __hix = (hor_ix); \
+  int __vix = (ver_ix); \
+  for (HorLine *__hor = (active_hor); __hor;) { \
+    VerHead &__ver = __hor->elems[__hix]; \
+    unsigned x = __ver.tag; \
+    {fn} \
+    for (unsigned __i = 0; __i < __vix; __i++) { \
+      unsigned x = __ver.hors[__i].tag; \
+      {fn} \
+    } \
+    __hix = __hor->back_hor_ix; \
+    __vix = __hor->back_ver_ix; \
+    __hor = __hor->back_hor; \
+  } \
+}
 
 //=================================================================================================
 #endif

@@ -728,7 +728,7 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
 
-    if (trie->root.size()) {
+    if (trie->root.elems.size()) {
       if (!trie->reset(*this) || propagate() != NULL) {
         if (verbosity >= 2) printf("RESET_CONFLICT\n");
         propQ.clear();
