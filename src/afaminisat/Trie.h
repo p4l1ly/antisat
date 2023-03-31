@@ -21,42 +21,10 @@ extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
-struct Knee {
-  HorLine *active_hor;
-  unsigned hor_ix;
-  unsigned ver_ix;
-
-  Knee() {}
-
-  Knee
-  ( HorLine *active_hor_
-  , unsigned hor_ix_
-  , int ver_ix_
-  )
-  : active_hor(active_hor_)
-  , hor_ix(hor_ix_)
-  , ver_ix(ver_ix_)
-  {}
-
-  void cut();
-};
-
-struct CutKnee {
-  bool enabled;
-  Knee knee;
-
-  CutKnee() : enabled(false) {}
-
-  CutKnee(Knee &knee_)
-  : enabled(true), knee(knee_.active_hor, knee_.hor_ix, knee_.ver_ix)
-  {}
-};
-
 struct BackJumper {
     HorLine *active_hor;
     unsigned hor_ix;
     int ver_ix;
-    unsigned knees_size;
 
     BackJumper() {}
 
@@ -64,12 +32,10 @@ struct BackJumper {
     ( HorLine *active_hor_
     , unsigned hor_ix_
     , int ver_ix_
-    , unsigned knees_size_
     )
     : active_hor(active_hor_)
     , hor_ix(hor_ix_)
     , ver_ix(ver_ix_)
-    , knees_size(knees_size_)
     {}
 
     void jump(Solver &S);
@@ -86,13 +52,11 @@ struct AccBackJumper {
   ( HorLine *active_hor
   , unsigned hor_ix
   , int ver_ix
-  , unsigned knees_size
   ) {
     enabled = true;
     backjumper.active_hor = active_hor;
     backjumper.hor_ix = hor_ix;
     backjumper.ver_ix = ver_ix;
-    backjumper.knees_size = knees_size;
   }
 };
 
@@ -166,6 +130,8 @@ struct Place {
   HorLine *active_hor;
   unsigned hor_ix;
   int ver_ix;
+
+  void cut_away();
 };
 
 class Trie : public Constr {
@@ -196,14 +162,15 @@ public:
   vector<AccBackJumper> acc_backjumpers;
   vector<bool> watch_mask;
   vector<BackJumper> backjumpers;
-  vector<Knee> knees;
   int last_state_level = -1;
   bool move_right = false;
 
   Trie(unsigned var_count, int index_count);
 
   Lit guess(Solver &S);
-  CutKnee onSat(Solver &S);
+
+  // Result: should the trie be cut at the active place's back_ptr?
+  bool onSat(Solver &S);
   bool reset(Solver &S);
   void watch(Solver &S, int var_);
 

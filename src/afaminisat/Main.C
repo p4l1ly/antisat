@@ -380,10 +380,15 @@ private:
 
                       cell_container.add(cell);
 
-                      CutKnee cut_knee;
+                      Place cut_knee = {NULL, 0, 0};
 
                       if (use_trie) {
                           cut_knee = trie->onSat(S);
+                          if (trie->onSat(S)) {
+                            cut_knee.active_hor = trie->active_hor;
+                            cut_knee.hor_ix = trie->hor_ix;
+                            cut_knee.ver_ix = trie->ver_ix;
+                          }
                       } else {
                           cell_out.clear();
                           for (int i: *cell) {
@@ -399,11 +404,11 @@ private:
 
                       if (!S.onSatConflict(*cell)) {
                         if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
-                        if (cut_knee.enabled) cut_knee.knee.cut();
+                        if (cut_knee.active_hor) cut_knee.cut_away();
                         break;
                       }
                       if (verbosity >= 2) printf("NEXT\n");
-                      if (cut_knee.enabled) cut_knee.knee.cut();
+                      if (cut_knee.active_hor) cut_knee.cut_away();
                   };
               }
             }

@@ -34,11 +34,9 @@ Trie::Trie(unsigned var_count_, int index_count)
 , acc_backjumpers(var_count_)
 , watch_mask(index_count)
 , backjumpers()
-, knees()
 {
   propagations.reserve(var_count_);
   backjumpers.reserve(var_count_);
-  knees.reserve(var_count_);
   active_hor = &root;
 }
 
@@ -49,7 +47,7 @@ Lit Trie::guess(Solver &S) {
     HorHead &hor_head = active_hor->elems[hor_ix].hors[ver_ix];
     Lit out_lit = S.outputs[hor_head.tag];
 
-    backjumpers.emplace_back(active_hor, hor_ix, ver_ix, knees.size());
+    backjumpers.emplace_back(active_hor, hor_ix, ver_ix);
     S.undos[var(out_lit)].push(&backjumper_undo);
 
     if (verbosity >= 2) printf("GUESS_VER %d %d %d " L_LIT "\n", hor_ix, ver_ix, hor_head.tag, L_lit(out_lit));
@@ -59,7 +57,7 @@ Lit Trie::guess(Solver &S) {
     VerHead &ver_head = active_hor->elems[hor_ix];
     Lit out_lit = S.outputs[ver_head.tag];
 
-    backjumpers.emplace_back(active_hor, hor_ix, ver_ix, knees.size());
+    backjumpers.emplace_back(active_hor, hor_ix, ver_ix);
     S.undos[var(out_lit)].push(&backjumper_undo);
 
     if (verbosity >= 2) printf("GUESS_HOR %d %d %d " L_LIT "\n", hor_ix, ver_ix, ver_head.tag, L_lit(out_lit));
@@ -90,7 +88,7 @@ inline unsigned pair_snd(const std::pair<int, unsigned> &x) {
   return x.second;
 }
 
-CutKnee Trie::onSat(Solver &S) {
+bool Trie::onSat(Solver &S) {
   if (verbosity >= 2) printf("ON_SAT\n");
 
   unordered_set<unsigned> my_zeroes_set;
@@ -123,9 +121,9 @@ CutKnee Trie::onSat(Solver &S) {
   // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
-    CutKnee result(knees.back());
+    Place result = {active_hor->back_hor, active_hor->back_hor_ix, (int)active_hor->back_ver_ix};
     S.cancelUntil(max_level);
-    return result;
+    return true;
   }
 
   // sort added_vars by level
@@ -186,8 +184,7 @@ CutKnee Trie::onSat(Solver &S) {
       const std::pair<int, unsigned>& x = added_vars[i - 1];
       if (x.first < lvl) {
         if (i != added_vars.size()) {
-          acc_backjumpers[acc_ptr].enable(
-              active_hor, hor_ix, int(i) - 1, knees.size());
+          acc_backjumpers[acc_ptr].enable(active_hor, hor_ix, int(i) - 1);
         }
         break;
       }
@@ -197,8 +194,7 @@ CutKnee Trie::onSat(Solver &S) {
       // If there is no added_var before the guessed variable, set its backjumper to the
       // start of the added branch.
       if (i == 1) {
-        acc_backjumpers[acc_ptr].enable(
-            active_hor, hor_ix, -1, knees.size());
+        acc_backjumpers[acc_ptr].enable(active_hor, hor_ix, -1);
         goto total_break;
       }
 
@@ -209,11 +205,11 @@ CutKnee Trie::onSat(Solver &S) {
 total_break:
 
   S.cancelUntil(max_level);
-  return CutKnee();
+  return false;
 }
 
 
-void Knee::cut() {
+void Place::cut_away() {
   vector<HorHead> &hors = active_hor->elems[hor_ix].hors;
   if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
   hors.erase(hors.begin() + ver_ix, hors.end());
@@ -287,8 +283,6 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
   while (true) {
     if (ver_ix != -1) {
       if (S.value(out_lit) == l_True) {
-        knees.emplace_back(active_hor, hor_ix, ver_ix);
-
         HorLine *hor = active_hor->elems[hor_ix].hors[ver_ix].vers;
         if (hor == NULL) {
           move_right = true;
@@ -426,7 +420,6 @@ bool Trie::reset(Solver &S) {
   active_var = 0;
   active_var_old = 0;
   propagations.clear();
-  knees.clear();
   move_right = false;
 
   if (verbosity >= 2) printf("RESET\n");
@@ -486,8 +479,6 @@ bool Trie::reset(Solver &S) {
 
     if (ver_ix != -1) {
       if (S.value(out_lit) == l_True) {
-        knees.emplace_back(active_hor, hor_ix, ver_ix);
-
         HorLine *hor = active_hor->elems[hor_ix].hors[ver_ix].vers;
         if (hor == NULL) {
           move_right = true;
@@ -543,10 +534,6 @@ void BackJumper::jump(Solver &S) {
   trie.active_hor = active_hor;
   trie.hor_ix = hor_ix;
   trie.ver_ix = ver_ix;
-  trie.knees.erase(
-      trie.knees.begin() + knees_size,
-      trie.knees.end()
-  );
 
   if (verbosity >= 2) printf("UNDO %d %d %lu\n", hor_ix, ver_ix, active_hor->elems.size());
   Lit out_lit = S.outputs[ver_ix >= 0
