@@ -383,12 +383,7 @@ private:
                       Place cut_knee = {NULL, 0, 0};
 
                       if (use_trie) {
-                          cut_knee = trie->onSat(S);
-                          if (trie->onSat(S)) {
-                            cut_knee.active_hor = trie->active_hor;
-                            cut_knee.hor_ix = trie->hor_ix;
-                            cut_knee.ver_ix = trie->ver_ix;
-                          }
+                          if (trie->onSat(S)) cut_knee = trie->least_place;
                       } else {
                           cell_out.clear();
                           for (int i: *cell) {
@@ -403,12 +398,12 @@ private:
                       }
 
                       if (!S.onSatConflict(*cell)) {
-                        if (verbosity >= 2) printf("STOP %d\n", cut_knee.enabled);
-                        if (cut_knee.active_hor) cut_knee.cut_away();
+                        if (verbosity >= 2) printf("STOP %d\n", cut_knee.hor != NULL);
+                        if (cut_knee.hor) cut_knee.cut_away();
                         break;
                       }
                       if (verbosity >= 2) printf("NEXT\n");
-                      if (cut_knee.active_hor) cut_knee.cut_away();
+                      if (cut_knee.hor) cut_knee.cut_away();
                   };
               }
             }

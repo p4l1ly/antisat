@@ -9,8 +9,49 @@
 int hor_head_count = 0;
 int hor_count = 0;
 int ver_count = 0;
+PropUndo PROP_UNDO = {};
+ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO = {};
+BackJumperUndo BACKJUMPER_UNDO = {};
 
 using std::cout;
+
+inline HorHead &Place::deref_ver() {
+  return hor->elems[hor_ix].hors[ver_ix];
+}
+
+inline VerHead &Place::deref_hor() {
+  return hor->elems[hor_ix];
+}
+
+inline unsigned Place::get_tag() {
+  return ver_ix == -1 ? deref_hor().tag : deref_ver().tag;
+}
+
+inline bool Place::hor_is_out() {
+  return hor_ix == hor->elems.size();
+}
+
+inline bool Place::ver_is_singleton() {
+  return deref_hor().hors.size() == 0;
+}
+
+inline bool Place::ver_is_last() {
+  return ver_ix + 1 == deref_hor().hors.size();
+}
+
+inline bool Place::is_ver() {
+  return ver_ix != -1;
+}
+
+inline const char *Place::get_label() {
+  return is_ver() ? "VER" : "HOR";
+}
+
+void Place::cut_away() {
+  vector<HorHead> &hors = deref_hor().hors;
+  if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
+  hors.erase(hors.begin() + ver_ix, hors.end());
+}
 
 void Trie::watch(Solver &S, int var_) {
   // optimized but opaque way to tell: watch(Lit(var)); watch(~Lit(var))
@@ -28,6 +69,7 @@ void Trie::watch(Solver &S, int var_) {
 
 Trie::Trie(unsigned var_count_, int index_count)
 : root()
+, least_place({&root, 0, -1})
 , var_count(var_count_)
 , back_ptrs(var_count_)
 , propagations()
@@ -37,30 +79,23 @@ Trie::Trie(unsigned var_count_, int index_count)
 {
   propagations.reserve(var_count_);
   backjumpers.reserve(var_count_);
-  active_hor = &root;
 }
 
-
-// TODO (optional) support impure_outputs
 Lit Trie::guess(Solver &S) {
-  if (!move_right && ver_ix != -1) {
-    HorHead &hor_head = active_hor->elems[hor_ix].hors[ver_ix];
-    Lit out_lit = S.outputs[hor_head.tag];
+  if (!move_right && !least_place.hor_is_out()) {
+    unsigned tag = least_place.get_tag();
+    Lit out_lit = S.outputs[tag];
 
-    backjumpers.emplace_back(active_hor, hor_ix, ver_ix);
-    S.undos[var(out_lit)].push(&backjumper_undo);
+    backjumpers.emplace_back(least_place);
+    S.undos[var(out_lit)].push(&BACKJUMPER_UNDO);
 
-    if (verbosity >= 2) printf("GUESS_VER %d %d %d " L_LIT "\n", hor_ix, ver_ix, hor_head.tag, L_lit(out_lit));
-    return out_lit;
-  }
-  if (!move_right && hor_ix < active_hor->elems.size()) {
-    VerHead &ver_head = active_hor->elems[hor_ix];
-    Lit out_lit = S.outputs[ver_head.tag];
-
-    backjumpers.emplace_back(active_hor, hor_ix, ver_ix);
-    S.undos[var(out_lit)].push(&backjumper_undo);
-
-    if (verbosity >= 2) printf("GUESS_HOR %d %d %d " L_LIT "\n", hor_ix, ver_ix, ver_head.tag, L_lit(out_lit));
+    if (verbosity >= 2) {
+      printf(
+          "GUESS_%s %d %d %d " L_LIT "\n",
+          least_place.get_label(), least_place.hor_ix, least_place.ver_ix, tag,
+          L_lit(out_lit)
+      );
+    }
     return out_lit;
   }
   else {
@@ -78,7 +113,7 @@ Lit Trie::guess(Solver &S) {
       }
       active_var++;
     }
-    S.undos[var(S.trail.last())].push(&active_var_done_undo);
+    S.undos[var(S.trail.last())].push(&ACTIVE_VAR_DONE_UNDO);
     if (verbosity >= 2) printf("noguess %d\n", active_var_old);
     return lit_Undef;
   }
@@ -93,7 +128,7 @@ bool Trie::onSat(Solver &S) {
 
   unordered_set<unsigned> my_zeroes_set;
 
-  ITER_MY_ZEROES(active_hor, hor_ix, ver_ix, x,
+  ITER_MY_ZEROES(least_place, x,
       my_zeroes_set.insert(x);
   )
 
@@ -121,7 +156,7 @@ bool Trie::onSat(Solver &S) {
   // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
-    Place result = {active_hor->back_hor, active_hor->back_hor_ix, (int)active_hor->back_ver_ix};
+    Place result = least_place.hor->back_ptr;
     S.cancelUntil(max_level);
     return true;
   }
@@ -131,7 +166,10 @@ bool Trie::onSat(Solver &S) {
 
   if (verbosity >= 2) {
     for (auto x: added_vars) {
-       printf("ADDED_VAR %d %d " L_LIT "\n", std::get<0>(x), std::get<1>(x), L_lit(S.outputs[std::get<1>(x)]));
+       printf(
+          "ADDED_VAR %d %d " L_LIT "\n",
+          std::get<0>(x), std::get<1>(x), L_lit(S.outputs[std::get<1>(x)])
+       );
      }
   }
 
@@ -142,16 +180,14 @@ bool Trie::onSat(Solver &S) {
     // (which is vertical because move_right is set only when accepting at
     // vertical places).
     move_right = false;
-    HorLine *new_active_hor = new HorLine{active_hor, hor_ix, (unsigned)ver_ix};
+    HorLine *new_active_hor = new HorLine{least_place};
     if (verbosity >= -2) hor_count++;
-    active_hor->elems[hor_ix].hors[ver_ix].vers = new_active_hor;
-    active_hor = new_active_hor;
-    hor_ix = 0;
-    ver_ix = -1;
+    least_place.deref_ver().hor = new_active_hor;
+    least_place = {new_active_hor, 0, -1};
   }
 
   // Add the first added_var to the current horizontal branch.
-  VerHead &ver_head = active_hor->elems.emplace_back(x.second);
+  VerHead &ver_head = least_place.hor->elems.emplace_back(x.second);
   ver_head.hors.reserve(added_vars.size() - 1);
 
   // Continue down with a vertical branch containing the remaining added_vars.
@@ -178,13 +214,20 @@ bool Trie::onSat(Solver &S) {
     // triggered by the new branch.
     if (lvl <= last_state_level) break;
 
-    if (verbosity >= 0) printf("LVL %d %d " L_LIT " %d\n", lvl, acc_ptr, L_lit(S.outputs[acc_ptr]), back_ptrs[acc_ptr]);
+    if (verbosity >= 0) {
+      printf(
+        "LVL %d %d " L_LIT " %d\n",
+        lvl, acc_ptr, L_lit(S.outputs[acc_ptr]), back_ptrs[acc_ptr]
+      );
+    }
 
     while (true) {
       const std::pair<int, unsigned>& x = added_vars[i - 1];
       if (x.first < lvl) {
         if (i != added_vars.size()) {
-          acc_backjumpers[acc_ptr].enable(active_hor, hor_ix, int(i) - 1);
+          acc_backjumpers[acc_ptr].enable(
+            {least_place.hor, least_place.hor_ix, int(i) - 1}
+          );
         }
         break;
       }
@@ -194,7 +237,7 @@ bool Trie::onSat(Solver &S) {
       // If there is no added_var before the guessed variable, set its backjumper to the
       // start of the added branch.
       if (i == 1) {
-        acc_backjumpers[acc_ptr].enable(active_hor, hor_ix, -1);
+        acc_backjumpers[acc_ptr].enable({least_place.hor, least_place.hor_ix, -1});
         goto total_break;
       }
 
@@ -209,12 +252,6 @@ total_break:
 }
 
 
-void Place::cut_away() {
-  vector<HorHead> &hors = active_hor->elems[hor_ix].hors;
-  if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
-  hors.erase(hors.begin() + ver_ix, hors.end());
-}
-
 
 void Trie::remove(Solver& S, bool just_dealloc) {
   std::cerr << "SubsetQ removed!\n";
@@ -227,19 +264,18 @@ bool Trie::simplify(Solver& S) {
 
 
 WhatToDo Trie::after_hors_change(Solver &S) {
-  if (hor_ix == active_hor->elems.size()) {
+  if (least_place.hor_is_out()) {
     return WhatToDo::DONE;
   }
 
-  VerHead &ver_head = active_hor->elems[hor_ix];
-  int out = ver_head.tag;
+  unsigned out = least_place.get_tag();
+  if (verbosity >= 2) printf("OUT %d\n", out);
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
-    if (ver_head.hors.size() == 0) return WhatToDo::PROPAGATE;
-    return WhatToDo::WATCH;
+    return least_place.ver_is_singleton() ? WhatToDo::PROPAGATE : WhatToDo::WATCH;
   }
-  if (val == l_False && ver_head.hors.size() == 0) {
+  if (val == l_False && least_place.ver_is_singleton()) {
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -247,18 +283,14 @@ WhatToDo Trie::after_hors_change(Solver &S) {
 
 
 WhatToDo Trie::after_vers_change(Solver &S) {
-  VerHead &ver_head = active_hor->elems[hor_ix];
-  int out = ver_head.hors[ver_ix].tag;
+  unsigned out = least_place.get_tag();
   if (verbosity >= 2) printf("OUT %d\n", out);
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
-    if (ver_ix == int(ver_head.hors.size()) - 1) {
-      return WhatToDo::PROPAGATE;
-    }
-    return WhatToDo::WATCH;
+    return least_place.ver_is_last() ? WhatToDo::PROPAGATE : WhatToDo::WATCH;
   }
-  if (val == l_False && ver_ix == int(ver_head.hors.size()) - 1) {
+  if (val == l_False && least_place.ver_is_last()) {
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -266,14 +298,14 @@ WhatToDo Trie::after_vers_change(Solver &S) {
 
 
 bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
-  if (verbosity >= 2) printf("PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
+  if (verbosity >= 2) {
+    printf("PROP %d %d " L_LIT "\n", least_place.hor_ix, least_place.ver_ix, L_lit(p));
+  }
 
   watch_mask[index(p)] = false;
-  if (hor_ix >= active_hor->elems.size()) return true;
+  if (least_place.hor_is_out()) return true;
 
-  unsigned out = ver_ix >= 0
-    ? active_hor->elems[hor_ix].hors[ver_ix].tag
-    : active_hor->elems[hor_ix].tag;
+  unsigned out = least_place.get_tag();
   Lit out_lit = S.outputs[out];
 
   if (var(out_lit) != var(p)) return true;
@@ -281,80 +313,83 @@ bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
   WhatToDo what_to_do;
 
   while (true) {
-    if (ver_ix != -1) {
+    if (least_place.is_ver()) {
       if (S.value(out_lit) == l_True) {
-        HorLine *hor = active_hor->elems[hor_ix].hors[ver_ix].vers;
+        HorLine *hor = least_place.deref_ver().hor;
         if (hor == NULL) {
           move_right = true;
           what_to_do = WhatToDo::DONE;
         }
         else {
-          active_hor = hor;
-          hor_ix = 0;
-          ver_ix = -1;
+          least_place = {hor, 0, -1};
           what_to_do = after_hors_change(S);
         }
       }
       else {
-        ver_ix++;
+        least_place.ver_ix++;
         what_to_do = after_vers_change(S);
       }
     }
     else {
       if (S.value(out_lit) == l_True) {
-        hor_ix++;
+        least_place.hor_ix++;
         what_to_do = after_hors_change(S);
       }
       else {
-        ver_ix++;
+        least_place.ver_ix++;
         what_to_do = after_vers_change(S);
       }
     }
 
     switch (what_to_do) {
       case AGAIN: {
-        if (verbosity >= 2) printf("AGAIN %d %d\n", hor_ix, ver_ix);
-        out = ver_ix >= 0
-          ? active_hor->elems[hor_ix].hors[ver_ix].tag
-          : active_hor->elems[hor_ix].tag;
+        if (verbosity >= 2) {
+          printf("AGAIN %d %d\n", least_place.hor_ix, least_place.ver_ix);
+        }
+        out = least_place.get_tag();
         out_lit = S.outputs[out];
         continue;
       }
 
       case WATCH: {
-        if (verbosity >= 2) printf("WATCH %d %d\n", hor_ix, ver_ix);
-        out_lit = S.outputs[ver_ix != -1
-          ? active_hor->elems[hor_ix].hors[ver_ix].tag
-          : active_hor->elems[hor_ix].tag
-        ];
+        if (verbosity >= 2) {
+          printf("WATCH %d %d\n", least_place.hor_ix, least_place.ver_ix);
+        }
+        out_lit = S.outputs[least_place.get_tag()];
         watch(S, var(out_lit));
         if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
         return true;
       }
 
       case DONE: {
-        if (verbosity >= 2) printf("DONE %d %d, active_var: %d\n", hor_ix, ver_ix, active_var);
+        if (verbosity >= 2) {
+          printf(
+            "DONE %d %d, active_var: %d\n",
+            least_place.hor_ix, least_place.ver_ix, active_var
+          );
+        }
         last_state_level = S.decisionLevel();
         return true;
       }
 
       case PROPAGATE: {
-        if (verbosity >= 2) printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
-        out_lit = S.outputs[ver_ix != -1
-          ? active_hor->elems[hor_ix].hors[ver_ix].tag
-          : active_hor->elems[hor_ix].tag
-        ];
+        if (verbosity >= 2) {
+          printf("PROPAGATE %d %d\n", least_place.hor_ix, least_place.ver_ix);
+        }
+        out_lit = S.outputs[least_place.get_tag()];
 
         watch(S, var(out_lit));
         if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(out_lit));
 
-        propagations.push_back(Place{active_hor, hor_ix, ver_ix});
-        S.undos[var(out_lit)].push(&prop_undo);
+        propagations.push_back(least_place);
+        S.undos[var(out_lit)].push(&PROP_UNDO);
         return S.enqueue(out_lit, this);
       }
 
       case CONFLICT: {
-          if (verbosity >= 2) printf("CONFLICT %d %d\n", hor_ix, ver_ix);
+          if (verbosity >= 2) {
+            printf("CONFLICT %d %d\n", least_place.hor_ix, least_place.ver_ix);
+          }
           return false;
       }
     }
@@ -367,7 +402,7 @@ void Trie::undo(Solver& S, Lit p) {
   if (acc_backjumpers[active_var].enabled) {
     if (verbosity >= 2) printf("ACC_UNDO_BACKJUMP\n");
     acc_backjumpers[active_var].enabled = false;
-    acc_backjumpers[active_var].backjumper.jump(S);
+    acc_backjumpers[active_var].jump(S);
   }
 
   active_var = back_ptrs[active_var];
@@ -378,7 +413,7 @@ void Trie::undo(Solver& S, Lit p) {
 void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   if (p == lit_Undef) {
     int max_level = -1;
-    ITER_MY_ZEROES(active_hor, hor_ix, ver_ix, x,
+    ITER_MY_ZEROES(least_place, x,
       Lit out_lit = S.outputs[x];
       max_level = max(max_level, S.level[var(out_lit)]);
       out_reason.push(~out_lit);
@@ -386,9 +421,7 @@ void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 
     if (verbosity >= 2) {
       printf("CALC_REASON_CONFLICT " L_LIT, L_lit(p));
-      ITER_MY_ZEROES(active_hor, hor_ix, ver_ix, x,
-          printf(" %u", x);
-      )
+      ITER_MY_ZEROES(least_place, x, printf(" %u", x);)
       printf("\n");
     }
 
@@ -398,15 +431,11 @@ void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     if (verbosity >= 2) printf("PROPS %lu\n", propagations.size());
     Place place = propagations.back();
 
-    ITER_MY_ZEROES(place.active_hor, place.hor_ix, place.ver_ix, x,
-      out_reason.push(~S.outputs[x]);
-    )
+    ITER_MY_ZEROES(place, x, out_reason.push(~S.outputs[x]);)
 
     if (verbosity >= 2) {
       printf("CALC_REASON_PLACE " L_LIT, L_lit(p));
-      ITER_MY_ZEROES(place.active_hor, place.hor_ix, place.ver_ix, x,
-          printf(" %u", x);
-      )
+      ITER_MY_ZEROES(place, x, printf(" %u", x);)
       printf("\n");
     }
   }
@@ -414,9 +443,7 @@ void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 
 
 bool Trie::reset(Solver &S) {
-  active_hor = &root;
-  hor_ix = 0;
-  ver_ix = -1;
+  least_place = {&root, 0, -1};
   active_var = 0;
   active_var_old = 0;
   propagations.clear();
@@ -431,78 +458,81 @@ bool Trie::reset(Solver &S) {
   while (true) {
     switch (what_to_do) {
       case AGAIN: {
-        if (verbosity >= 2) printf("AGAIN %d %d\n", hor_ix, ver_ix);
-        out = ver_ix >= 0
-          ? active_hor->elems[hor_ix].hors[ver_ix].tag
-          : active_hor->elems[hor_ix].tag;
+        if (verbosity >= 2) {
+          printf("AGAIN %d %d\n", least_place.hor_ix, least_place.ver_ix);
+        }
+        out = least_place.get_tag();
         out_lit = S.outputs[out];
         break;
       }
 
       case WATCH: {
-        if (verbosity >= 2) printf("WATCH %d %d\n", hor_ix, ver_ix);
-        out_lit = S.outputs[ver_ix != -1
-          ? active_hor->elems[hor_ix].hors[ver_ix].tag
-          : active_hor->elems[hor_ix].tag
-        ];
+        if (verbosity >= 2) {
+          printf("WATCH %d %d\n", least_place.hor_ix, least_place.ver_ix);
+        }
+        out_lit = S.outputs[least_place.get_tag()];
         watch(S, var(out_lit));
         if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
         return true;
       }
 
       case DONE: {
-        if (verbosity >= 2) printf("DONE %d %d, active_var: %d\n", hor_ix, ver_ix, active_var);
+        if (verbosity >= 2) {
+          printf(
+            "DONE %d %d, active_var: %d\n",
+            least_place.hor_ix, least_place.ver_ix, active_var
+          );
+        }
         last_state_level = S.decisionLevel();
         return true;
       }
 
       case PROPAGATE: {
-        if (verbosity >= 2) printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
-        out_lit = S.outputs[ver_ix != -1
-          ? active_hor->elems[hor_ix].hors[ver_ix].tag
-          : active_hor->elems[hor_ix].tag
-        ];
+        if (verbosity >= 2) {
+          printf("PROPAGATE %d %d\n", least_place.hor_ix, least_place.ver_ix);
+        }
+        out_lit = S.outputs[least_place.get_tag()];
 
         watch(S, var(out_lit));
         if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(out_lit));
 
-        propagations.push_back(Place{active_hor, hor_ix, ver_ix});
-        S.undos[var(out_lit)].push(&prop_undo);
+        propagations.push_back(least_place);
+        S.undos[var(out_lit)].push(&PROP_UNDO);
         return S.enqueue(out_lit, this);
       }
 
       case CONFLICT: {
-          if (verbosity >= 2) printf("CONFLICT %d %d\n", hor_ix, ver_ix);
+          if (verbosity >= 2) {
+            printf("CONFLICT %d %d\n", least_place.hor_ix, least_place.ver_ix);
+          }
           return false;
       }
     }
 
-    if (ver_ix != -1) {
+    if (least_place.is_ver()) {
       if (S.value(out_lit) == l_True) {
-        HorLine *hor = active_hor->elems[hor_ix].hors[ver_ix].vers;
+        HorLine *hor = least_place.deref_ver().hor;
         if (hor == NULL) {
           move_right = true;
           what_to_do = WhatToDo::DONE;
         }
         else {
-          active_hor = hor;
-          hor_ix = 0;
-          ver_ix = -1;
+          least_place = {hor, 0, -1};
           what_to_do = after_hors_change(S);
         }
       }
       else {
-        ver_ix++;
+        least_place.ver_ix++;
         what_to_do = after_vers_change(S);
       }
     }
     else {
       if (S.value(out_lit) == l_True) {
-        hor_ix++;
+        least_place.hor_ix++;
         what_to_do = after_hors_change(S);
       }
       else {
-        ver_ix++;
+        least_place.ver_ix++;
         what_to_do = after_vers_change(S);
       }
     }
@@ -530,16 +560,12 @@ void BackJumper::jump(Solver &S) {
   Trie &trie = *S.trie;
 
   trie.move_right = false;
+  trie.least_place = place;
 
-  trie.active_hor = active_hor;
-  trie.hor_ix = hor_ix;
-  trie.ver_ix = ver_ix;
-
-  if (verbosity >= 2) printf("UNDO %d %d %lu\n", hor_ix, ver_ix, active_hor->elems.size());
-  Lit out_lit = S.outputs[ver_ix >= 0
-    ? active_hor->elems[hor_ix].hors[ver_ix].tag
-    : active_hor->elems[hor_ix].tag
-  ];
+  if (verbosity >= 2) {
+    printf("UNDO %d %d %lu\n", place.hor_ix, place.ver_ix, place.hor->elems.size());
+  }
+  Lit out_lit = S.outputs[place.get_tag()];
   trie.watch(S, var(out_lit));
   if (verbosity >= 2) printf("WU " L_LIT "\n", L_lit(out_lit));
 }

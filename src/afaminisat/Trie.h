@@ -15,56 +15,52 @@ using std::unordered_set;
 //=================================================================================================
 
 class VerHead;
+class HorHead;
 class HorLine;
 
 extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
+
+struct Place {
+  HorLine *hor;
+  unsigned hor_ix;
+  int ver_ix;
+
+  void cut_away();
+  HorHead &deref_ver();
+  VerHead &deref_hor();
+  unsigned get_tag();
+  bool hor_is_out();
+  bool ver_is_last();
+  bool ver_is_singleton();
+  bool is_ver();
+  const char *get_label();
+};
+
+
 struct BackJumper {
-    HorLine *active_hor;
-    unsigned hor_ix;
-    int ver_ix;
-
-    BackJumper() {}
-
-    BackJumper
-    ( HorLine *active_hor_
-    , unsigned hor_ix_
-    , int ver_ix_
-    )
-    : active_hor(active_hor_)
-    , hor_ix(hor_ix_)
-    , ver_ix(ver_ix_)
-    {}
+    Place place;
 
     void jump(Solver &S);
 };
 
 
-struct AccBackJumper {
+struct AccBackJumper : BackJumper {
   bool enabled;
-  BackJumper backjumper;
 
   AccBackJumper() : enabled(false) {}
 
-  void enable
-  ( HorLine *active_hor
-  , unsigned hor_ix
-  , int ver_ix
-  ) {
+  void enable(Place place_) {
     enabled = true;
-    backjumper.active_hor = active_hor;
-    backjumper.hor_ix = hor_ix;
-    backjumper.ver_ix = ver_ix;
+    place = place_;
   }
 };
 
 
 struct HorLine {
-  HorLine *back_hor;
-  unsigned back_hor_ix;
-  unsigned back_ver_ix;
+  Place back_ptr;
   vector<VerHead> elems;
 };
 
@@ -72,13 +68,13 @@ struct HorLine {
 class HorHead {
 public:
   unsigned tag;
-  HorLine *vers;
+  HorLine *hor;
 
-  HorHead(unsigned tag_) : tag(tag_), vers(NULL) {
+  HorHead(unsigned tag_) : tag(tag_), hor(NULL) {
     if (verbosity >= -2) hor_head_count++;
   }
-  HorHead(HorHead&& old) : tag(old.tag), vers(old.vers) {
-    old.vers = NULL;
+  HorHead(HorHead&& old) : tag(old.tag), hor(old.hor) {
+    old.hor = NULL;
     if (verbosity >= -2) hor_head_count++;
   }
 
@@ -88,9 +84,9 @@ public:
 
   ~HorHead() {
     if (verbosity >= -2) hor_head_count--;
-    if (vers) {
+    if (hor) {
       if (verbosity >= -2) hor_count--;
-      delete vers;
+      delete hor;
     }
   }
 };
@@ -126,21 +122,15 @@ struct PropUndo : public Undoable { void undo(Solver &S, Lit _p); };
 struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
 struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 
-struct Place {
-  HorLine *active_hor;
-  unsigned hor_ix;
-  int ver_ix;
-
-  void cut_away();
-};
+extern PropUndo PROP_UNDO;
+extern ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO;
+extern BackJumperUndo BACKJUMPER_UNDO;
 
 class Trie : public Constr {
 public:
   // the underlying automaton
   HorLine root;
-  HorLine *active_hor;
-  unsigned hor_ix = 0;
-  int ver_ix = -1;
+  Place least_place;
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -156,9 +146,6 @@ public:
   unsigned active_var = 0;
   unsigned active_var_old = 0;
   vector<Place> propagations;  // for calcReason
-  PropUndo prop_undo = {};
-  ActiveVarDoneUndo active_var_done_undo = {};
-  BackJumperUndo backjumper_undo = {};
   vector<AccBackJumper> acc_backjumpers;
   vector<bool> watch_mask;
   vector<BackJumper> backjumpers;
@@ -186,10 +173,10 @@ public:
 };
 
 
-#define ITER_MY_ZEROES(active_hor, hor_ix, ver_ix, x, fn) { \
-  unsigned __hix = (hor_ix); \
-  int __vix = (ver_ix); \
-  for (HorLine *__hor = (active_hor); __hor;) { \
+#define ITER_MY_ZEROES(place, x, fn) { \
+  unsigned __hix = (place.hor_ix); \
+  int __vix = (place.ver_ix); \
+  for (HorLine *__hor = (place.hor); __hor;) { \
     VerHead &__ver = __hor->elems[__hix]; \
     unsigned x = __ver.tag; \
     {fn} \
@@ -197,9 +184,9 @@ public:
       unsigned x = __ver.hors[__i].tag; \
       {fn} \
     } \
-    __hix = __hor->back_hor_ix; \
-    __vix = __hor->back_ver_ix; \
-    __hor = __hor->back_hor; \
+    __hix = __hor->back_ptr.hor_ix; \
+    __vix = __hor->back_ptr.ver_ix; \
+    __hor = __hor->back_ptr.hor; \
   } \
 }
 
