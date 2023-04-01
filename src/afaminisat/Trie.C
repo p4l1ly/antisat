@@ -297,161 +297,37 @@ WhatToDo Trie::after_vers_change(Solver &S) {
 }
 
 
-bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
-  if (verbosity >= 2) {
-    printf("PROP %d %d " L_LIT "\n", least_place.hor_ix, least_place.ver_ix, L_lit(p));
-  }
-
-  watch_mask[index(p)] = false;
-  if (least_place.hor_is_out()) return true;
-
-  unsigned out = least_place.get_tag();
-  Lit out_lit = S.outputs[out];
-
-  if (var(out_lit) != var(p)) return true;
-
-  WhatToDo what_to_do;
-
-  while (true) {
-    if (least_place.is_ver()) {
-      if (S.value(out_lit) == l_True) {
-        HorLine *hor = least_place.deref_ver().hor;
-        if (hor == NULL) {
-          move_right = true;
-          what_to_do = WhatToDo::DONE;
-        }
-        else {
-          least_place = {hor, 0, -1};
-          what_to_do = after_hors_change(S);
-        }
+WhatToDo Trie::move_on_propagate(Solver &S, Lit out_lit) {
+  if (least_place.is_ver()) {
+    if (S.value(out_lit) == l_True) {
+      HorLine *hor = least_place.deref_ver().hor;
+      if (hor == NULL) {
+        move_right = true;
+        return WhatToDo::DONE;
       }
       else {
-        least_place.ver_ix++;
-        what_to_do = after_vers_change(S);
+        least_place = {hor, 0, -1};
+        return after_hors_change(S);
       }
     }
     else {
-      if (S.value(out_lit) == l_True) {
-        least_place.hor_ix++;
-        what_to_do = after_hors_change(S);
-      }
-      else {
-        least_place.ver_ix++;
-        what_to_do = after_vers_change(S);
-      }
+      least_place.ver_ix++;
+      return after_vers_change(S);
     }
-
-    switch (what_to_do) {
-      case AGAIN: {
-        if (verbosity >= 2) {
-          printf("AGAIN %d %d\n", least_place.hor_ix, least_place.ver_ix);
-        }
-        out = least_place.get_tag();
-        out_lit = S.outputs[out];
-        continue;
-      }
-
-      case WATCH: {
-        if (verbosity >= 2) {
-          printf("WATCH %d %d\n", least_place.hor_ix, least_place.ver_ix);
-        }
-        out_lit = S.outputs[least_place.get_tag()];
-        watch(S, var(out_lit));
-        if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(out_lit));
-        return true;
-      }
-
-      case DONE: {
-        if (verbosity >= 2) {
-          printf(
-            "DONE %d %d, active_var: %d\n",
-            least_place.hor_ix, least_place.ver_ix, active_var
-          );
-        }
-        last_state_level = S.decisionLevel();
-        return true;
-      }
-
-      case PROPAGATE: {
-        if (verbosity >= 2) {
-          printf("PROPAGATE %d %d\n", least_place.hor_ix, least_place.ver_ix);
-        }
-        out_lit = S.outputs[least_place.get_tag()];
-
-        watch(S, var(out_lit));
-        if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(out_lit));
-
-        propagations.push_back(least_place);
-        S.undos[var(out_lit)].push(&PROP_UNDO);
-        return S.enqueue(out_lit, this);
-      }
-
-      case CONFLICT: {
-          if (verbosity >= 2) {
-            printf("CONFLICT %d %d\n", least_place.hor_ix, least_place.ver_ix);
-          }
-          return false;
-      }
-    }
-  }
-}
-
-
-void Trie::undo(Solver& S, Lit p) {
-  active_var--;
-  if (acc_backjumpers[active_var].enabled) {
-    if (verbosity >= 2) printf("ACC_UNDO_BACKJUMP\n");
-    acc_backjumpers[active_var].enabled = false;
-    acc_backjumpers[active_var].jump(S);
-  }
-
-  active_var = back_ptrs[active_var];
-  if (verbosity >= 2) printf("ACC_UNDO %d " L_LIT "\n", active_var, L_lit(p));
-}
-
-
-void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
-  if (p == lit_Undef) {
-    int max_level = -1;
-    ITER_MY_ZEROES(least_place, x,
-      Lit out_lit = S.outputs[x];
-      max_level = max(max_level, S.level[var(out_lit)]);
-      out_reason.push(~out_lit);
-    )
-
-    if (verbosity >= 2) {
-      printf("CALC_REASON_CONFLICT " L_LIT, L_lit(p));
-      ITER_MY_ZEROES(least_place, x, printf(" %u", x);)
-      printf("\n");
-    }
-
-    S.cancelUntil(max_level);
   }
   else {
-    if (verbosity >= 2) printf("PROPS %lu\n", propagations.size());
-    Place place = propagations.back();
-
-    ITER_MY_ZEROES(place, x, out_reason.push(~S.outputs[x]);)
-
-    if (verbosity >= 2) {
-      printf("CALC_REASON_PLACE " L_LIT, L_lit(p));
-      ITER_MY_ZEROES(place, x, printf(" %u", x);)
-      printf("\n");
+    if (S.value(out_lit) == l_True) {
+      least_place.hor_ix++;
+      return after_hors_change(S);
+    }
+    else {
+      least_place.ver_ix++;
+      return after_vers_change(S);
     }
   }
 }
 
-
-bool Trie::reset(Solver &S) {
-  least_place = {&root, 0, -1};
-  active_var = 0;
-  active_var_old = 0;
-  propagations.clear();
-  move_right = false;
-
-  if (verbosity >= 2) printf("RESET\n");
-
-  WhatToDo what_to_do = after_hors_change(S);
+bool Trie::multi_move_on_propagate(Solver &S, WhatToDo what_to_do) {
   unsigned out;
   Lit out_lit;
 
@@ -509,34 +385,83 @@ bool Trie::reset(Solver &S) {
       }
     }
 
-    if (least_place.is_ver()) {
-      if (S.value(out_lit) == l_True) {
-        HorLine *hor = least_place.deref_ver().hor;
-        if (hor == NULL) {
-          move_right = true;
-          what_to_do = WhatToDo::DONE;
-        }
-        else {
-          least_place = {hor, 0, -1};
-          what_to_do = after_hors_change(S);
-        }
-      }
-      else {
-        least_place.ver_ix++;
-        what_to_do = after_vers_change(S);
-      }
+    what_to_do = move_on_propagate(S, out_lit);
+  }
+}
+
+
+bool Trie::propagate(Solver& S, Lit p, bool& keep_watch) {
+  if (verbosity >= 2) {
+    printf("PROP %d %d " L_LIT "\n", least_place.hor_ix, least_place.ver_ix, L_lit(p));
+  }
+
+  watch_mask[index(p)] = false;
+  if (least_place.hor_is_out()) return true;
+
+  unsigned out = least_place.get_tag();
+  Lit out_lit = S.outputs[out];
+
+  if (var(out_lit) != var(p)) return true;
+
+  return multi_move_on_propagate(S, move_on_propagate(S, out_lit));
+}
+
+
+void Trie::undo(Solver& S, Lit p) {
+  active_var--;
+  if (acc_backjumpers[active_var].enabled) {
+    if (verbosity >= 2) printf("ACC_UNDO_BACKJUMP\n");
+    acc_backjumpers[active_var].enabled = false;
+    acc_backjumpers[active_var].jump(S);
+  }
+
+  active_var = back_ptrs[active_var];
+  if (verbosity >= 2) printf("ACC_UNDO %d " L_LIT "\n", active_var, L_lit(p));
+}
+
+
+void Trie::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
+  if (p == lit_Undef) {
+    int max_level = -1;
+    ITER_MY_ZEROES(least_place, x,
+      Lit out_lit = S.outputs[x];
+      max_level = max(max_level, S.level[var(out_lit)]);
+      out_reason.push(~out_lit);
+    )
+
+    if (verbosity >= 2) {
+      printf("CALC_REASON_CONFLICT " L_LIT, L_lit(p));
+      ITER_MY_ZEROES(least_place, x, printf(" %u", x);)
+      printf("\n");
     }
-    else {
-      if (S.value(out_lit) == l_True) {
-        least_place.hor_ix++;
-        what_to_do = after_hors_change(S);
-      }
-      else {
-        least_place.ver_ix++;
-        what_to_do = after_vers_change(S);
-      }
+
+    S.cancelUntil(max_level);
+  }
+  else {
+    if (verbosity >= 2) printf("PROPS %lu\n", propagations.size());
+    Place place = propagations.back();
+
+    ITER_MY_ZEROES(place, x, out_reason.push(~S.outputs[x]);)
+
+    if (verbosity >= 2) {
+      printf("CALC_REASON_PLACE " L_LIT, L_lit(p));
+      ITER_MY_ZEROES(place, x, printf(" %u", x);)
+      printf("\n");
     }
   }
+}
+
+
+bool Trie::reset(Solver &S) {
+  least_place = {&root, 0, -1};
+  active_var = 0;
+  active_var_old = 0;
+  propagations.clear();
+  move_right = false;
+
+  if (verbosity >= 2) printf("RESET\n");
+
+  return multi_move_on_propagate(S, after_hors_change(S));
 }
 
 

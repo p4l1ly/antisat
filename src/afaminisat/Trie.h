@@ -169,6 +169,8 @@ public:
 
   WhatToDo after_hors_change(Solver &S);
   WhatToDo after_vers_change(Solver &S);
+  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
+  bool multi_move_on_propagate(Solver &S, WhatToDo what_to_do);
   void back();
 };
 
