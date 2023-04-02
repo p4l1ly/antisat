@@ -252,7 +252,7 @@ public:
 
         trie = new Trie(S.outputs.size(), S.nVars() * 2);
         S.trie = trie;
-        S.addConstr(&trie->least_place);
+        S.addConstr(trie);
 
         if (verbosity >= 2) {
             for (int x = 0; x < S.outputs.size(); x++) {
@@ -383,7 +383,7 @@ private:
                       Place cut_knee = {NULL, 0, 0};
 
                       if (use_trie) {
-                          if (trie->onSat(S)) cut_knee = trie->least_place;
+                          if (trie->onSat(S)) cut_knee = *trie;
                       } else {
                           cell_out.clear();
                           for (int i: *cell) {

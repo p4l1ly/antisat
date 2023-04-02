@@ -54,7 +54,7 @@ public:
   int watch_ix_pos;
   int watch_ix_neg;
 
-  WatchedPlace(HorLine *hor_, unsigned hor_ix_, int ver_ix);
+  WatchedPlace(HorLine *hor_);
 
   void set_watch(Solver &S);
   void remove_watch(Solver &S, unsigned old_tag);
@@ -66,23 +66,21 @@ public:
   WhatToDo move_on_propagate(Solver &S, Lit out_lit);
   bool multi_move_on_propagate(Solver &S, WhatToDo what_to_do);
 
+  bool propagate (Solver& S, Lit p, bool& keep_watch);
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
-};
-
-
-struct LeastPlace : public WatchedPlace {
-  int accept_level = -1;
-  bool ver_accept = false;
-
-  LeastPlace(HorLine *root);
-
-  bool propagate (Solver& S, Lit p, bool& keep_watch);    // ('keep_watch' is set to FALSE beftore call to this method)
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
-  void on_accept(Solver &S);
-
-  ~LeastPlace(void) {};
 };
+
+
+// struct GreaterPlace : public WatchedPlace {
+//   bool enabled = true;
+//   Trie *trie;
+// 
+//   GreaterPlace(HorLine *root, Trie *trie);
+// 
+//   void on_accept(Solver &S);
+// };
 
 
 struct BackJumper {
@@ -156,7 +154,7 @@ public:
 
 struct RemovedWatch : public Constr {
   void remove    (Solver& S, bool just_dealloc = false) { };
-  bool propagate (Solver& S, Lit p, bool& keep_watch) { return true; };    // ('keep_watch' is set to FALSE beftore call to this method)
+  bool propagate (Solver& S, Lit p, bool& keep_watch) { return true; };
   bool simplify  (Solver& S) { return false; };
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) { };
   ~RemovedWatch(void) {};
@@ -170,11 +168,13 @@ extern ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO;
 extern BackJumperUndo BACKJUMPER_UNDO;
 extern RemovedWatch REMOVED_WATCH;
 
-class Trie : public Undoable {
+class Trie : public Undoable, public WatchedPlace {
 public:
   // the underlying automaton
   HorLine root;
-  LeastPlace least_place;
+
+  // vector<GreaterPlace> greater_places;
+  // vector<int> free_greater_places;
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -203,6 +203,12 @@ public:
   void undo(Solver& S, Lit p);
 
   void back();
+
+
+  // LeastPlace
+  int accept_level = -1;
+  bool ver_accept = false;
+  void on_accept(Solver &S);
 };
 
 

@@ -94,13 +94,11 @@ inline void WatchedPlace::update_watch(Solver &S, unsigned old_tag) {
   set_watch(S);
 }
 
-WatchedPlace::WatchedPlace(HorLine *hor_, unsigned hor_ix_, int ver_ix)
-: Place{hor_, hor_ix_, ver_ix}
+WatchedPlace::WatchedPlace(HorLine *hor_)
+: Place{hor_, 0, -1}
 { }
 
-LeastPlace::LeastPlace(HorLine *root) : WatchedPlace(root, 0, -1) { }
-
-void LeastPlace::on_accept(Solver &S) {
+void Trie::on_accept(Solver &S) {
   if (is_ver()) {
     ver_accept = true;
   }
@@ -109,7 +107,7 @@ void LeastPlace::on_accept(Solver &S) {
 
 Trie::Trie(unsigned var_count_, int index_count)
 : root()
-, least_place(LeastPlace(&root))
+, WatchedPlace(&root)
 , var_count(var_count_)
 , back_ptrs(var_count_)
 , acc_backjumpers(var_count_)
@@ -119,18 +117,18 @@ Trie::Trie(unsigned var_count_, int index_count)
 }
 
 Lit Trie::guess(Solver &S) {
-  if (!least_place.ver_accept && !least_place.hor_is_out()) {
-    unsigned tag = least_place.get_tag();
+  if (!ver_accept && !hor_is_out()) {
+    unsigned tag = get_tag();
     Lit out_lit = S.outputs[tag];
 
-    backjumpers.emplace_back(least_place);
+    backjumpers.emplace_back(*this);
     S.undos[var(out_lit)].push(&BACKJUMPER_UNDO);
 
     if (verbosity >= 2) {
       printf(
           "GUESS_%s %d %d %d " L_LIT "\n",
-          least_place.is_ver() ? "VER" : "HOR",
-          least_place.hor_ix, least_place.ver_ix, tag,
+          is_ver() ? "VER" : "HOR",
+          hor_ix, ver_ix, tag,
           L_lit(out_lit)
       );
     }
@@ -166,7 +164,7 @@ bool Trie::onSat(Solver &S) {
 
   unordered_set<unsigned> my_zeroes_set;
 
-  ITER_MY_ZEROES(least_place, x,
+  ITER_MY_ZEROES(*this, x,
       my_zeroes_set.insert(x);
   )
 
@@ -194,7 +192,7 @@ bool Trie::onSat(Solver &S) {
   // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
-    Place result = least_place.hor->back_ptr;
+    Place result = hor->back_ptr;
     S.cancelUntil(max_level);
     return true;
   }
@@ -215,19 +213,19 @@ bool Trie::onSat(Solver &S) {
 
   HorLine *hor;
   unsigned hor_ix;
-  if (least_place.ver_accept) {
+  if (ver_accept) {
     // We create a new horizontal empty branch right to the current final place
     // (which is vertical because least_ver_accept is set only when accepting at
     // vertical places).
-    least_place.ver_accept = false;
-    HorLine *new_active_hor = new HorLine{least_place};
+    ver_accept = false;
+    HorLine *new_active_hor = new HorLine{*this};
     if (verbosity >= -2) hor_count++;
-    least_place.deref_ver().hor = new_active_hor;
+    deref_ver().hor = new_active_hor;
     hor = new_active_hor;
     hor_ix = 0;
   } else {
-    hor = least_place.hor;
-    hor_ix = least_place.hor_ix;
+    hor = hor;
+    hor_ix = hor_ix;
   }
 
   // Add the first added_var to the current horizontal branch.
@@ -256,7 +254,7 @@ bool Trie::onSat(Solver &S) {
     // How could this be even possible? If the new branch is added, the list
     // of the guessed variables does not get fully erased in the conflict
     // triggered by the new branch.
-    if (lvl <= least_place.accept_level) break;
+    if (lvl <= accept_level) break;
 
     if (verbosity >= 0) {
       printf(
@@ -417,7 +415,7 @@ bool WatchedPlace::multi_move_on_propagate(Solver &S, WhatToDo what_to_do) {
 }
 
 
-bool LeastPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
+bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) {
     printf("LEAST_PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
   }
@@ -438,7 +436,7 @@ void Trie::undo(Solver& S, Lit p) {
 }
 
 
-void LeastPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
+void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   if (p == lit_Undef) {
     int max_level = -1;
     ITER_MY_ZEROES((Place{hor, hor_ix, ver_ix + 1}), x,
@@ -468,18 +466,20 @@ void LeastPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 
 
 bool Trie::reset(Solver &S) {
-  if (!least_place.ver_accept && !least_place.hor_is_out()) {
-    least_place.remove_watch(S, least_place.get_tag());
+  if (!ver_accept && !hor_is_out()) {
+    remove_watch(S, get_tag());
   }
-  (Place&)least_place = {&root, 0, -1};
+  hor = &root;
+  hor_ix = 0;
+  ver_ix = -1;
 
   active_var = 0;
   active_var_old = 0;
-  least_place.ver_accept = false;
+  ver_accept = false;
 
   if (verbosity >= 2) printf("RESET\n");
 
-  return least_place.multi_move_on_propagate(S, least_place.after_hors_change(S));
+  return multi_move_on_propagate(S, after_hors_change(S));
 }
 
 
@@ -497,16 +497,16 @@ void BackJumperUndo::undo(Solver &S, Lit _p) {
 void BackJumper::jump(Solver &S) {
   Trie &trie = *S.trie;
 
-  if (!trie.least_place.ver_accept && !trie.least_place.hor_is_out()) {
-    trie.least_place.remove_watch(S, trie.least_place.get_tag());
+  if (!trie.ver_accept && !trie.hor_is_out()) {
+    trie.remove_watch(S, trie.get_tag());
   }
-  (Place&)trie.least_place = place;
-  trie.least_place.ver_accept = false;
+  (Place&)trie = place;
+  trie.ver_accept = false;
 
   if (verbosity >= 2) {
     printf("UNDO %d %d %lu\n", place.hor_ix, place.ver_ix, place.hor->elems.size());
   }
   Lit out_lit = S.outputs[place.get_tag()];
-  trie.least_place.set_watch(S);
+  trie.set_watch(S);
   if (verbosity >= 2) printf("WU " L_LIT "\n", L_lit(out_lit));
 }
