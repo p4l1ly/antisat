@@ -39,7 +39,7 @@ struct Undoable {
     virtual ~Undoable(void) { };  // (not used, just to keep the compiler happy)
 };
 
-struct Constr : public Undoable{
+struct Constr {
     virtual void remove    (Solver& S, bool just_dealloc = false) = 0;
     virtual bool propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
@@ -53,7 +53,7 @@ struct Constr : public Undoable{
 // Clauses:
 
 
-class Clause : public Constr {
+class Clause : public Constr, public Undoable {
     unsigned    size_learnt;
     Lit         data[0];
 
@@ -88,7 +88,7 @@ public:
 // AtMost:
 
 
-class AtMost : public Constr {
+class AtMost : public Constr, public Undoable {
     int     n;
     int     counter;
     int     size;

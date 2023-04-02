@@ -252,7 +252,7 @@ public:
 
         trie = new Trie(S.outputs.size(), S.nVars() * 2);
         S.trie = trie;
-        S.addConstr(trie);
+        S.addConstr(&trie->least_place);
 
         if (verbosity >= 2) {
             for (int x = 0; x < S.outputs.size(); x++) {

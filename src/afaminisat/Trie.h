@@ -23,7 +23,17 @@ extern int hor_count;
 extern int ver_count;
 
 
+enum WhatToDo {
+  WATCH = -3,
+  DONE = -2,
+  AGAIN = -1,
+  CONFLICT = 0,
+  PROPAGATE = 1,
+};
+
+
 struct Place {
+public:
   HorLine *hor;
   unsigned hor_ix;
   int ver_ix;
@@ -36,7 +46,42 @@ struct Place {
   bool ver_is_last();
   bool ver_is_singleton();
   bool is_ver();
-  const char *get_label();
+};
+
+
+struct WatchedPlace : public Place, public virtual Constr {
+public:
+  int watch_ix_pos;
+  int watch_ix_neg;
+
+  WatchedPlace(HorLine *hor_, unsigned hor_ix_, int ver_ix);
+
+  void set_watch(Solver &S);
+  void remove_watch(Solver &S, unsigned old_tag);
+  void update_watch(Solver &S, unsigned old_tag);
+
+  virtual void on_accept(Solver &S) = 0;
+  WhatToDo after_hors_change(Solver &S);
+  WhatToDo after_vers_change(Solver &S);
+  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
+  bool multi_move_on_propagate(Solver &S, WhatToDo what_to_do);
+
+  void remove    (Solver& S, bool just_dealloc = false) { };
+  bool simplify  (Solver& S) { return false; };
+};
+
+
+struct LeastPlace : public WatchedPlace {
+  int accept_level = -1;
+  bool ver_accept = false;
+
+  LeastPlace(HorLine *root);
+
+  bool propagate (Solver& S, Lit p, bool& keep_watch);    // ('keep_watch' is set to FALSE beftore call to this method)
+  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+  void on_accept(Solver &S);
+
+  ~LeastPlace(void) {};
 };
 
 
@@ -109,28 +154,27 @@ public:
 };
 
 
-enum WhatToDo {
-  WATCH = -3,
-  DONE = -2,
-  AGAIN = -1,
-  CONFLICT = 0,
-  PROPAGATE = 1,
+struct RemovedWatch : public Constr {
+  void remove    (Solver& S, bool just_dealloc = false) { };
+  bool propagate (Solver& S, Lit p, bool& keep_watch) { return true; };    // ('keep_watch' is set to FALSE beftore call to this method)
+  bool simplify  (Solver& S) { return false; };
+  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) { };
+  ~RemovedWatch(void) {};
 };
 
 
-struct PropUndo : public Undoable { void undo(Solver &S, Lit _p); };
 struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
 struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 
-extern PropUndo PROP_UNDO;
 extern ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO;
 extern BackJumperUndo BACKJUMPER_UNDO;
+extern RemovedWatch REMOVED_WATCH;
 
-class Trie : public Constr {
+class Trie : public Undoable {
 public:
   // the underlying automaton
   HorLine root;
-  Place least_place;
+  LeastPlace least_place;
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -145,12 +189,8 @@ public:
 
   unsigned active_var = 0;
   unsigned active_var_old = 0;
-  vector<Place> propagations;  // for calcReason
   vector<AccBackJumper> acc_backjumpers;
-  vector<bool> watch_mask;
   vector<BackJumper> backjumpers;
-  int last_state_level = -1;
-  bool least_ver_accept = false;
 
   Trie(unsigned var_count, int index_count);
 
@@ -159,32 +199,25 @@ public:
   // Result: should the trie be cut at the active place's back_ptr?
   bool onSat(Solver &S);
   bool reset(Solver &S);
-  void watch(Solver &S, int var_);
 
-  void remove(Solver& S, bool just_dealloc);
-  bool simplify(Solver& S);
-  bool propagate (Solver& S, Lit p, bool& keep_watch);
   void undo(Solver& S, Lit p);
-  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 
-  WhatToDo after_hors_change(Solver &S);
-  WhatToDo after_vers_change(Solver &S);
-  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
-  bool multi_move_on_propagate(Solver &S, WhatToDo what_to_do);
   void back();
 };
 
 
 #define ITER_MY_ZEROES(place, x, fn) { \
-  unsigned __hix = (place.hor_ix); \
-  int __vix = (place.ver_ix); \
-  for (HorLine *__hor = (place.hor); __hor;) { \
+  unsigned __hix = ((place).hor_ix); \
+  int __vix = ((place).ver_ix); \
+  for (HorLine *__hor = ((place).hor); __hor;) { \
     VerHead &__ver = __hor->elems[__hix]; \
-    unsigned x = __ver.tag; \
-    {fn} \
-    for (unsigned __i = 0; __i < __vix; __i++) { \
-      unsigned x = __ver.hors[__i].tag; \
+    if (__vix >= 0) { \
+      unsigned x = __ver.tag; \
       {fn} \
+      for (unsigned __i = 0; __i < __vix; __i++) { \
+        unsigned x = __ver.hors[__i].tag; \
+        {fn} \
+      } \
     } \
     __hix = __hor->back_ptr.hor_ix; \
     __vix = __hor->back_ptr.ver_ix; \
