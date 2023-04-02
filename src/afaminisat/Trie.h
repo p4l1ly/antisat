@@ -150,7 +150,7 @@ public:
   vector<bool> watch_mask;
   vector<BackJumper> backjumpers;
   int last_state_level = -1;
-  bool move_right = false;
+  bool least_ver_accept = false;
 
   Trie(unsigned var_count, int index_count);
 

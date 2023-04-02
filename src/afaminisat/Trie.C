@@ -82,7 +82,7 @@ Trie::Trie(unsigned var_count_, int index_count)
 }
 
 Lit Trie::guess(Solver &S) {
-  if (!move_right && !least_place.hor_is_out()) {
+  if (!least_ver_accept && !least_place.hor_is_out()) {
     unsigned tag = least_place.get_tag();
     Lit out_lit = S.outputs[tag];
 
@@ -175,11 +175,11 @@ bool Trie::onSat(Solver &S) {
 
   const std::pair<int, unsigned>& x = added_vars[0];
 
-  if (move_right) {
+  if (least_ver_accept) {
     // We create a new horizontal empty branch right to the current final place
-    // (which is vertical because move_right is set only when accepting at
+    // (which is vertical because least_ver_accept is set only when accepting at
     // vertical places).
-    move_right = false;
+    least_ver_accept = false;
     HorLine *new_active_hor = new HorLine{least_place};
     if (verbosity >= -2) hor_count++;
     least_place.deref_ver().hor = new_active_hor;
@@ -302,7 +302,7 @@ WhatToDo Trie::move_on_propagate(Solver &S, Lit out_lit) {
     if (S.value(out_lit) == l_True) {
       HorLine *hor = least_place.deref_ver().hor;
       if (hor == NULL) {
-        move_right = true;
+        least_ver_accept = true;
         return WhatToDo::DONE;
       }
       else {
@@ -457,7 +457,7 @@ bool Trie::reset(Solver &S) {
   active_var = 0;
   active_var_old = 0;
   propagations.clear();
-  move_right = false;
+  least_ver_accept = false;
 
   if (verbosity >= 2) printf("RESET\n");
 
@@ -484,7 +484,7 @@ void BackJumperUndo::undo(Solver &S, Lit _p) {
 void BackJumper::jump(Solver &S) {
   Trie &trie = *S.trie;
 
-  trie.move_right = false;
+  trie.least_ver_accept = false;
   trie.least_place = place;
 
   if (verbosity >= 2) {
