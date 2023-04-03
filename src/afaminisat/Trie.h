@@ -55,12 +55,15 @@ public:
   int watch_ix_neg;
 
   WatchedPlace(HorLine *hor_);
+  WatchedPlace(Place place);
 
   void set_watch(Solver &S);
   void remove_watch(Solver &S, unsigned old_tag);
   void update_watch(Solver &S, unsigned old_tag);
 
   virtual void on_accept(Solver &S) = 0;
+
+  void branch(Solver &S) const;
   WhatToDo after_hors_change(Solver &S);
   WhatToDo after_vers_change(Solver &S);
   WhatToDo move_on_propagate(Solver &S, Lit out_lit);
@@ -71,16 +74,6 @@ public:
   bool simplify  (Solver& S) { return false; };
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 };
-
-
-// struct GreaterPlace : public WatchedPlace {
-//   bool enabled = true;
-//   Trie *trie;
-// 
-//   GreaterPlace(HorLine *root, Trie *trie);
-// 
-//   void on_accept(Solver &S);
-// };
 
 
 struct BackJumper {
@@ -99,6 +92,41 @@ struct AccBackJumper : BackJumper {
     enabled = true;
     place = place_;
   }
+};
+
+
+struct GreaterBackjumper;
+
+struct ChangedGreaterPlace {
+  Place place;
+  GreaterBackjumper *backjumper;
+  unsigned backjumper_added_ix;
+};
+
+struct GreaterPlace : public WatchedPlace {
+  unsigned ix;
+  bool enabled = true;
+  GreaterBackjumper *backjumper;
+  unsigned backjumper_added_ix;
+
+  GreaterPlace(HorLine *hor_, unsigned ix_);
+  GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_);
+
+  void on_accept(Solver &S);
+};
+
+struct AddedGreaterPlace {
+  unsigned ix;
+  bool removed = false;
+};
+
+
+struct GreaterBackjumper : Undoable {
+  vector<AddedGreaterPlace> added_places;
+  vector<ChangedGreaterPlace> changed_places;
+
+  GreaterBackjumper() : added_places(), changed_places() {}
+  void undo(Solver &S, Lit _p);
 };
 
 
@@ -173,8 +201,8 @@ public:
   // the underlying automaton
   HorLine root;
 
-  // vector<GreaterPlace> greater_places;
-  // vector<int> free_greater_places;
+  vector<GreaterPlace> greater_places;
+  vector<int> free_greater_places;
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -191,6 +219,7 @@ public:
   unsigned active_var_old = 0;
   vector<AccBackJumper> acc_backjumpers;
   vector<BackJumper> backjumpers;
+  vector<GreaterBackjumper> greater_backjumpers;
 
   Trie(unsigned var_count, int index_count);
 
@@ -201,8 +230,6 @@ public:
   bool reset(Solver &S);
 
   void undo(Solver& S, Lit p);
-
-  void back();
 
 
   // LeastPlace

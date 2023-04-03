@@ -102,7 +102,7 @@ public:
     SearchParams params;
     double nof_conflicts, nof_learnts;
 
-    Trie *trie;
+    Trie *trie;  // TODO remove indirection
 
     chrono::duration<double> elapsed = chrono::duration<double>::zero();
     chrono::time_point<chrono::steady_clock> tic;

@@ -97,6 +97,9 @@ inline void WatchedPlace::update_watch(Solver &S, unsigned old_tag) {
 WatchedPlace::WatchedPlace(HorLine *hor_)
 : Place{hor_, 0, -1}
 { }
+WatchedPlace::WatchedPlace(Place place)
+: Place(place)
+{ }
 
 void Trie::on_accept(Solver &S) {
   if (is_ver()) {
@@ -106,14 +109,18 @@ void Trie::on_accept(Solver &S) {
 }
 
 Trie::Trie(unsigned var_count_, int index_count)
-: root()
-, WatchedPlace(&root)
+: WatchedPlace(&root)
+, root()
+, greater_places()
+, free_greater_places()
 , var_count(var_count_)
 , back_ptrs(var_count_)
 , acc_backjumpers(var_count_)
 , backjumpers()
+, greater_backjumpers()
 {
   backjumpers.reserve(var_count_);
+  greater_backjumpers.reserve(var_count_);
 }
 
 Lit Trie::guess(Solver &S) {
@@ -122,6 +129,7 @@ Lit Trie::guess(Solver &S) {
     Lit out_lit = S.outputs[tag];
 
     backjumpers.emplace_back(*this);
+    greater_backjumpers.emplace_back();
     S.undos[var(out_lit)].push(&BACKJUMPER_UNDO);
 
     if (verbosity >= 2) {
@@ -134,6 +142,7 @@ Lit Trie::guess(Solver &S) {
     }
     return out_lit;
   }
+  // TODO guess by greater_places
   else {
     if (active_var == var_count) return lit_Undef;
     active_var_old = active_var;
@@ -287,7 +296,7 @@ bool Trie::onSat(Solver &S) {
       i--;
     }
   }
-total_break:
+  total_break:
 
   S.cancelUntil(max_level);
   return false;
@@ -329,6 +338,46 @@ WhatToDo WatchedPlace::after_vers_change(Solver &S) {
 }
 
 
+inline GreaterPlace &add_greater_place(ChangedGreaterPlace changed_place, Trie &trie) {
+  while (!trie.free_greater_places.empty()) {
+    unsigned ix = trie.free_greater_places.back();
+    trie.free_greater_places.pop_back();
+    if (ix < trie.greater_places.size()) {
+      GreaterPlace &place = trie.greater_places[ix];
+      place = GreaterPlace(changed_place, ix);
+      return place;
+    }
+  }
+  unsigned ix = trie.greater_places.size();
+  return trie.greater_places.emplace_back(changed_place, ix);
+}
+
+
+void WatchedPlace::branch(Solver &S) const {
+  // TODO move before adding and don't add if DONE.
+  // TODO not on stack
+
+  Trie &trie = *S.trie;
+
+  ChangedGreaterPlace changed_place;
+  changed_place.place = *this;
+  if (trie.greater_backjumpers.empty()) {
+    changed_place.backjumper = NULL;
+  } else {
+    GreaterBackjumper &backjumper = trie.greater_backjumpers.back();
+    changed_place.backjumper = &backjumper;
+    changed_place.backjumper_added_ix = backjumper.added_places.size();
+  }
+
+  GreaterPlace &place = add_greater_place(changed_place, trie);
+  place_initialized:
+  if (changed_place.backjumper) {
+    changed_place.backjumper->added_places.emplace_back(place.ix);
+  }
+  place.set_watch(S);
+}
+
+
 WhatToDo WatchedPlace::move_on_propagate(Solver &S, Lit out_lit) {
   if (is_ver()) {
     if (S.value(out_lit) == l_True) {
@@ -345,6 +394,7 @@ WhatToDo WatchedPlace::move_on_propagate(Solver &S, Lit out_lit) {
       }
     }
     else {
+      branch(S);
       ver_ix++;
       return after_vers_change(S);
     }
@@ -355,6 +405,7 @@ WhatToDo WatchedPlace::move_on_propagate(Solver &S, Lit out_lit) {
       return after_hors_change(S);
     }
     else {
+      branch(S);
       ver_ix++;
       return after_vers_change(S);
     }
@@ -509,4 +560,63 @@ void BackJumper::jump(Solver &S) {
   Lit out_lit = S.outputs[place.get_tag()];
   trie.set_watch(S);
   if (verbosity >= 2) printf("WU " L_LIT "\n", L_lit(out_lit));
+}
+
+
+GreaterPlace::GreaterPlace(HorLine *hor_, unsigned ix_)
+: WatchedPlace(hor_), ix(ix_), backjumper(NULL)
+{ }
+
+GreaterPlace::GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_)
+: WatchedPlace(changed_place.place)
+, ix(ix_)
+, backjumper(changed_place.backjumper)
+, backjumper_added_ix(changed_place.backjumper_added_ix)
+{ }
+
+
+void GreaterPlace::on_accept(Solver &S) {
+  enabled = false;
+  Trie &trie = *S.trie;
+  if (trie.greater_places.size() == ix + 1) {
+    trie.greater_places.pop_back();
+  } else {
+    trie.free_greater_places.emplace_back(ix);
+  }
+
+  if (!trie.greater_backjumpers.empty()) {
+    GreaterBackjumper &last_backjumper = trie.greater_backjumpers.back();
+    if (&last_backjumper == backjumper) {
+      last_backjumper.added_places[backjumper_added_ix].removed = true;
+    } else {
+      last_backjumper.changed_places.emplace_back(*this, backjumper, backjumper_added_ix);
+    }
+  }
+}
+
+void GreaterBackjumper::undo(Solver &S, Lit _p) {
+  Trie &trie = *S.trie;
+  for (AddedGreaterPlace added_place: added_places) {
+    if (added_place.removed) continue;
+    const unsigned ix = added_place.ix;
+    GreaterPlace &place = trie.greater_places[added_place.ix];
+    place.remove_watch(S, place.get_tag());
+
+    if (trie.greater_places.size() == added_place.ix + 1) {
+      trie.greater_places.pop_back();
+    } else {
+      trie.greater_places[added_place.ix].enabled = false;
+      trie.free_greater_places.push_back(added_place.ix);
+    }
+  }
+
+  for (ChangedGreaterPlace changed_place: changed_places) {
+    GreaterPlace &place = add_greater_place(changed_place, trie);
+    if (changed_place.backjumper) {
+      changed_place.backjumper->added_places[changed_place.backjumper_added_ix].ix = place.ix;
+    }
+    place.set_watch(S);
+  }
+
+  trie.greater_backjumpers.pop_back();
 }
