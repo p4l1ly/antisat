@@ -5,6 +5,7 @@
 
 
 #include "Trie.h"
+#include "Solver.h"
 
 int hor_head_count = 0;
 int hor_count = 0;
@@ -108,7 +109,9 @@ void Trie::on_accept(Solver &S) {
   accept_level = S.decisionLevel();
 }
 
-Trie::Trie(unsigned var_count_, int index_count)
+Trie::Trie() : WatchedPlace(&root) {};
+
+Trie::Trie(unsigned var_count_)
 : WatchedPlace(&root)
 , root()
 , greater_places()
@@ -118,9 +121,11 @@ Trie::Trie(unsigned var_count_, int index_count)
 , acc_backjumpers(var_count_)
 , backjumpers()
 , greater_backjumpers()
+, greater_stack()
 {
   backjumpers.reserve(var_count_);
   greater_backjumpers.reserve(var_count_);
+  greater_stack.reserve(var_count_);
 }
 
 Lit Trie::guess(Solver &S) {
@@ -303,11 +308,8 @@ bool Trie::onSat(Solver &S) {
 }
 
 
-WhatToDo WatchedPlace::after_hors_change(Solver &S) {
-  if (hor_is_out()) {
-    on_accept(S);
-    return WhatToDo::DONE;
-  }
+WhatToDo Place::after_hors_change(Solver &S) {
+  if (hor_is_out()) return WhatToDo::DONE;
 
   unsigned out = get_tag();
   if (verbosity >= 2) printf("OUT %d\n", out);
@@ -323,7 +325,7 @@ WhatToDo WatchedPlace::after_hors_change(Solver &S) {
 }
 
 
-WhatToDo WatchedPlace::after_vers_change(Solver &S) {
+WhatToDo Place::after_vers_change(Solver &S) {
   unsigned out = get_tag();
   if (verbosity >= 2) printf("OUT %d\n", out);
   lbool val = S.value(S.outputs[out]);
@@ -353,11 +355,8 @@ inline GreaterPlace &add_greater_place(ChangedGreaterPlace changed_place, Trie &
 }
 
 
-void WatchedPlace::branch(Solver &S) const {
-  // TODO move before adding and don't add if DONE.
-  // TODO not on stack
-
-  Trie &trie = *S.trie;
+GreaterPlace &Place::save_as_greater(Solver &S) {
+  Trie &trie = S.trie;
 
   ChangedGreaterPlace changed_place;
   changed_place.place = *this;
@@ -370,22 +369,53 @@ void WatchedPlace::branch(Solver &S) const {
   }
 
   GreaterPlace &place = add_greater_place(changed_place, trie);
-  place_initialized:
   if (changed_place.backjumper) {
     changed_place.backjumper->added_places.emplace_back(place.ix);
   }
   place.set_watch(S);
+  return place;
 }
 
 
-WhatToDo WatchedPlace::move_on_propagate(Solver &S, Lit out_lit) {
+void Place::branch(Solver &S) {
+  Place place; 
+
+  if (is_ver()) {
+    HorLine *hor2 = deref_ver().hor;
+    if (hor2 == NULL) return;
+    place = {hor2, 0, -1};
+    S.trie.greater_stack.emplace_back(hor2, 0, -1);
+  } else {
+    place = {hor, hor_ix + 1, -1};
+    S.trie.greater_stack.emplace_back(hor, hor_ix + 1, -1);
+  }
+}
+
+
+bool Place::handle_greater_stack(Solver &S) {
+  switch (multimove_on_propagate(S, after_hors_change(S))) {
+    case MultimoveEnd::E_WATCH: {
+      save_as_greater(S);
+      return true;
+    }
+    case MultimoveEnd::E_DONE: {
+      return true;
+    }
+    case MultimoveEnd::E_PROPAGATE: {
+      return S.enqueue(S.outputs[get_tag()], &save_as_greater(S));
+    }
+    case MultimoveEnd::E_CONFLICT: {
+      return false;
+    }
+  }
+}
+
+
+WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit) {
   if (is_ver()) {
     if (S.value(out_lit) == l_True) {
       HorLine *hor2 = deref_ver().hor;
-      if (hor2 == NULL) {
-        on_accept(S);
-        return WhatToDo::DONE;
-      }
+      if (hor2 == NULL) return WhatToDo::DONE;
       else {
         hor = hor2;
         hor_ix = 0;
@@ -412,7 +442,8 @@ WhatToDo WatchedPlace::move_on_propagate(Solver &S, Lit out_lit) {
   }
 }
 
-bool WatchedPlace::multi_move_on_propagate(Solver &S, WhatToDo what_to_do) {
+
+MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   unsigned out;
   Lit out_lit;
 
@@ -431,33 +462,31 @@ bool WatchedPlace::multi_move_on_propagate(Solver &S, WhatToDo what_to_do) {
         if (verbosity >= 2) {
           printf("WATCH %d %d\n", hor_ix, ver_ix);
         }
-        set_watch(S);
         if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(S.outputs[get_tag()]));
-        return true;
+        return MultimoveEnd::E_WATCH;
       }
 
       case DONE: {
         if (verbosity >= 2) {
           printf("DONE %d %d", hor_ix, ver_ix);
         }
-        return true;
+        return MultimoveEnd::E_DONE;
       }
 
       case PROPAGATE: {
         if (verbosity >= 2) {
           printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
         }
-        set_watch(S);
         if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(S.outputs[get_tag()]));
 
-        return S.enqueue(out_lit, this);
+        return MultimoveEnd::E_PROPAGATE;
       }
 
       case CONFLICT: {
-          if (verbosity >= 2) {
-            printf("CONFLICT %d %d\n", hor_ix, ver_ix);
-          }
-          return false;
+        if (verbosity >= 2) {
+          printf("CONFLICT %d %d\n", hor_ix, ver_ix);
+        }
+        return MultimoveEnd::E_CONFLICT;
       }
     }
 
@@ -465,12 +494,46 @@ bool WatchedPlace::multi_move_on_propagate(Solver &S, WhatToDo what_to_do) {
   }
 }
 
+bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
+  MultimoveEnd end = multimove_on_propagate(S, what_to_do);
+  if (end == MultimoveEnd::E_CONFLICT) {
+    S.trie.greater_stack.clear();
+    return false;
+  } else {
+    while (!S.trie.greater_stack.empty()) {
+      Place p = S.trie.greater_stack.back();
+      if (!p.handle_greater_stack(S)) {
+        S.trie.greater_stack.clear();
+        return false;
+      }
+      S.trie.greater_stack.pop_back();
+    }
+  }
+
+  switch (end) {
+    case MultimoveEnd::E_WATCH: {
+      set_watch(S);
+      return true;
+    }
+    case MultimoveEnd::E_DONE: {
+      on_accept(S);
+      return true;
+    }
+    case MultimoveEnd::E_PROPAGATE: {
+      set_watch(S);
+      return S.enqueue(S.outputs[get_tag()], this);
+    }
+    case MultimoveEnd::E_CONFLICT: {
+      return false;
+    }
+  }
+}
 
 bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) {
     printf("LEAST_PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
   }
-  return multi_move_on_propagate(S, move_on_propagate(S, S.outputs[get_tag()]));
+  return full_multimove_on_propagate(S, move_on_propagate(S, S.outputs[get_tag()]));
 }
 
 
@@ -530,23 +593,23 @@ bool Trie::reset(Solver &S) {
 
   if (verbosity >= 2) printf("RESET\n");
 
-  return multi_move_on_propagate(S, after_hors_change(S));
+  return full_multimove_on_propagate(S, after_hors_change(S));
 }
 
 
 void ActiveVarDoneUndo::undo(Solver &S, Lit _p) {
-  S.trie->active_var = S.trie->active_var_old;
+  S.trie.active_var = S.trie.active_var_old;
 }
 
 
 void BackJumperUndo::undo(Solver &S, Lit _p) {
-  S.trie->backjumpers.back().jump(S);
-  S.trie->backjumpers.pop_back();
+  S.trie.backjumpers.back().jump(S);
+  S.trie.backjumpers.pop_back();
 }
 
 
 void BackJumper::jump(Solver &S) {
-  Trie &trie = *S.trie;
+  Trie &trie = S.trie;
 
   if (!trie.ver_accept && !trie.hor_is_out()) {
     trie.remove_watch(S, trie.get_tag());
@@ -577,7 +640,7 @@ GreaterPlace::GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_)
 
 void GreaterPlace::on_accept(Solver &S) {
   enabled = false;
-  Trie &trie = *S.trie;
+  Trie &trie = S.trie;
   if (trie.greater_places.size() == ix + 1) {
     trie.greater_places.pop_back();
   } else {
@@ -595,7 +658,7 @@ void GreaterPlace::on_accept(Solver &S) {
 }
 
 void GreaterBackjumper::undo(Solver &S, Lit _p) {
-  Trie &trie = *S.trie;
+  Trie &trie = S.trie;
   for (AddedGreaterPlace added_place: added_places) {
     if (added_place.removed) continue;
     const unsigned ix = added_place.ix;

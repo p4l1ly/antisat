@@ -6,8 +6,7 @@
 
 #include "Constraints.h"
 
-class Trie;
-#include "Solver.h"
+class Solver;
 
 using std::vector;
 using std::unordered_set;
@@ -31,6 +30,15 @@ enum WhatToDo {
   PROPAGATE = 1,
 };
 
+enum MultimoveEnd {
+  E_WATCH = -3,
+  E_DONE = -2,
+  E_CONFLICT = 0,
+  E_PROPAGATE = 1,
+};
+
+
+struct GreaterPlace;
 
 struct Place {
 public:
@@ -46,6 +54,15 @@ public:
   bool ver_is_last();
   bool ver_is_singleton();
   bool is_ver();
+
+  void branch(Solver &S);
+  WhatToDo after_hors_change(Solver &S);
+  WhatToDo after_vers_change(Solver &S);
+  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
+  MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
+
+  GreaterPlace &save_as_greater(Solver &S);
+  bool handle_greater_stack(Solver &S);
 };
 
 
@@ -63,11 +80,7 @@ public:
 
   virtual void on_accept(Solver &S) = 0;
 
-  void branch(Solver &S) const;
-  WhatToDo after_hors_change(Solver &S);
-  WhatToDo after_vers_change(Solver &S);
-  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
-  bool multi_move_on_propagate(Solver &S, WhatToDo what_to_do);
+  bool full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
   bool propagate (Solver& S, Lit p, bool& keep_watch);
   void remove    (Solver& S, bool just_dealloc = false) { };
@@ -203,6 +216,7 @@ public:
 
   vector<GreaterPlace> greater_places;
   vector<int> free_greater_places;
+  vector<Place> greater_stack;
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -221,7 +235,8 @@ public:
   vector<BackJumper> backjumpers;
   vector<GreaterBackjumper> greater_backjumpers;
 
-  Trie(unsigned var_count, int index_count);
+  Trie();
+  Trie(unsigned var_count);
 
   Lit guess(Solver &S);
 

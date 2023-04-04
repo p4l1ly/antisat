@@ -39,11 +39,10 @@ inline void check(bool expr) { assert(expr); }
 Solver::~Solver(void) {
     for (int i = 0; i < learnts.size(); i++) xfree(learnts[i]);
     for (int i = 0; i < constrs.size(); i++) {
-      if (constrs[i] != (Constr*)trie) {
+      if (constrs[i] != &trie) {
         xfree(constrs[i]);
       }
     }
-    delete trie;
 }
 
 // Creates a new SAT variable in the solver. If 'decision_var' is cleared, variable will not be
@@ -662,7 +661,7 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
-            Lit decision = trie->guess(*this);
+            Lit decision = trie.guess(*this);
 
             if (decision == lit_Undef) {
               Var next = order.select(params.random_var_freq);
@@ -728,8 +727,8 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
 
-    if (trie->root.elems.size()) {
-      if (!trie->reset(*this) || propagate() != NULL) {
+    if (trie.root.elems.size()) {
+      if (!trie.reset(*this) || propagate() != NULL) {
         if (verbosity >= 2) printf("RESET_CONFLICT\n");
         propQ.clear();
         cancelUntil(0);

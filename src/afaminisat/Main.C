@@ -225,7 +225,6 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     CellContainerSet cell_container;
     vector<int> *cell;
     vec<Lit> cell_out;
-    Trie *trie;
     vec<Lit> solver_input;
     MeasuredSupQ container_supq;
 
@@ -250,9 +249,8 @@ public:
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        trie = new Trie(S.outputs.size(), S.nVars() * 2);
-        S.trie = trie;
-        S.addConstr(trie);
+        S.trie = Trie(S.outputs.size());;
+        S.addConstr(&S.trie);
 
         if (verbosity >= 2) {
             for (int x = 0; x < S.outputs.size(); x++) {
@@ -383,7 +381,7 @@ private:
                       Place cut_knee = {NULL, 0, 0};
 
                       if (use_trie) {
-                          if (trie->onSat(S)) cut_knee = *trie;
+                          if (S.trie.onSat(S)) cut_knee = S.trie;
                       } else {
                           cell_out.clear();
                           for (int i: *cell) {
