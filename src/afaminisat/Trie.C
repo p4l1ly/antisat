@@ -1,3 +1,5 @@
+// TODO Do not register stuff in vectors as watch or undo - it may move.
+
 #include <algorithm>
 #include <iostream>
 #include <utility>
@@ -11,8 +13,8 @@ int hor_head_count = 0;
 int hor_count = 0;
 int ver_count = 0;
 ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO = {};
-BackJumperUndo BACKJUMPER_UNDO = {};
 RemovedWatch REMOVED_WATCH = {};
+
 
 using std::cout;
 
@@ -25,7 +27,7 @@ inline VerHead &Place::deref_hor() {
 }
 
 inline unsigned Place::get_tag() {
-  return ver_ix == -1 ? deref_hor().tag : deref_ver().tag;
+  return ver_ix == IX_NULL ? deref_hor().tag : deref_ver().tag;
 }
 
 inline bool Place::hor_is_out() {
@@ -41,7 +43,7 @@ inline bool Place::ver_is_last() {
 }
 
 inline bool Place::is_ver() {
-  return ver_ix != -1;
+  return ver_ix != IX_NULL;
 }
 
 void Place::cut_away() {
@@ -96,7 +98,7 @@ inline void WatchedPlace::update_watch(Solver &S, unsigned old_tag) {
 }
 
 WatchedPlace::WatchedPlace(HorLine *hor_)
-: Place{hor_, 0, -1}
+: Place{hor_, 0, IX_NULL}
 { }
 WatchedPlace::WatchedPlace(Place place)
 : Place(place)
@@ -119,23 +121,20 @@ Trie::Trie(unsigned var_count_)
 , var_count(var_count_)
 , back_ptrs(var_count_)
 , acc_backjumpers(var_count_)
-, backjumpers()
 , greater_backjumpers()
 , greater_stack()
 {
-  backjumpers.reserve(var_count_);
   greater_backjumpers.reserve(var_count_);
   greater_stack.reserve(var_count_);
 }
 
+// TODO The only undoable is Trie itself. It holds a list of undos.
 Lit Trie::guess(Solver &S) {
   if (!ver_accept && !hor_is_out()) {
     unsigned tag = get_tag();
     Lit out_lit = S.outputs[tag];
 
-    backjumpers.emplace_back(*this);
-    greater_backjumpers.emplace_back();
-    S.undos[var(out_lit)].push(&BACKJUMPER_UNDO);
+    S.undos[var(out_lit)].push(&greater_backjumpers.emplace_back(*this));
 
     if (verbosity >= 2) {
       printf(
@@ -147,7 +146,12 @@ Lit Trie::guess(Solver &S) {
     }
     return out_lit;
   }
-  // TODO guess by greater_places
+  else if (last_greater != IX_NULL) {
+    unsigned tag = greater_places[last_greater].get_tag();
+    Lit out_lit = S.outputs[tag];
+    S.undos[var(out_lit)].push(&greater_backjumpers.emplace_back(S.decisionLevel()));
+    return out_lit;
+  }
   else {
     if (active_var == var_count) return lit_Undef;
     active_var_old = active_var;
@@ -254,16 +258,28 @@ bool Trie::onSat(Solver &S) {
 
   unsigned i = added_vars.size();
 
+  // For each greater/accepting guess, find the least place in the newly
+  // created branch, that has higher or equal level as the guess. If such place
+  // exists and if it is not the lowest place, set the guess' backjumper to
+  // jump to the place.
+  //
+  // Why is the lowest place skipped? We never want to jump to the lowest place
+  // because we should propagate from it immediately, which is not possible
+  // from undo. Luckily, the conflict analysis machinery ensures longer jumps.
+  // Are we sure? Proof: If there are multiple added_vars in the max_level, we
+  // jump to the first of them, therefore we don't end up at the lowest one. If
+  // there is only one, it is used as an asserting literal but we jump further
+  // back, to the max level of the remaining literals.
+
   // We go from the lastly guessed variable to the firstly guessed one.
   // To each guessed variable, we assign a backjumper that points to the
-  // latest place with a level lower than the level of the guessed variable.
+  // last place with a level lower than the level of the guessed variable.
   //
   // Why is this so complicated? Shouldn't that always be just the added_var
   // immediately before the guessed added var? No because guessed variables are
   // of course not in added_vars, as they are 1-valued.
   for (unsigned acc_ptr = active_var_old; acc_ptr--; acc_ptr = back_ptrs[acc_ptr]) {
-    int svar = var(S.outputs[acc_ptr]);
-    int lvl = S.level[svar];
+    int lvl = S.level[var(S.outputs[acc_ptr])];
 
     // How could this be even possible? If the new branch is added, the list
     // of the guessed variables does not get fully erased in the conflict
@@ -278,12 +294,12 @@ bool Trie::onSat(Solver &S) {
     }
 
     while (true) {
-      const std::pair<int, unsigned>& x = added_vars[i - 1];
-      if (x.first < lvl) {
-        if (i != added_vars.size()) {
-          acc_backjumpers[acc_ptr].enable(
-            {hor, hor_ix, int(i) - 1}
-          );
+      const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+      if (added_var.first < lvl) {
+        // We don't set the backjumper to the last added var because it will be
+        // jumped over yet in onSatConflict.
+        if (i + 1 < added_vars.size()) {
+          acc_backjumpers[acc_ptr].enable({hor, hor_ix, i - 1});
         }
         break;
       }
@@ -293,15 +309,48 @@ bool Trie::onSat(Solver &S) {
       // If there is no added_var before the guessed variable, set its backjumper to the
       // start of the added branch.
       if (i == 1) {
-        acc_backjumpers[acc_ptr].enable({hor, hor_ix, -1});
-        goto total_break;
+        if (1 != added_vars.size()) {
+          acc_backjumpers[acc_ptr].enable({hor, hor_ix, IX_NULL});
+        }
+        break;
       }
-
-      assert(x.first == lvl);
       i--;
     }
   }
-  total_break:
+
+  for (auto it = greater_backjumpers.rbegin(); it != greater_backjumpers.rend(); it++) {
+    GreaterBackjumper &backjumper = *it;
+    int lvl = backjumper.level + 1;
+    if (lvl <= accept_level) break;
+    if (verbosity >= 0) printf("GLVL %d\n", lvl);
+
+    while (true) {
+      const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+      if (added_var.first < lvl) {
+        // We don't set the backjumper to the last added var because it will be
+        // jumped over yet in onSatConflict.
+        if (i + 1 < added_vars.size()) {
+          backjumper.level = -1;
+          backjumper.least_backjumper = {hor, hor_ix, i - 1};
+        }
+        break;
+      }
+
+      if (verbosity >= 0) printf("I %d\n", i - 1);
+
+      // If there is no added_var before the guessed variable, set its backjumper to the
+      // start of the added branch.
+      if (i == 1) {
+        if (1 != added_vars.size()) {
+          backjumper.level = -1;
+          backjumper.least_backjumper = {hor, hor_ix, IX_NULL};
+        }
+        break;
+      }
+      i--;
+    }
+  }
+
 
   S.cancelUntil(max_level);
   return false;
@@ -341,17 +390,22 @@ WhatToDo Place::after_vers_change(Solver &S) {
 
 
 inline GreaterPlace &add_greater_place(ChangedGreaterPlace changed_place, Trie &trie) {
-  while (!trie.free_greater_places.empty()) {
-    unsigned ix = trie.free_greater_places.back();
+  unsigned ix;
+  GreaterPlace *place;
+
+  if (trie.free_greater_places.empty()) {
+    ix = trie.greater_places.size();
+    place = &trie.greater_places.emplace_back(changed_place, ix, trie.last_greater);
+  } else {
+    ix = trie.free_greater_places.back();
     trie.free_greater_places.pop_back();
-    if (ix < trie.greater_places.size()) {
-      GreaterPlace &place = trie.greater_places[ix];
-      place = GreaterPlace(changed_place, ix);
-      return place;
-    }
+    place = &trie.greater_places[ix];
+    *place = GreaterPlace(changed_place, ix, trie.last_greater);
   }
-  unsigned ix = trie.greater_places.size();
-  return trie.greater_places.emplace_back(changed_place, ix);
+
+  if (trie.last_greater != IX_NULL) trie.greater_places[trie.last_greater].next = ix;
+  trie.last_greater = ix;
+  return *place;
 }
 
 
@@ -372,7 +426,7 @@ GreaterPlace &Place::save_as_greater(Solver &S) {
   if (changed_place.backjumper) {
     changed_place.backjumper->added_places.emplace_back(place.ix);
   }
-  place.set_watch(S);
+  place.set_watch(S);  // TODO this is a problem as place's address is moved when vector of greater places is resized.
   return place;
 }
 
@@ -383,11 +437,11 @@ void Place::branch(Solver &S) {
   if (is_ver()) {
     HorLine *hor2 = deref_ver().hor;
     if (hor2 == NULL) return;
-    place = {hor2, 0, -1};
-    S.trie.greater_stack.emplace_back(hor2, 0, -1);
+    place = {hor2, 0, IX_NULL};
+    S.trie.greater_stack.emplace_back(hor2, 0, IX_NULL);
   } else {
-    place = {hor, hor_ix + 1, -1};
-    S.trie.greater_stack.emplace_back(hor, hor_ix + 1, -1);
+    place = {hor, hor_ix + 1, IX_NULL};
+    S.trie.greater_stack.emplace_back(hor, hor_ix + 1, IX_NULL);
   }
 }
 
@@ -404,7 +458,7 @@ bool Place::handle_greater_stack(Solver &S) {
     case MultimoveEnd::E_PROPAGATE: {
       return S.enqueue(S.outputs[get_tag()], &save_as_greater(S));
     }
-    case MultimoveEnd::E_CONFLICT: {
+    default: { // case MultimoveEnd::E_CONFLICT:
       return false;
     }
   }
@@ -419,7 +473,7 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit) {
       else {
         hor = hor2;
         hor_ix = 0;
-        ver_ix = -1;
+        ver_ix = IX_NULL;
         return after_hors_change(S);
       }
     }
@@ -523,7 +577,7 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       set_watch(S);
       return S.enqueue(S.outputs[get_tag()], this);
     }
-    case MultimoveEnd::E_CONFLICT: {
+    default: { // case MultimoveEnd::E_CONFLICT:
       return false;
     }
   }
@@ -585,7 +639,7 @@ bool Trie::reset(Solver &S) {
   }
   hor = &root;
   hor_ix = 0;
-  ver_ix = -1;
+  ver_ix = IX_NULL;
 
   active_var = 0;
   active_var_old = 0;
@@ -599,12 +653,6 @@ bool Trie::reset(Solver &S) {
 
 void ActiveVarDoneUndo::undo(Solver &S, Lit _p) {
   S.trie.active_var = S.trie.active_var_old;
-}
-
-
-void BackJumperUndo::undo(Solver &S, Lit _p) {
-  S.trie.backjumpers.back().jump(S);
-  S.trie.backjumpers.pop_back();
 }
 
 
@@ -626,21 +674,31 @@ void BackJumper::jump(Solver &S) {
 }
 
 
-GreaterPlace::GreaterPlace(HorLine *hor_, unsigned ix_)
-: WatchedPlace(hor_), ix(ix_), backjumper(NULL)
+GreaterPlace::GreaterPlace(HorLine *hor_, unsigned ix_, unsigned previous_)
+: WatchedPlace(hor_), ix(ix_), backjumper(NULL), previous(previous_), next(IX_NULL)
 { }
 
-GreaterPlace::GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_)
+GreaterPlace::GreaterPlace(
+  ChangedGreaterPlace changed_place, unsigned ix_, unsigned previous_
+)
 : WatchedPlace(changed_place.place)
 , ix(ix_)
 , backjumper(changed_place.backjumper)
 , backjumper_added_ix(changed_place.backjumper_added_ix)
+, previous(previous_)
+, next(IX_NULL)
 { }
 
 
 void GreaterPlace::on_accept(Solver &S) {
   enabled = false;
+
   Trie &trie = S.trie;
+
+  if (previous != IX_NULL) trie.greater_places[previous].next = next;
+  if (next == IX_NULL) trie.last_greater = previous;
+  else trie.greater_places[next].previous = previous;
+
   if (trie.greater_places.size() == ix + 1) {
     trie.greater_places.pop_back();
   } else {
@@ -657,13 +715,24 @@ void GreaterPlace::on_accept(Solver &S) {
   }
 }
 
+
+// 
 void GreaterBackjumper::undo(Solver &S, Lit _p) {
   Trie &trie = S.trie;
+
+  if (level == -1) {
+    least_backjumper.jump(S);
+  }
+
   for (AddedGreaterPlace added_place: added_places) {
     if (added_place.removed) continue;
     const unsigned ix = added_place.ix;
     GreaterPlace &place = trie.greater_places[added_place.ix];
     place.remove_watch(S, place.get_tag());
+
+    if (place.previous != IX_NULL) trie.greater_places[place.previous].next = place.next;
+    if (place.next == IX_NULL) trie.last_greater = place.previous;
+    else trie.greater_places[place.next].previous = place.previous;
 
     if (trie.greater_places.size() == added_place.ix + 1) {
       trie.greater_places.pop_back();

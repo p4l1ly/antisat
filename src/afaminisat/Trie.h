@@ -1,6 +1,7 @@
 #ifndef Trie_h
 #define Trie_h
 
+#include <limits>
 #include <vector>
 #include <unordered_set>
 
@@ -20,6 +21,9 @@ class HorLine;
 extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
+
+
+const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
 
 
 enum WhatToDo {
@@ -44,7 +48,7 @@ struct Place {
 public:
   HorLine *hor;
   unsigned hor_ix;
-  int ver_ix;
+  unsigned ver_ix;
 
   void cut_away();
   HorHead &deref_ver();
@@ -121,9 +125,10 @@ struct GreaterPlace : public WatchedPlace {
   bool enabled = true;
   GreaterBackjumper *backjumper;
   unsigned backjumper_added_ix;
+  unsigned previous, next;
 
-  GreaterPlace(HorLine *hor_, unsigned ix_);
-  GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_);
+  GreaterPlace(HorLine *hor_, unsigned ix_, unsigned previous_);
+  GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_, unsigned previous_);
 
   void on_accept(Solver &S);
 };
@@ -135,10 +140,20 @@ struct AddedGreaterPlace {
 
 
 struct GreaterBackjumper : Undoable {
+  BackJumper least_backjumper;
+  int level = -1;
   vector<AddedGreaterPlace> added_places;
   vector<ChangedGreaterPlace> changed_places;
 
-  GreaterBackjumper() : added_places(), changed_places() {}
+  GreaterBackjumper(int level_)
+  : added_places(), changed_places(), level(level_) {}
+
+  GreaterBackjumper(Place least_place_)
+  : added_places()
+  , changed_places()
+  , least_backjumper{least_place_}
+  {}
+
   void undo(Solver &S, Lit _p);
 };
 
@@ -203,10 +218,8 @@ struct RemovedWatch : public Constr {
 
 
 struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
-struct BackJumperUndo : public Undoable { void undo(Solver &S, Lit _p); };
 
 extern ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO;
-extern BackJumperUndo BACKJUMPER_UNDO;
 extern RemovedWatch REMOVED_WATCH;
 
 class Trie : public Undoable, public WatchedPlace {
@@ -217,6 +230,7 @@ public:
   vector<GreaterPlace> greater_places;
   vector<int> free_greater_places;
   vector<Place> greater_stack;
+  unsigned last_greater = IX_NULL;
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -232,7 +246,6 @@ public:
   unsigned active_var = 0;
   unsigned active_var_old = 0;
   vector<AccBackJumper> acc_backjumpers;
-  vector<BackJumper> backjumpers;
   vector<GreaterBackjumper> greater_backjumpers;
 
   Trie();
