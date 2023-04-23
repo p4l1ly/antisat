@@ -1,5 +1,3 @@
-// TODO Do not register stuff in vectors as watch or undo - it may move.
-
 #include <algorithm>
 #include <iostream>
 #include <utility>
@@ -92,11 +90,6 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   }
 }
 
-inline void WatchedPlace::update_watch(Solver &S, unsigned old_tag) {
-  remove_watch(S, old_tag);
-  set_watch(S);
-}
-
 WatchedPlace::WatchedPlace(HorLine *hor_)
 : Place{hor_, 0, IX_NULL}
 { }
@@ -124,7 +117,6 @@ Trie::Trie(unsigned var_count_)
 , greater_backjumpers()
 , greater_stack()
 {
-  greater_backjumpers.reserve(var_count_);
   greater_stack.reserve(var_count_);
 }
 
@@ -426,7 +418,7 @@ GreaterPlace &Place::save_as_greater(Solver &S) {
   if (changed_place.backjumper) {
     changed_place.backjumper->added_places.emplace_back(place.ix);
   }
-  place.set_watch(S);  // TODO this is a problem as place's address is moved when vector of greater places is resized.
+  place.set_watch(S);
   return place;
 }
 
@@ -637,6 +629,20 @@ bool Trie::reset(Solver &S) {
   if (!ver_accept && !hor_is_out()) {
     remove_watch(S, get_tag());
   }
+
+  {
+    int greater_ix = last_greater;
+    while (true) {
+      if (greater_ix == IX_NULL) break;
+      GreaterPlace &place = greater_places[greater_ix];
+      place.remove_watch(S, place.get_tag());
+      greater_ix = place.previous;
+    }
+  }
+  greater_places.clear();
+  free_greater_places.clear();
+  last_greater = IX_NULL;
+
   hor = &root;
   hor_ix = 0;
   ver_ix = IX_NULL;

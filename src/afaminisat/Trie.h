@@ -3,12 +3,14 @@
 
 #include <limits>
 #include <vector>
+#include <deque>
 #include <unordered_set>
 
 #include "Constraints.h"
 
 class Solver;
 
+using std::deque;
 using std::vector;
 using std::unordered_set;
 
@@ -148,7 +150,7 @@ struct GreaterBackjumper : Undoable {
   GreaterBackjumper(int level_)
   : added_places(), changed_places(), level(level_) {}
 
-  GreaterBackjumper(Place least_place_)
+  GreaterBackjumper(Place least_place_) noexcept
   : added_places()
   , changed_places()
   , least_backjumper{least_place_}
@@ -172,7 +174,7 @@ public:
   HorHead(unsigned tag_) : tag(tag_), hor(NULL) {
     if (verbosity >= -2) hor_head_count++;
   }
-  HorHead(HorHead&& old) : tag(old.tag), hor(old.hor) {
+  HorHead(HorHead&& old) noexcept : tag(old.tag), hor(old.hor) {
     old.hor = NULL;
     if (verbosity >= -2) hor_head_count++;
   }
@@ -199,7 +201,7 @@ public:
   VerHead(unsigned tag_) : tag(tag_), hors() {
     if (verbosity >= -2) ver_count++;
   }
-  VerHead(VerHead&& old) : tag(old.tag), hors(std::move(old.hors)) {
+  VerHead(VerHead&& old) noexcept : tag(old.tag), hors(std::move(old.hors)) {
   }
 
   ~VerHead() {
@@ -227,7 +229,7 @@ public:
   // the underlying automaton
   HorLine root;
 
-  vector<GreaterPlace> greater_places;
+  deque<GreaterPlace> greater_places;
   vector<int> free_greater_places;
   vector<Place> greater_stack;
   unsigned last_greater = IX_NULL;
@@ -246,7 +248,7 @@ public:
   unsigned active_var = 0;
   unsigned active_var_old = 0;
   vector<AccBackJumper> acc_backjumpers;
-  vector<GreaterBackjumper> greater_backjumpers;
+  deque<GreaterBackjumper> greater_backjumpers;
 
   Trie();
   Trie(unsigned var_count);
