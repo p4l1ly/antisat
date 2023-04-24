@@ -104,19 +104,22 @@ void Trie::on_accept(Solver &S) {
   accept_level = S.decisionLevel();
 }
 
-Trie::Trie() : WatchedPlace(&root) {};
-
-Trie::Trie(unsigned var_count_)
+Trie::Trie()
 : WatchedPlace(&root)
 , root()
 , greater_places()
 , free_greater_places()
-, var_count(var_count_)
-, back_ptrs(var_count_)
-, acc_backjumpers(var_count_)
+, var_count()
+, back_ptrs()
+, acc_backjumpers()
 , greater_backjumpers()
 , greater_stack()
-{
+{ }
+
+void Trie::init(unsigned var_count_) {
+  var_count = var_count_;
+  back_ptrs.resize(var_count_);
+  acc_backjumpers.resize(var_count_);
   greater_stack.reserve(var_count_);
 }
 
@@ -219,7 +222,7 @@ bool Trie::onSat(Solver &S) {
      }
   }
 
-  const std::pair<int, unsigned>& x = added_vars[0];
+  const std::pair<int, unsigned>& first_added_var = added_vars[0];
 
   HorLine *hor;
   unsigned hor_ix;
@@ -239,7 +242,7 @@ bool Trie::onSat(Solver &S) {
   }
 
   // Add the first added_var to the current horizontal branch.
-  VerHead &ver_head = hor->elems.emplace_back(x.second);
+  VerHead &ver_head = hor->elems.emplace_back(first_added_var.second);
   ver_head.hors.reserve(added_vars.size() - 1);
 
   // Continue down with a vertical branch containing the remaining added_vars.

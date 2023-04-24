@@ -34,7 +34,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <fcntl.h>
 
+#include <capnp/serialize.h>
 #include <capnp/ez-rpc.h>
 #include <kj/thread.h>
 
@@ -249,7 +251,7 @@ public:
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        S.trie = Trie(S.outputs.size());;
+        S.trie.init(S.outputs.size());;
         S.addConstr(&S.trie);
 
         if (verbosity >= 2) {
@@ -314,7 +316,6 @@ public:
         return kj::READY_NOW;
     }
 
-private:
     bool modelCheck() {
         if (short_unsat) {
             return false;
@@ -454,7 +455,23 @@ int main(int argc, char** argv) {
     if (argc >= 2 && argv[1][0] == '0') use_trie = false;
     if (argc >= 3) port = atoi(argv[2]);
 
-    capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", port);
-    auto& waitScope = server.getWaitScope();
-    kj::NEVER_DONE.wait(waitScope);
+    if (port == 0) {
+        int fd = open(argv[2], O_RDONLY);
+        if (fd < 0) {
+            std::cout << "ERROR: Could not open file" << std::endl;
+            return -1;
+        }
+        capnp::StreamFdMessageReader message(fd);
+        ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>());
+        close(fd);
+        if (mc.modelCheck()) {
+            std::cout << "EMPTY" << std::endl;
+        } else {
+            std::cout << "NOT EMPTY" << std::endl;
+        }
+    } else {
+        capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", port);
+        auto& waitScope = server.getWaitScope();
+        kj::NEVER_DONE.wait(waitScope);
+    }
 }

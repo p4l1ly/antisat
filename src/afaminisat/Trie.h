@@ -251,7 +251,7 @@ public:
   deque<GreaterBackjumper> greater_backjumpers;
 
   Trie();
-  Trie(unsigned var_count);
+  void init(unsigned var_count);
 
   Lit guess(Solver &S);
 
