@@ -82,7 +82,7 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   var_++;
   {
     vec<Constr*> &watches = S.watches[var_];
-    if (watches.size() == watch_ix_pos + 1) {
+    if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
     } else {
       watches[watch_ix_neg] = &REMOVED_WATCH;
@@ -106,7 +106,7 @@ void Trie::on_accept(Solver &S) {
 
 Trie::Trie()
 : WatchedPlace(&root)
-, root()
+, root{{NULL, 0, 0}, vector<VerHead>()}
 , greater_places()
 , free_greater_places()
 , var_count()
@@ -224,8 +224,8 @@ bool Trie::onSat(Solver &S) {
 
   const std::pair<int, unsigned>& first_added_var = added_vars[0];
 
-  HorLine *hor;
-  unsigned hor_ix;
+  HorLine *extended_hor;
+  unsigned extended_hor_ix;
   if (ver_accept) {
     // We create a new horizontal empty branch right to the current final place
     // (which is vertical because least_ver_accept is set only when accepting at
@@ -234,15 +234,26 @@ bool Trie::onSat(Solver &S) {
     HorLine *new_active_hor = new HorLine{*this};
     if (verbosity >= -2) hor_count++;
     deref_ver().hor = new_active_hor;
-    hor = new_active_hor;
-    hor_ix = 0;
+    extended_hor = new_active_hor;
+    extended_hor_ix = 0;
   } else {
-    hor = hor;
-    hor_ix = hor_ix;
+    extended_hor = hor;
+    extended_hor_ix = hor_ix;
+  }
+
+  if (added_vars.size() == 1) {
+      hor = extended_hor;
+      hor_ix = extended_hor_ix + 1;
+      ver_ix = -1;
+  } else {
+      hor = extended_hor;
+      hor_ix = extended_hor_ix;
+      ver_ix = added_vars.size() - 1;
+      ver_accept = true;
   }
 
   // Add the first added_var to the current horizontal branch.
-  VerHead &ver_head = hor->elems.emplace_back(first_added_var.second);
+  VerHead &ver_head = extended_hor->elems.emplace_back(first_added_var.second);
   ver_head.hors.reserve(added_vars.size() - 1);
 
   // Continue down with a vertical branch containing the remaining added_vars.
@@ -294,7 +305,7 @@ bool Trie::onSat(Solver &S) {
         // We don't set the backjumper to the last added var because it will be
         // jumped over yet in onSatConflict.
         if (i + 1 < added_vars.size()) {
-          acc_backjumpers[acc_ptr].enable({hor, hor_ix, i - 1});
+          acc_backjumpers[acc_ptr].enable({extended_hor, extended_hor_ix, i - 1});
         }
         break;
       }
@@ -305,7 +316,7 @@ bool Trie::onSat(Solver &S) {
       // start of the added branch.
       if (i == 1) {
         if (1 != added_vars.size()) {
-          acc_backjumpers[acc_ptr].enable({hor, hor_ix, IX_NULL});
+          acc_backjumpers[acc_ptr].enable({extended_hor, extended_hor_ix, IX_NULL});
         }
         break;
       }
@@ -326,7 +337,7 @@ bool Trie::onSat(Solver &S) {
         // jumped over yet in onSatConflict.
         if (i + 1 < added_vars.size()) {
           backjumper.level = -1;
-          backjumper.least_backjumper = {hor, hor_ix, i - 1};
+          backjumper.least_backjumper = {extended_hor, extended_hor_ix, i - 1};
         }
         break;
       }
@@ -338,7 +349,7 @@ bool Trie::onSat(Solver &S) {
       if (i == 1) {
         if (1 != added_vars.size()) {
           backjumper.level = -1;
-          backjumper.least_backjumper = {hor, hor_ix, IX_NULL};
+          backjumper.least_backjumper = {extended_hor, extended_hor_ix, IX_NULL};
         }
         break;
       }

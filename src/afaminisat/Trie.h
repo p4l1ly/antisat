@@ -18,7 +18,7 @@ using std::unordered_set;
 
 class VerHead;
 class HorHead;
-class HorLine;
+struct HorLine;
 
 extern int hor_head_count;
 extern int hor_count;
