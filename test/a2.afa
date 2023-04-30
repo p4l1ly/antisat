@@ -1,0 +1,10 @@
+@kInitialFormula: sInit
+@kFinalFormula: !sInit & !sA1 & !sA2 & !sA3 & !sB1 & !sB2 & !sB3 & !sB4
+@sInit: sA1 & sB1
+@sA1: !aF & sA2
+@sA2: !aF & sA3
+@sA3: aF
+@sB1: !aF & sB2
+@sB2: !aF & sB3
+@sB3: !aF & sB4
+@sB4: aF

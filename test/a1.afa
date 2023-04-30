@@ -1,0 +1,4 @@
+@kInitialFormula: sInit
+@kFinalFormula: !sInit & !sFoo
+@sInit: sFoo
+@sFoo: sFoo
