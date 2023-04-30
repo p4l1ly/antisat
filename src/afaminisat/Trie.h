@@ -83,7 +83,8 @@ public:
 
   void set_watch(Solver &S);
   void remove_watch(Solver &S, unsigned old_tag);
-  void update_watch(Solver &S, unsigned old_tag);
+  void remove_watch_pos(Solver &S, Lit lit);
+  void remove_watch_neg(Solver &S, Lit lit);
 
   virtual void on_accept(Solver &S) = 0;
 

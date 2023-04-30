@@ -55,6 +55,9 @@ void Place::cut_away() {
 }
 
 inline void WatchedPlace::set_watch(Solver &S) {
+  if (verbosity >= 2) {
+    printf("WATCHING " L_LIT "\n", L_lit(S.outputs[get_tag()]));
+  }
   int var_ = var(S.outputs[get_tag()]);
   var_ += var_;
   {
@@ -91,6 +94,34 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
     vec<Constr*> &watches = S.watches[var_];
     if (verbosity >= 2) {
       printf("RemoveWatchNeg %d %d %d\n", watches.size(), watch_ix_neg, old_tag);
+    }
+    if (watches.size() == watch_ix_neg + 1) {
+      watches.pop();
+    } else {
+      watches[watch_ix_neg] = &REMOVED_WATCH;
+    }
+  }
+}
+
+inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
+  {
+    vec<Constr*> &watches = S.watches[index(lit)];
+    if (verbosity >= 2) {
+      printf("RemoveWatchPos2 %d %d " L_LIT "\n", watches.size(), watch_ix_pos, L_lit(lit));
+    }
+    if (watches.size() == watch_ix_pos + 1) {
+      watches.pop();
+    } else {
+      watches[watch_ix_pos] = &REMOVED_WATCH;
+    }
+  }
+}
+
+inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
+  {
+    vec<Constr*> &watches = S.watches[index(lit)];
+    if (verbosity >= 2) {
+      printf("RemoveWatchNeg2 %d %d " L_LIT "\n", watches.size(), watch_ix_neg, L_lit(lit));
     }
     if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
@@ -529,9 +560,8 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
       case WATCH: {
         if (verbosity >= 2) {
-          printf("WATCH %d %d\n", hor_ix, ver_ix);
+          printf("WATCH %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(S.outputs[get_tag()]));
         }
-        if (verbosity >= 2) printf("WW " L_LIT "\n", L_lit(S.outputs[get_tag()]));
         return MultimoveEnd::E_WATCH;
       }
 
@@ -544,9 +574,8 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
       case PROPAGATE: {
         if (verbosity >= 2) {
-          printf("PROPAGATE %d %d\n", hor_ix, ver_ix);
+          printf("PROPAGATE %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(S.outputs[get_tag()]));
         }
-        if (verbosity >= 2) printf("WP " L_LIT "\n", L_lit(S.outputs[get_tag()]));
 
         return MultimoveEnd::E_PROPAGATE;
       }
@@ -600,7 +629,12 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
 bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) {
-    printf("LEAST_PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
+    printf("PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
+  }
+  if (sign(p)) {
+    remove_watch_pos(S, ~p);
+  } else {
+    remove_watch_neg(S, ~p);
   }
   return full_multimove_on_propagate(S, move_on_propagate(S, S.outputs[get_tag()]));
 }
