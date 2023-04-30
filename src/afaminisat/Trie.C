@@ -44,6 +44,10 @@ inline bool Place::is_ver() {
   return ver_ix != IX_NULL;
 }
 
+inline bool Place::in_conflict() {
+  return ver_ix == deref_hor().hors.size();
+}
+
 void Place::cut_away() {
   vector<HorHead> &hors = deref_hor().hors;
   if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
@@ -72,6 +76,9 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   var_ += var_;
   {
     vec<Constr*> &watches = S.watches[var_];
+    if (verbosity >= 2) {
+      printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, old_tag);
+    }
     if (watches.size() == watch_ix_pos + 1) {
       watches.pop();
     } else {
@@ -82,6 +89,9 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   var_++;
   {
     vec<Constr*> &watches = S.watches[var_];
+    if (verbosity >= 2) {
+      printf("RemoveWatchNeg %d %d %d\n", watches.size(), watch_ix_neg, old_tag);
+    }
     if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
     } else {
@@ -374,6 +384,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
     return ver_is_singleton() ? WhatToDo::PROPAGATE : WhatToDo::WATCH;
   }
   if (val == l_False && ver_is_singleton()) {
+    ver_ix = 0;
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -389,6 +400,7 @@ WhatToDo Place::after_vers_change(Solver &S) {
     return ver_is_last() ? WhatToDo::PROPAGATE : WhatToDo::WATCH;
   }
   if (val == l_False && ver_is_last()) {
+    ++ver_ix;
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -438,15 +450,12 @@ GreaterPlace &Place::save_as_greater(Solver &S) {
 
 
 void Place::branch(Solver &S) {
-  Place place; 
-
   if (is_ver()) {
     HorLine *hor2 = deref_ver().hor;
     if (hor2 == NULL) return;
-    place = {hor2, 0, IX_NULL};
     S.trie.greater_stack.emplace_back(hor2, 0, IX_NULL);
   } else {
-    place = {hor, hor_ix + 1, IX_NULL};
+    if (hor_ix + 1 == hor->elems.size()) return;
     S.trie.greater_stack.emplace_back(hor, hor_ix + 1, IX_NULL);
   }
 }
@@ -528,7 +537,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
       case DONE: {
         if (verbosity >= 2) {
-          printf("DONE %d %d", hor_ix, ver_ix);
+          printf("DONE %d %d\n", hor_ix, ver_ix);
         }
         return MultimoveEnd::E_DONE;
       }
@@ -613,14 +622,14 @@ void Trie::undo(Solver& S, Lit p) {
 void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   if (p == lit_Undef) {
     int max_level = -1;
-    ITER_MY_ZEROES((Place{hor, hor_ix, ver_ix + 1}), x,
+    ITER_MY_ZEROES(*this, x,
       Lit out_lit = S.outputs[x];
       max_level = max(max_level, S.level[var(out_lit)]);
       out_reason.push(~out_lit);
     )
 
     if (verbosity >= 2) {
-      printf("CALC_REASON_CONFLICT.LEAST " L_LIT, L_lit(p));
+      printf("CALC_REASON_CONFLICT " L_LIT, L_lit(p));
       ITER_MY_ZEROES(*this, x, printf(" %u", x);)
       printf("\n");
     }
@@ -631,7 +640,7 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     ITER_MY_ZEROES(*this, x, out_reason.push(~S.outputs[x]);)
 
     if (verbosity >= 2) {
-      printf("CALC_REASON_PLACE.LEAST " L_LIT, L_lit(p));
+      printf("CALC_REASON_PLACE " L_LIT, L_lit(p));
       ITER_MY_ZEROES(*this, x, printf(" %u", x);)
       printf("\n");
     }
@@ -640,7 +649,7 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 
 
 bool Trie::reset(Solver &S) {
-  if (!ver_accept && !hor_is_out()) {
+  if (!ver_accept && !hor_is_out() && !in_conflict()) {
     remove_watch(S, get_tag());
   }
 
@@ -649,7 +658,9 @@ bool Trie::reset(Solver &S) {
     while (true) {
       if (greater_ix == IX_NULL) break;
       GreaterPlace &place = greater_places[greater_ix];
-      place.remove_watch(S, place.get_tag());
+      if (!place.in_conflict()) {
+        place.remove_watch(S, place.get_tag());
+      }
       greater_ix = place.previous;
     }
   }
@@ -679,7 +690,7 @@ void ActiveVarDoneUndo::undo(Solver &S, Lit _p) {
 void BackJumper::jump(Solver &S) {
   Trie &trie = S.trie;
 
-  if (!trie.ver_accept && !trie.hor_is_out()) {
+  if (!trie.ver_accept && !trie.hor_is_out() && !trie.in_conflict()) {
     trie.remove_watch(S, trie.get_tag());
   }
   (Place&)trie = place;
@@ -748,7 +759,9 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
     if (added_place.removed) continue;
     const unsigned ix = added_place.ix;
     GreaterPlace &place = trie.greater_places[added_place.ix];
-    place.remove_watch(S, place.get_tag());
+    if (!place.in_conflict()) {
+      place.remove_watch(S, place.get_tag());
+    }
 
     if (place.previous != IX_NULL) trie.greater_places[place.previous].next = place.next;
     if (place.next == IX_NULL) trie.last_greater = place.previous;

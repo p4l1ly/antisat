@@ -60,6 +60,7 @@ public:
   bool ver_is_last();
   bool ver_is_singleton();
   bool is_ver();
+  bool in_conflict();
 
   void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
