@@ -255,6 +255,8 @@ void Clause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
     if (learnt()) S.claBumpActivity(this);
 }
 
+inline void Clause::moveWatch(int i, Lit p) { }
+
 
 //=================================================================================================
 // AtMost constraint -- An example of extending MiniSat:
@@ -324,3 +326,5 @@ void AtMost::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
         }
     }
 }
+
+inline void AtMost::moveWatch(int i, Lit p) { }

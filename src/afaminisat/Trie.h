@@ -5,6 +5,7 @@
 #include <vector>
 #include <deque>
 #include <unordered_set>
+#include <fstream>
 
 #include "Constraints.h"
 
@@ -53,14 +54,14 @@ public:
   unsigned ver_ix;
 
   void cut_away();
-  HorHead &deref_ver();
-  VerHead &deref_hor();
-  unsigned get_tag();
-  bool hor_is_out();
-  bool ver_is_last();
-  bool ver_is_singleton();
-  bool is_ver();
-  bool in_conflict();
+  HorHead &deref_ver() const;
+  VerHead &deref_hor() const;
+  unsigned get_tag() const;
+  bool hor_is_out() const;
+  bool ver_is_last() const;
+  bool ver_is_singleton() const;
+  bool is_ver() const;
+  bool in_conflict() const;
 
   void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
@@ -70,8 +71,15 @@ public:
 
   GreaterPlace &save_as_greater(Solver &S);
   bool handle_greater_stack(Solver &S);
+
+  friend std::ostream& operator<<(std::ostream& os, Place const &p);
 };
 
+struct PlaceAttrs : Place {
+  Solver &S;
+  PlaceAttrs(Place p, Solver &_S) : Place(p), S(_S) { };
+  friend std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p);
+};
 
 struct WatchedPlace : public Place, public virtual Constr {
 public:
@@ -94,6 +102,7 @@ public:
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+  void moveWatch(int i, Lit p);
 };
 
 
@@ -217,6 +226,7 @@ struct RemovedWatch : public Constr {
   bool propagate (Solver& S, Lit p, bool& keep_watch) { return true; };
   bool simplify  (Solver& S) { return false; };
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) { };
+  void moveWatch(int i, Lit p) {};
   ~RemovedWatch(void) {};
 };
 
@@ -268,6 +278,9 @@ public:
   int accept_level = -1;
   bool ver_accept = false;
   void on_accept(Solver &S);
+
+  // debugging
+  void to_dot(Solver& S, const char *filename);
 };
 
 

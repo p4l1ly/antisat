@@ -44,6 +44,7 @@ struct Constr {
     virtual bool propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
     virtual void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) = 0;
+    virtual void moveWatch(int i, Lit p) = 0;
 
     virtual ~Constr(void) { };  // (not used, just to keep the compiler happy)
 };
@@ -81,6 +82,7 @@ public:
     bool propagate (Solver& S, Lit p, bool& keep_watch);
     bool simplify  (Solver& S);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+    void moveWatch(int i, Lit p);
 };
 
 
@@ -104,6 +106,7 @@ public:
     bool simplify  (Solver& S);
     void undo      (Solver& S, Lit p);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+    void moveWatch(int i, Lit p);
 };
 
 #endif

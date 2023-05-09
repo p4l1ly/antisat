@@ -326,6 +326,7 @@ public:
 
         bool st;
         bool empty;
+        unsigned solveCnt = 0;
 
         while (true) {
             if (false) { // (container_supq.get_or_add(*cell)) {
@@ -353,13 +354,32 @@ public:
                 printf("\n==================\n");
               }
 
+              if (verbosity >= 2) {
+                printf("SOLVING %d\n", solveCnt);
+                std::stringstream ss;
+                ss << "debug/trie" << solveCnt << ".dot";
+                string s;
+                ss >> s;
+                S.trie.to_dot(S, s.c_str());
+              }
               st = S.solve(solver_input);
+              solveCnt++;
 
               if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
               delete cell;
 
               if (st) {
-                  while (S.resume()) {
+                  while (true) {
+                      if (verbosity >= 2) {
+                        printf("SOLVING_RESUME %d\n", solveCnt);
+                        std::stringstream ss;
+                        ss << "debug/trie" << solveCnt << ".dot";
+                        string s;
+                        ss >> s;
+                        S.trie.to_dot(S, s.c_str());
+                      }
+                      if (!S.resume()) break;
+                      solveCnt++;
                       satCnt++;
 
                       cell = new vector<int>();

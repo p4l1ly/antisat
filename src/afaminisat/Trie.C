@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include <utility>
 #include <boost/iterator/transform_iterator.hpp>
 
@@ -16,35 +17,35 @@ RemovedWatch REMOVED_WATCH = {};
 
 using std::cout;
 
-inline HorHead &Place::deref_ver() {
+inline HorHead &Place::deref_ver() const {
   return hor->elems[hor_ix].hors[ver_ix];
 }
 
-inline VerHead &Place::deref_hor() {
+inline VerHead &Place::deref_hor() const {
   return hor->elems[hor_ix];
 }
 
-inline unsigned Place::get_tag() {
+inline unsigned Place::get_tag() const {
   return ver_ix == IX_NULL ? deref_hor().tag : deref_ver().tag;
 }
 
-inline bool Place::hor_is_out() {
+inline bool Place::hor_is_out() const {
   return hor_ix == hor->elems.size();
 }
 
-inline bool Place::ver_is_singleton() {
+inline bool Place::ver_is_singleton() const {
   return deref_hor().hors.size() == 0;
 }
 
-inline bool Place::ver_is_last() {
+inline bool Place::ver_is_last() const {
   return ver_ix + 1 == deref_hor().hors.size();
 }
 
-inline bool Place::is_ver() {
+inline bool Place::is_ver() const {
   return ver_ix != IX_NULL;
 }
 
-inline bool Place::in_conflict() {
+inline bool Place::in_conflict() const {
   return ver_ix == deref_hor().hors.size();
 }
 
@@ -74,13 +75,20 @@ inline void WatchedPlace::set_watch(Solver &S) {
   }
 }
 
+
+void WatchedPlace::moveWatch(int i, Lit p) {
+  if (sign(p)) watch_ix_neg = i;
+  else watch_ix_pos = i;
+}
+
+
 inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   int var_ = var(S.outputs[old_tag]);
   var_ += var_;
   {
     vec<Constr*> &watches = S.watches[var_];
     if (verbosity >= 2) {
-      printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, old_tag);
+      printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, var(S.outputs[old_tag]));
     }
     if (watches.size() == watch_ix_pos + 1) {
       watches.pop();
@@ -93,7 +101,7 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   {
     vec<Constr*> &watches = S.watches[var_];
     if (verbosity >= 2) {
-      printf("RemoveWatchNeg %d %d %d\n", watches.size(), watch_ix_neg, old_tag);
+      printf("RemoveWatchNeg %d %d %d %d\n", var_, watches.size(), watch_ix_neg, var(S.outputs[old_tag]));
     }
     if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
@@ -408,7 +416,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
   if (hor_is_out()) return WhatToDo::DONE;
 
   unsigned out = get_tag();
-  if (verbosity >= 2) printf("OUT %d\n", out);
+  if (verbosity >= 2) printf("OUT %d %d\n", out, var(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -424,7 +432,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
 
 WhatToDo Place::after_vers_change(Solver &S) {
   unsigned out = get_tag();
-  if (verbosity >= 2) printf("OUT %d\n", out);
+  if (verbosity >= 2) printf("OUT %d %d\n", out, var(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -484,15 +492,25 @@ void Place::branch(Solver &S) {
   if (is_ver()) {
     HorLine *hor2 = deref_ver().hor;
     if (hor2 == NULL) return;
+
+    if (verbosity >= 2) {
+      std::cout << "ADD_TO_GREATER_STACK " << PlaceAttrs(Place{hor2, 0, IX_NULL}, S) << "\n";
+    }
     S.trie.greater_stack.emplace_back(hor2, 0, IX_NULL);
   } else {
     if (hor_ix + 1 == hor->elems.size()) return;
+    if (verbosity >= 2) {
+      std::cout << "ADD_TO_GREATER_STACK2 " << PlaceAttrs(Place{hor, hor_ix + 1, IX_NULL}, S) << "\n";
+    }
     S.trie.greater_stack.emplace_back(hor, hor_ix + 1, IX_NULL);
   }
 }
 
 
 bool Place::handle_greater_stack(Solver &S) {
+  if (verbosity >= 2) {
+    std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(*this, S) << "\n";
+  }
   switch (multimove_on_propagate(S, after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
       save_as_greater(S);
@@ -551,7 +569,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     switch (what_to_do) {
       case AGAIN: {
         if (verbosity >= 2) {
-          printf("AGAIN %d %d\n", hor_ix, ver_ix);
+          printf("AGAIN %d %d %d\n", hor_ix, ver_ix, var(S.outputs[get_tag()]));
         }
         out = get_tag();
         out_lit = S.outputs[out];
@@ -600,11 +618,11 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   } else {
     while (!S.trie.greater_stack.empty()) {
       Place p = S.trie.greater_stack.back();
+      S.trie.greater_stack.pop_back();
       if (!p.handle_greater_stack(S)) {
         S.trie.greater_stack.clear();
         return false;
       }
-      S.trie.greater_stack.pop_back();
     }
   }
 
@@ -691,6 +709,7 @@ bool Trie::reset(Solver &S) {
     int greater_ix = last_greater;
     while (true) {
       if (greater_ix == IX_NULL) break;
+      printf("ResettingGreater %d\n", greater_ix);
       GreaterPlace &place = greater_places[greater_ix];
       if (!place.in_conflict()) {
         place.remove_watch(S, place.get_tag());
@@ -774,14 +793,17 @@ void GreaterPlace::on_accept(Solver &S) {
     GreaterBackjumper &last_backjumper = trie.greater_backjumpers.back();
     if (&last_backjumper == backjumper) {
       last_backjumper.added_places[backjumper_added_ix].removed = true;
-    } else {
+    } else if (is_ver()) {
       last_backjumper.changed_places.emplace_back(*this, backjumper, backjumper_added_ix);
+    } else {
+      last_backjumper.changed_places.emplace_back(
+        Place{hor, hor_ix - 1, IX_NULL}, backjumper, backjumper_added_ix
+      );
     }
   }
 }
 
 
-// 
 void GreaterBackjumper::undo(Solver &S, Lit _p) {
   Trie &trie = S.trie;
 
@@ -814,8 +836,80 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
     if (changed_place.backjumper) {
       changed_place.backjumper->added_places[changed_place.backjumper_added_ix].ix = place.ix;
     }
+    if (verbosity >= 2) std::cout << "CHANGED " << place << "\n" << std::flush;
     place.set_watch(S);
   }
 
   trie.greater_backjumpers.pop_back();
+}
+
+
+void Trie::to_dot(Solver& S, const char *filename) {
+  std::ofstream file;
+  file.open(filename);
+  file << "strict graph {\n";
+
+  vector<HorLine*> stack;
+  stack.push_back(&root);
+
+  while (!stack.empty()) {
+    HorLine* hor = stack.back();
+    stack.pop_back();
+
+    // Pose the line horizontally.
+    file << "subgraph { rank=same";
+    if (hor->back_ptr.hor != NULL) {
+      file << ";" << hor->back_ptr;
+    }
+    for (Place p = {hor, 0, IX_NULL}; p.hor_ix < hor->elems.size(); p.hor_ix++) {
+      file << ";" << p;
+    }
+    file << " };\n";
+
+    // Connect the horizontal line and make it infinitely flexible.
+    if (hor->back_ptr.hor != NULL) {
+      Place p = hor->back_ptr;
+      Place p2 = {hor, 0, IX_NULL};
+      file << p2 << " " << PlaceAttrs(p2, S) << "\n";
+      file << p << " -- " << p2 << " [constraint=false];\n";
+    } else if (!hor->elems.empty()) {
+      Place p2 = {hor, 0, IX_NULL};
+      file << p2 << " " << PlaceAttrs(p2, S) << "\n";
+    }
+    for (Place p = {hor, 0, IX_NULL}; p.hor_ix + 1 < hor->elems.size(); p.hor_ix++) {
+      Place p2 = p;
+      p2.hor_ix++;
+      file << p2 << " " << PlaceAttrs(p2, S) << "\n";
+      file << p << " -- " << p2 << " [constraint=false];\n";
+    }
+
+    // Draw the vertical lines and recur into branching horizontal lines.
+    for (unsigned hor_ix = 0; hor_ix < hor->elems.size(); hor_ix++) {
+      Place p1 = {hor, hor_ix, IX_NULL};
+      for (Place p2 = {hor, hor_ix, 0}; p2.ver_ix < p2.deref_hor().hors.size(); p2.ver_ix++) {
+        file << p2 << " " << PlaceAttrs(p2, S) << "\n";
+        file << p1 << " -- " << p2 << ";\n";
+        HorLine *hor2 = p2.deref_ver().hor;
+        if (hor2 != NULL) {
+          stack.push_back(hor2);
+        }
+        p1 = p2;
+      }
+    }
+  }
+
+  file << "}\n";
+  file.close();
+}
+
+std::ostream& operator<<(std::ostream& os, Place const &p) {
+  return os << '"' << p.hor << ',' << p.hor_ix << ',' << p.ver_ix << '"';
+}
+
+std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
+  return
+    os << "["
+    << "label=\"" << var(p.S.outputs[p.get_tag()]) << "\","
+    << "tooltip=" << (Place&)p
+    << "]";
 }

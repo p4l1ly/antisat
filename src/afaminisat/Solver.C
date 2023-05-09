@@ -509,9 +509,16 @@ Constr* Solver::propagate(void)
                 *j++ = *i;
         }
 
-        // Copy the remaining watches:
-        while (i < end)
-            *j++ = *i++;
+        if (confl == NULL) {
+          // Copy the remaining watches:
+          while (i < end)
+              *j++ = *i++;
+        } else {
+          while (i < end) {
+              (**i).moveWatch(j - (Constr**)ws, p);
+              *j++ = *i++;
+          }
+        }
 
         ws.shrink(i - j);
     }
