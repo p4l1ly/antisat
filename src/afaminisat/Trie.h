@@ -262,13 +262,15 @@ public:
   vector<AccBackJumper> acc_backjumpers;
   deque<GreaterBackjumper> greater_backjumpers;
 
+  Place to_cut;
+
   Trie();
   void init(unsigned var_count);
 
   Lit guess(Solver &S);
 
   // Result: should the trie be cut at the active place's back_ptr?
-  bool onSat(Solver &S);
+  void onSat(Solver &S);
   bool reset(Solver &S);
 
   void undo(Solver& S, Lit p);

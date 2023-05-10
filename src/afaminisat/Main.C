@@ -399,10 +399,8 @@ public:
 
                       cell_container.add(cell);
 
-                      Place cut_knee = {NULL, 0, 0};
-
                       if (use_trie) {
-                          if (S.trie.onSat(S)) cut_knee = S.trie;
+                          S.trie.onSat(S);
                       } else {
                           cell_out.clear();
                           for (int i: *cell) {
@@ -417,12 +415,11 @@ public:
                       }
 
                       if (!S.onSatConflict(*cell)) {
-                        if (verbosity >= 2) printf("STOP %d\n", cut_knee.hor != NULL);
-                        if (cut_knee.hor) cut_knee.cut_away();
+                        if (verbosity >= 2) printf("STOP %d\n", S.trie.to_cut.hor != NULL);
                         break;
                       }
                       if (verbosity >= 2) printf("NEXT\n");
-                      if (cut_knee.hor) cut_knee.cut_away();
+                      if (S.trie.to_cut.hor != NULL) S.trie.to_cut.cut_away();
                   };
               }
             }

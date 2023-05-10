@@ -51,7 +51,7 @@ inline bool Place::in_conflict() const {
 
 void Place::cut_away() {
   vector<HorHead> &hors = deref_hor().hors;
-  if (verbosity >= 2) printf("CUTTING [%d] AT %d\n", hor_ix, ver_ix);
+  if (verbosity >= 2) std::cout << "CUTTING " << *this << "\n";
   hors.erase(hors.begin() + ver_ix, hors.end());
 }
 
@@ -163,6 +163,7 @@ Trie::Trie()
 , acc_backjumpers()
 , greater_backjumpers()
 , greater_stack()
+, to_cut{NULL}
 { }
 
 void Trie::init(unsigned var_count_) {
@@ -221,7 +222,7 @@ inline unsigned pair_snd(const std::pair<int, unsigned> &x) {
   return x.second;
 }
 
-bool Trie::onSat(Solver &S) {
+void Trie::onSat(Solver &S) {
   if (verbosity >= 2) printf("ON_SAT\n");
 
   unordered_set<unsigned> my_zeroes_set;
@@ -232,6 +233,7 @@ bool Trie::onSat(Solver &S) {
 
   // max level of added_vars+my_zeroes
   int max_level = -1;
+  int last_but_max_level = -2;
 
   // added_vars are (level, variable) pairs, of zero variables added in the
   // accepting condition (= not included in my_zeroes)
@@ -240,7 +242,10 @@ bool Trie::onSat(Solver &S) {
   for (unsigned x = 0; x < var_count; x++) {
     if (S.value(S.outputs[x]) == l_False) {
       int lvl = S.level[var(S.outputs[x])];
-      max_level = max(max_level, lvl);
+      if (lvl > max_level) {
+        last_but_max_level = max_level;
+        max_level = lvl;
+      }
       if (!my_zeroes_set.contains(x)) {
         added_vars.emplace_back(lvl, x);
       }
@@ -254,9 +259,18 @@ bool Trie::onSat(Solver &S) {
   // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
-    Place result = hor->back_ptr;
+    to_cut = ver_accept ? *this : hor->back_ptr;
+
+    // We should get there (or further back) via backjumpers but there's an
+    // edge case where there are no backjumpers (if all my_zeroes were derived
+    // from the input assumptions)
+    if (max_level == 0) {
+      ver_accept = false;
+      (Place &)*this = Place{&root, (unsigned)root.elems.size(), IX_NULL};
+    }
+
     S.cancelUntil(max_level);
-    return true;
+    return;
   }
 
   // sort added_vars by level
@@ -279,7 +293,6 @@ bool Trie::onSat(Solver &S) {
     // We create a new horizontal empty branch right to the current final place
     // (which is vertical because least_ver_accept is set only when accepting at
     // vertical places).
-    ver_accept = false;
     HorLine *new_active_hor = new HorLine{*this};
     if (verbosity >= -2) hor_count++;
     deref_ver().hor = new_active_hor;
@@ -290,19 +303,21 @@ bool Trie::onSat(Solver &S) {
     extended_hor_ix = hor_ix;
   }
 
-  // There's a special edge case, when all the added_vars belong to the input
-  // assumption level. The following is probably used only there: There's no
-  // backjump and the last added_var is forced to 1 via conflict analysis. The
-  // trie has to be in the accepting state right to the last added_var.
+  // We need to be in an accepting state because we don't watch to anything.
+  // Moreover, there's one special edge case where no backjumper and no reset
+  // is called: all my_zeroes are at level 0, except the last one. In that case,
+  // the conflict machinery will immediately set the last my_zero to 1 and we
+  // should end up in that accepting state. We move there already here.
   if (added_vars.size() == 1) {
-      hor = extended_hor;
-      hor_ix = extended_hor_ix + 1;
-      ver_ix = -1;
+    ver_accept = false;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix + 1;
+    ver_ix = -1;
   } else {
-      hor = extended_hor;
-      hor_ix = extended_hor_ix;
-      ver_ix = added_vars.size() - 2;
-      ver_accept = true;
+    ver_accept = true;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix;
+    ver_ix = added_vars.size() - 2;
   }
 
   // Add the first added_var to the current horizontal branch.
@@ -325,13 +340,13 @@ bool Trie::onSat(Solver &S) {
   // Why is the lowest place skipped? We never want to jump to the lowest place
   // because we should propagate from it immediately, which is not possible
   // from undo. Luckily, the conflict analysis machinery ensures longer jumps.
-  // Are we sure? Proof: If there are multiple added_vars in the max_level, we
+  // Are we sure? Proof: If there are multiple my_zeroes in the max_level, we
   // jump to the first of them, therefore we don't end up at the lowest one. If
   // there is only one, it is used as an asserting literal but we jump further
   // back, to the max level of the remaining literals.
   //
   // A special edge case occurs if there is nowhere further back to jump - all
-  // the other added_vars have been added through input assumptions. In that
+  // the other my_zeroes have been added through input assumptions. In that
   // case however, the last added_var is forced to 1 via conflict analysis (it
   // is the asserting literal), there is no backjump and the trie remains
   // correctly in the ver_accept state at the last added_var.
@@ -418,7 +433,6 @@ bool Trie::onSat(Solver &S) {
 
 
   S.cancelUntil(max_level);
-  return false;
 }
 
 
@@ -741,7 +755,13 @@ bool Trie::reset(Solver &S) {
 
   if (verbosity >= 2) printf("RESET\n");
 
-  return full_multimove_on_propagate(S, after_hors_change(S));
+  bool result = full_multimove_on_propagate(S, after_hors_change(S));
+  if (to_cut.hor != NULL) {
+    to_cut.cut_away();
+    to_cut.hor = NULL;
+  }
+
+  return result;
 }
 
 
