@@ -290,6 +290,10 @@ bool Trie::onSat(Solver &S) {
     extended_hor_ix = hor_ix;
   }
 
+  // There's a special edge case, when all the added_vars belong to the input
+  // assumption level. The following is probably used only there: There's no
+  // backjump and the last added_var is forced to 1 via conflict analysis. The
+  // trie has to be in the accepting state right to the last added_var.
   if (added_vars.size() == 1) {
       hor = extended_hor;
       hor_ix = extended_hor_ix + 1;
@@ -297,7 +301,7 @@ bool Trie::onSat(Solver &S) {
   } else {
       hor = extended_hor;
       hor_ix = extended_hor_ix;
-      ver_ix = added_vars.size() - 1;
+      ver_ix = added_vars.size() - 2;
       ver_accept = true;
   }
 
@@ -325,6 +329,12 @@ bool Trie::onSat(Solver &S) {
   // jump to the first of them, therefore we don't end up at the lowest one. If
   // there is only one, it is used as an asserting literal but we jump further
   // back, to the max level of the remaining literals.
+  //
+  // A special edge case occurs if there is nowhere further back to jump - all
+  // the other added_vars have been added through input assumptions. In that
+  // case however, the last added_var is forced to 1 via conflict analysis (it
+  // is the asserting literal), there is no backjump and the trie remains
+  // correctly in the ver_accept state at the last added_var.
 
   // We go from the lastly guessed variable to the firstly guessed one.
   // To each guessed variable, we assign a backjumper that points to the
@@ -709,7 +719,7 @@ bool Trie::reset(Solver &S) {
     int greater_ix = last_greater;
     while (true) {
       if (greater_ix == IX_NULL) break;
-      printf("ResettingGreater %d\n", greater_ix);
+      if (verbosity >= 2) printf("ResettingGreater %d\n", greater_ix);
       GreaterPlace &place = greater_places[greater_ix];
       if (!place.in_conflict()) {
         place.remove_watch(S, place.get_tag());
