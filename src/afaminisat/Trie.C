@@ -64,6 +64,7 @@ inline void WatchedPlace::set_watch(Solver &S) {
   {
     vec<Constr*> &watches = S.watches[var_];
     watch_ix_pos = watches.size();
+    printf("WATCH_IX_POS %d", watches.size());
     watches.push(this);
   }
 
@@ -193,6 +194,10 @@ Lit Trie::guess(Solver &S) {
   }
   else if (last_greater != IX_NULL) {
     unsigned tag = greater_places[last_greater].get_tag();
+    if (verbosity >= 2) {
+      std::cout << "GUESS_GREATER " << greater_places[last_greater] << " ";
+      printf(L_LIT "\n", L_lit(S.outputs[tag]));
+    }
     Lit out_lit = S.outputs[tag];
     S.undos[var(out_lit)].push(&greater_backjumpers.emplace_back(S.decisionLevel()));
     return out_lit;
@@ -831,6 +836,20 @@ void GreaterPlace::on_accept(Solver &S) {
       );
     }
   }
+}
+
+
+bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
+  if (!S.trie.greater_backjumpers.empty()) {
+    GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
+    if (&last_backjumper != backjumper) {
+      last_backjumper.changed_places.emplace_back(*this, backjumper, backjumper_added_ix);
+      backjumper_added_ix = last_backjumper.added_places.size();
+      last_backjumper.added_places.emplace_back(ix);
+      backjumper = &last_backjumper;
+    }
+  }
+  return WatchedPlace::propagate(S, p, keep_watch);
 }
 
 

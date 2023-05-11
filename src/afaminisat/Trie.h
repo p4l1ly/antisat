@@ -142,6 +142,7 @@ struct GreaterPlace : public WatchedPlace {
 
   GreaterPlace(HorLine *hor_, unsigned ix_, unsigned previous_);
   GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_, unsigned previous_);
+  bool propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
 };

@@ -492,11 +492,13 @@ bool Solver::enqueue(Lit p, Constr* from)
 |________________________________________________________________________________________________@*/
 Constr* Solver::propagate(void)
 {
+    printf("PROPAGATE %d\n", propQ.size());
     Constr* confl = NULL;
     while (propQ.size() > 0){
         stats.propagations++;
         Lit           p  = propQ.dequeue();        // 'p' is enqueued fact to propagate.
         vec<Constr*>& ws = watches[index(p)];
+        printf("WS_LEN %d" L_LIT "\n", ws.size(), L_lit(p));
         bool          keep_watch;
         Constr        **i, **j, **end = (Constr**)ws + ws.size();
         for (i = j = (Constr**)ws; confl == NULL && i < end; i++){
