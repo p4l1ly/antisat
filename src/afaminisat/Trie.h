@@ -81,7 +81,7 @@ struct PlaceAttrs : Place {
   friend std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p);
 };
 
-struct WatchedPlace : public Place, public virtual Constr {
+struct WatchedPlace : public Place, public Constr {
 public:
   int watch_ix_pos;
   int watch_ix_neg;
@@ -228,7 +228,6 @@ struct RemovedWatch : public Constr {
   bool simplify  (Solver& S) { return false; };
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) { };
   void moveWatch(int i, Lit p) {};
-  ~RemovedWatch(void) {};
 };
 
 

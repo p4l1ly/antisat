@@ -64,7 +64,7 @@ inline void WatchedPlace::set_watch(Solver &S) {
   {
     vec<Constr*> &watches = S.watches[var_];
     watch_ix_pos = watches.size();
-    printf("WATCH_IX_POS %d", watches.size());
+    printf("WATCH_IX_POS %d\n", watch_ix_pos);
     watches.push(this);
   }
 
@@ -72,6 +72,7 @@ inline void WatchedPlace::set_watch(Solver &S) {
   {
     vec<Constr*> &watches = S.watches[var_];
     watch_ix_neg = watches.size();
+    printf("WATCH_IX_NEG %d\n", watch_ix_neg);
     watches.push(this);
   }
 }
@@ -116,7 +117,7 @@ inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
   {
     vec<Constr*> &watches = S.watches[index(lit)];
     if (verbosity >= 2) {
-      printf("RemoveWatchPos2 %d %d " L_LIT "\n", watches.size(), watch_ix_pos, L_lit(lit));
+      printf("RemoveWatchPos2 %d %d %d\n", watches.size(), watch_ix_pos, var(lit));
     }
     if (watches.size() == watch_ix_pos + 1) {
       watches.pop();
@@ -130,7 +131,7 @@ inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
   {
     vec<Constr*> &watches = S.watches[index(lit)];
     if (verbosity >= 2) {
-      printf("RemoveWatchNeg2 %d %d " L_LIT "\n", watches.size(), watch_ix_neg, L_lit(lit));
+      printf("RemoveWatchNeg2 %d %d %d\n", watches.size(), watch_ix_neg, var(lit));
     }
     if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
@@ -246,6 +247,9 @@ void Trie::onSat(Solver &S) {
   added_vars.reserve(var_count);
   for (unsigned x = 0; x < var_count; x++) {
     if (S.value(S.outputs[x]) == l_False) {
+      if (verbosity >= 2) {
+        printf("MY_ZERO2 " L_LIT " %d\n", L_lit(S.outputs[x]), S.value(S.outputs[x]).toInt());
+      }
       int lvl = S.level[var(S.outputs[x])];
       if (lvl > max_level) {
         last_but_max_level = max_level;
@@ -445,7 +449,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
   if (hor_is_out()) return WhatToDo::DONE;
 
   unsigned out = get_tag();
-  if (verbosity >= 2) printf("OUT %d %d\n", out, var(S.outputs[out]));
+  if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -461,7 +465,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
 
 WhatToDo Place::after_vers_change(Solver &S) {
   unsigned out = get_tag();
-  if (verbosity >= 2) printf("OUT %d %d\n", out, var(S.outputs[out]));
+  if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -598,7 +602,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     switch (what_to_do) {
       case AGAIN: {
         if (verbosity >= 2) {
-          printf("AGAIN %d %d %d\n", hor_ix, ver_ix, var(S.outputs[get_tag()]));
+          printf("AGAIN %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(S.outputs[get_tag()]));
         }
         out = get_tag();
         out_lit = S.outputs[out];
@@ -956,9 +960,10 @@ std::ostream& operator<<(std::ostream& os, Place const &p) {
 }
 
 std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
+  Lit out = p.S.outputs[p.get_tag()];
   return
     os << "["
-    << "label=\"" << var(p.S.outputs[p.get_tag()]) << "\","
+    << "label=\"" << (sign(out) ? "~" : "") << var(out) << "\","
     << "tooltip=" << (Place&)p
     << "]";
 }

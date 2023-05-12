@@ -68,7 +68,6 @@ bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
         S.output_map[var] = i;
         Lit lit = output.getPositive() ? Lit(var) : Lit(var, true);
         S.outputs.push(lit);
-        S.impure_outputs.push(lit);
         i++;
     }
 
@@ -361,9 +360,9 @@ public:
                 string s;
                 ss >> s;
                 S.trie.to_dot(S, s.c_str());
+                solveCnt++;
               }
               st = S.solve(solver_input);
-              solveCnt++;
 
               if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
               delete cell;
@@ -377,9 +376,10 @@ public:
                         string s;
                         ss >> s;
                         S.trie.to_dot(S, s.c_str());
+                        solveCnt++;
                       }
+
                       if (!S.resume()) break;
-                      solveCnt++;
                       satCnt++;
 
                       cell = new vector<int>();
@@ -469,6 +469,7 @@ public:
 };
 
 int main(int argc, char** argv) {
+    srand(1345719);
     if (argc >= 2 && argv[1][0] == '0') use_trie = false;
     if (argc >= 3) port = atoi(argv[2]);
 
