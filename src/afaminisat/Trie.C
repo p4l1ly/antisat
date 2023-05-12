@@ -314,7 +314,7 @@ void Trie::onSat(Solver &S) {
 
   // We need to be in an accepting state because we don't watch to anything.
   // Moreover, there's one special edge case where no backjumper and no reset
-  // is called: all my_zeroes are at level 0, except the last one. In that case,
+  // is called: all my_zeroes are at root_level, except the last one. In that case,
   // the conflict machinery will immediately set the last my_zero to 1 and we
   // should end up in that accepting state. We move there already here.
   if (added_vars.size() == 1) {
@@ -352,7 +352,10 @@ void Trie::onSat(Solver &S) {
   // Are we sure? Proof: If there are multiple my_zeroes in the max_level, we
   // jump to the first of them, therefore we don't end up at the lowest one. If
   // there is only one, it is used as an asserting literal but we jump further
-  // back, to the max level of the remaining literals.
+  // back, to the max level of the remaining literals. Untrue! We jump to the
+  // max_level of the remaining literals but we don't cancel that level, we
+  // only bind the asserting literal there and continue, so its backjumper does
+  // not get called. Anyway, the following paragraph resolves this.
   //
   // A special edge case occurs if there is nowhere further back to jump - all
   // the other my_zeroes have been added through input assumptions. In that
@@ -375,7 +378,7 @@ void Trie::onSat(Solver &S) {
     // triggered by the new branch.
     if (lvl <= accept_level) break;
 
-    if (verbosity >= 0) {
+    if (verbosity >= 2) {
       printf(
         "LVL %d %d " L_LIT " %d\n",
         lvl, acc_ptr, L_lit(S.outputs[acc_ptr]), back_ptrs[acc_ptr]
@@ -388,6 +391,9 @@ void Trie::onSat(Solver &S) {
         // We don't set the backjumper to the last added var because it will be
         // jumped over yet in onSatConflict.
         if (i + 1 < added_vars.size()) {
+          if (verbosity >= 2) {
+            printf("ACC_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+          }
           acc_backjumpers[acc_ptr].enable({extended_hor, extended_hor_ix, i - 1});
         }
         break;
@@ -399,6 +405,9 @@ void Trie::onSat(Solver &S) {
       // start of the added branch.
       if (i == 1) {
         if (1 != added_vars.size()) {
+          if (verbosity >= 2) {
+            printf("ACC_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
+          }
           acc_backjumpers[acc_ptr].enable({extended_hor, extended_hor_ix, IX_NULL});
         }
         break;
@@ -419,6 +428,9 @@ void Trie::onSat(Solver &S) {
         // We don't set the backjumper to the last added var because it will be
         // jumped over yet in onSatConflict.
         if (i + 1 < added_vars.size()) {
+          if (verbosity >= 2) {
+            printf("LEAST_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+          }
           backjumper.level = -1;
           backjumper.least_backjumper = {extended_hor, extended_hor_ix, i - 1};
         }
@@ -431,6 +443,9 @@ void Trie::onSat(Solver &S) {
       // start of the added branch.
       if (i == 1) {
         if (1 != added_vars.size()) {
+          if (verbosity >= 2) {
+            printf("LEAST_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
+          }
           backjumper.level = -1;
           backjumper.least_backjumper = {extended_hor, extended_hor_ix, IX_NULL};
         }
@@ -442,6 +457,7 @@ void Trie::onSat(Solver &S) {
 
 
   S.cancelUntil(max_level);
+  accept_level = last_but_max_level;
 }
 
 
