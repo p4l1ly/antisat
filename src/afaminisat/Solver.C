@@ -369,6 +369,9 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
               }
 
               p_reason.clear();
+              if (verbosity >= 2) {
+                printf("CALC_REASON " L_LIT "\n", L_lit(p));
+              }
               confl->calcReason(*this, p, p_reason);
 
               if (verbosity >= 2) {

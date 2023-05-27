@@ -129,15 +129,14 @@ struct GreaterBackjumper;
 
 struct ChangedGreaterPlace {
   Place place;
-  GreaterBackjumper *backjumper;
-  unsigned backjumper_added_ix;
+  unsigned ix;
+  GreaterBackjumper *last_change_backjumper;
 };
 
 struct GreaterPlace : public WatchedPlace {
   unsigned ix;
   bool enabled = true;
-  GreaterBackjumper *backjumper;
-  unsigned backjumper_added_ix;
+  GreaterBackjumper *last_change_backjumper;
   unsigned previous, next;
 
   GreaterPlace(HorLine *hor_, unsigned ix_, unsigned previous_);
@@ -147,23 +146,20 @@ struct GreaterPlace : public WatchedPlace {
   void on_accept(Solver &S);
 };
 
-struct AddedGreaterPlace {
-  unsigned ix;
-  bool removed = false;
-};
-
-
 struct GreaterBackjumper : Undoable {
   BackJumper least_backjumper;
   int level = -1;
-  vector<AddedGreaterPlace> added_places;
+  unsigned greater_places_size;
   vector<ChangedGreaterPlace> changed_places;
 
-  GreaterBackjumper(int level_)
-  : added_places(), changed_places(), level(level_) {}
+  GreaterBackjumper(int level_, unsigned greater_places_size_)
+  : greater_places_size(greater_places_size_)
+  , changed_places()
+  , level(level_)
+  {}
 
-  GreaterBackjumper(Place least_place_) noexcept
-  : added_places()
+  GreaterBackjumper(Place least_place_, unsigned greater_places_size_) noexcept
+  : greater_places_size(greater_places_size_)
   , changed_places()
   , least_backjumper{least_place_}
   {}
@@ -242,7 +238,6 @@ public:
   HorLine root;
 
   deque<GreaterPlace> greater_places;
-  vector<int> free_greater_places;
   vector<Place> greater_stack;
   unsigned last_greater = IX_NULL;
 
