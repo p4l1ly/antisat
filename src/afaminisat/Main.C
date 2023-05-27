@@ -371,6 +371,11 @@ public:
                   while (true) {
                       if (verbosity >= 2) {
                         printf("SOLVING_RESUME %d\n", solveCnt);
+                        std::cout << "LEAST_PLACE " << (Place &)S.trie << std::endl;
+                        for (Place &p: S.trie.greater_places) {
+                          std::cout << "GREATER_PLACE " << p << std::endl;
+                        }
+
                         std::stringstream ss;
                         ss << "debug/trie" << solveCnt << ".dot";
                         string s;

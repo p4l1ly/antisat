@@ -139,8 +139,7 @@ struct GreaterPlace : public WatchedPlace {
   GreaterBackjumper *last_change_backjumper;
   unsigned previous, next;
 
-  GreaterPlace(HorLine *hor_, unsigned ix_, unsigned previous_);
-  GreaterPlace(ChangedGreaterPlace changed_place, unsigned ix_, unsigned previous_);
+  GreaterPlace(ChangedGreaterPlace changed_place, unsigned previous_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);

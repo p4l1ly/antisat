@@ -835,50 +835,45 @@ bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
 
 void GreaterBackjumper::undo(Solver &S, Lit _p) {
   Trie &trie = S.trie;
-  deque<GreaterPlace> &greater_places = trie.greater_places;
+  deque<GreaterPlace> &gplaces = trie.greater_places;
 
   if (level == -1) {
     least_backjumper.jump(S);
   }
 
-  const unsigned gplaces_size = greater_places.size();
-  unsigned i;
+  const unsigned gplaces_size = gplaces.size();
   for (unsigned i = greater_places_size; i < gplaces_size; ++i) {
-    GreaterPlace &gplace = greater_places[i];
-    if (gplace.enabled) {
-      if (gplace.previous != IX_NULL) {
-        greater_places[gplace.previous].next = IX_NULL;
-      }
-      trie.last_greater = gplace.previous;
-      gplace.remove_watch(S, gplace.get_tag());
-      ++i;
-      break;
-    }
-  }
-  for (; i < gplaces_size; ++i) {
-    GreaterPlace &gp = greater_places[i];
+    GreaterPlace &gp = gplaces[i];
     if (gp.enabled) {
       gp.remove_watch(S, gp.get_tag());
 
-      if (gp.previous != IX_NULL) greater_places[gp.previous].next = gp.next;
+      if (gp.previous != IX_NULL) gplaces[gp.previous].next = gp.next;
       if (gp.next == IX_NULL) trie.last_greater = gp.previous;
-      else greater_places[gp.next].previous = gp.previous;
+      else gplaces[gp.next].previous = gp.previous;
     }
   }
 
+  gplaces.erase(gplaces.begin() + greater_places_size, gplaces.end());
+
   for (ChangedGreaterPlace changed_place: changed_places) {
-    GreaterPlace &gplace = greater_places[changed_place.ix];
-    (Place &)gplace = changed_place.place;
-    gplace.enabled = true;
-    gplace.last_change_backjumper = changed_place.last_change_backjumper;
+    GreaterPlace &gplace = gplaces[changed_place.ix];
 
-    // TODO TODO TODO entangle
-    gplace.previous = trie.last_greater;
-    gplace.next = IX_NULL;
-    if (trie.last_greater != IX_NULL) greater_places[trie.last_greater].next = changed_place.ix;
-    trie.last_greater = changed_place.ix;
+    if (gplace.enabled) {
+      gplace.remove_watch(S, gplace.get_tag());
+      (Place &)gplace = changed_place.place;
+      gplace.last_change_backjumper = changed_place.last_change_backjumper;
+    } else {
+      (Place &)gplace = changed_place.place;
+      gplace.enabled = true;
+      gplace.last_change_backjumper = changed_place.last_change_backjumper;
 
-    if (verbosity >= 2) std::cout << "CHANGED " << gplace << "\n" << std::flush;
+      gplace.previous = trie.last_greater;
+      gplace.next = IX_NULL;
+      if (trie.last_greater != IX_NULL) gplaces[trie.last_greater].next = changed_place.ix;
+      trie.last_greater = changed_place.ix;
+    }
+
+    if (verbosity >= 2) std::cout << "CHANGED " << gplace << " " << gplace.ix << " " << changed_place.ix << " " << greater_places_size << "\n" << std::flush;
     gplace.set_watch(S);
   }
 
