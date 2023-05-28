@@ -642,37 +642,40 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
 bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   MultimoveEnd end = multimove_on_propagate(S, what_to_do);
-  if (end == MultimoveEnd::E_CONFLICT) {
-    S.trie.greater_stack.clear();
-    return false;
-  } else {
-    while (!S.trie.greater_stack.empty()) {
-      Place p = S.trie.greater_stack.back();
-      S.trie.greater_stack.pop_back();
-      if (!p.handle_greater_stack(S)) {
-        S.trie.greater_stack.clear();
-        return false;
-      }
-    }
-  }
 
   switch (end) {
     case MultimoveEnd::E_WATCH: {
       set_watch(S);
-      return true;
+      break;
     }
     case MultimoveEnd::E_DONE: {
       on_accept(S);
-      return true;
+      break;
     }
     case MultimoveEnd::E_PROPAGATE: {
       set_watch(S);
-      return S.enqueue(S.outputs[get_tag()], this);
+      if (!S.enqueue(S.outputs[get_tag()], this)) {
+        S.trie.greater_stack.clear();
+        return false;
+      }
+      break;
     }
-    default: { // case MultimoveEnd::E_CONFLICT:
+    default: {  // MultimoveEnd::E_CONFLICT
+      S.trie.greater_stack.clear();
       return false;
     }
   }
+
+  while (!S.trie.greater_stack.empty()) {
+    Place p = S.trie.greater_stack.back();
+    S.trie.greater_stack.pop_back();
+    if (!p.handle_greater_stack(S)) {
+      S.trie.greater_stack.clear();
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
