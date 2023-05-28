@@ -6,7 +6,7 @@ HEAD = object()
 VALGRIND_PATTERNS = [
     re.compile("^==[0-9]+== Memcheck, a memory error detector$"),
     re.compile("^==[0-9]+== Copyright \\(C\\) 2002-2022, and GNU GPL'd, by Julian Seward et al\\.$"),
-    re.compile("^==[0-9]+== Using Valgrind-3\\.20\\.0 and LibVEX; rerun with -h for copyright info$"),
+    re.compile("^==[0-9]+== Using Valgrind-3\\.21\\.0 and LibVEX; rerun with -h for copyright info$"),
     re.compile("^==[0-9]+== Command: .*$"),
     re.compile("^==[0-9]+== $"),
     re.compile("^==[0-9]+== $"),

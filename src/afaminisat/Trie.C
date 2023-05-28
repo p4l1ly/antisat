@@ -842,14 +842,25 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
   }
 
   const unsigned gplaces_size = gplaces.size();
-  for (unsigned i = greater_places_size; i < gplaces_size; ++i) {
-    GreaterPlace &gp = gplaces[i];
-    if (gp.enabled) {
-      gp.remove_watch(S, gp.get_tag());
 
-      if (gp.previous != IX_NULL) gplaces[gp.previous].next = gp.next;
-      if (gp.next == IX_NULL) trie.last_greater = gp.previous;
-      else gplaces[gp.next].previous = gp.previous;
+  if (verbosity >= 2) {
+    std::cout << "GREATER_UNDO "
+        << gplaces.size() << " "
+        << greater_places_size << " "
+        << changed_places.size() << "\n"
+        << std::flush;
+  }
+
+  for (unsigned i = greater_places_size; i < gplaces_size; ++i) {
+    GreaterPlace &gplace = gplaces[i];
+    if (gplace.enabled) {
+      if (!gplace.in_conflict()) {
+        gplace.remove_watch(S, gplace.get_tag());
+      }
+
+      if (gplace.previous != IX_NULL) gplaces[gplace.previous].next = gplace.next;
+      if (gplace.next == IX_NULL) trie.last_greater = gplace.previous;
+      else gplaces[gplace.next].previous = gplace.previous;
     }
   }
 
@@ -859,7 +870,9 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
     GreaterPlace &gplace = gplaces[changed_place.ix];
 
     if (gplace.enabled) {
-      gplace.remove_watch(S, gplace.get_tag());
+      if (!gplace.in_conflict()) {
+        gplace.remove_watch(S, gplace.get_tag());
+      }
       (Place &)gplace = changed_place.place;
       gplace.last_change_backjumper = changed_place.last_change_backjumper;
     } else {
