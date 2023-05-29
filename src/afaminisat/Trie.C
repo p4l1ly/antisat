@@ -153,6 +153,7 @@ void Trie::on_accept(Solver &S) {
     ver_accept = true;
   }
   accept_level = S.decisionLevel();
+  if (verbosity >= 2) printf("ACCEPT_LVL2 %d\n", accept_level);
 }
 
 Trie::Trie()
@@ -253,6 +254,8 @@ void Trie::onSat(Solver &S) {
       if (lvl > max_level) {
         last_but_max_level = max_level;
         max_level = lvl;
+      } else if (lvl > last_but_max_level && lvl != max_level) {
+        last_but_max_level = lvl;
       }
       if (!my_zeroes_set.contains(x)) {
         added_vars.emplace_back(lvl, x);
@@ -311,7 +314,7 @@ void Trie::onSat(Solver &S) {
     extended_hor_ix = hor_ix;
   }
 
-  // We need to be in an accepting state because we don't watch to anything.
+  // We need to be in an accepting state because we don't watch anything.
   // Moreover, there's one special edge case where no backjumper and no reset
   // is called: all my_zeroes are at root_level, except the last one. In that case,
   // the conflict machinery will immediately set the last my_zero to 1 and we
@@ -457,6 +460,7 @@ void Trie::onSat(Solver &S) {
 
   S.cancelUntil(max_level);
   accept_level = last_but_max_level;
+  if (verbosity >= 2) printf("ACCEPT_LVL1 %d\n", accept_level);
 }
 
 

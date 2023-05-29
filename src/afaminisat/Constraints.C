@@ -262,6 +262,10 @@ void Clause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
     assert(p == lit_Undef || p == data[0]);
 
     for (int i = ((p == lit_Undef) ? 0 : 1); i < size(); i++) {
+        if (verbosity >= 2 && S.value(data[i]) != l_False) {
+          printf("CALC_REASON_NONFALSE " L_LIT "\n", L_lit(data[i]));
+          std::cout << std::flush;
+        }
         assert(S.value(data[i]) == l_False);
         out_reason.push(~data[i]);
     }
