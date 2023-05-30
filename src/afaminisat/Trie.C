@@ -271,15 +271,6 @@ void Trie::onSat(Solver &S) {
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
     to_cut = ver_accept ? *this : hor->back_ptr;
-
-    // We should get there (or further back) via backjumpers but there's an
-    // edge case where there are no backjumpers (if all my_zeroes were derived
-    // from the input assumptions)
-    if (max_level == 0) {
-      ver_accept = false;
-      (Place &)*this = Place{&root, (unsigned)root.elems.size(), IX_NULL};
-    }
-
     S.cancelUntil(max_level);
     return;
   }
@@ -775,13 +766,12 @@ bool Trie::reset(Solver &S) {
 
   if (verbosity >= 2) printf("RESET\n");
 
-  bool result = full_multimove_on_propagate(S, after_hors_change(S));
   if (to_cut.hor != NULL) {
     to_cut.cut_away();
     to_cut.hor = NULL;
   }
 
-  return result;
+  return full_multimove_on_propagate(S, after_hors_change(S));
 }
 
 

@@ -428,7 +428,10 @@ public:
                         break;
                       }
                       if (verbosity >= 2) printf("NEXT\n");
-                      if (S.trie.to_cut.hor != NULL) S.trie.to_cut.cut_away();
+                      if (S.trie.to_cut.hor != NULL) {
+                        S.trie.to_cut.cut_away();
+                        S.trie.to_cut.hor = NULL;
+                      }
                   };
               }
             }
