@@ -514,8 +514,11 @@ Constr* Solver::propagate(void)
             if (!(*i)->propagate(*this, p, keep_watch))
                 confl = *i,
                 propQ.clear();
-            if (keep_watch)
+            if (keep_watch) {
                 *j++ = *i;
+            } else if (verbosity >= 2) {
+              printf("REMOVE_WATCH_PROP " L_LIT " %p\n", L_lit(p), *i);
+            }
         }
 
         if (confl == NULL) {
@@ -524,7 +527,8 @@ Constr* Solver::propagate(void)
               *j++ = *i++;
         } else {
           while (i < end) {
-              (**i).moveWatch(j - (Constr**)ws, p);
+              if (verbosity >= 2) printf("MOVE_WATCH_PROP %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
+              (*i)->moveWatch(j - (Constr**)ws, p);
               *j++ = *i++;
           }
         }

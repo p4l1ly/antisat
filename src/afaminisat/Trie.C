@@ -64,7 +64,7 @@ inline void WatchedPlace::set_watch(Solver &S) {
   {
     vec<Constr*> &watches = S.watches[var_];
     watch_ix_pos = watches.size();
-    if (verbosity >= 2) printf("WATCH_IX_POS %d\n", watch_ix_pos);
+    if (verbosity >= 2) printf("WATCH_IX_POS %d %d\n", watch_ix_pos, var_ / 2);
     watches.push(this);
   }
 
@@ -72,7 +72,7 @@ inline void WatchedPlace::set_watch(Solver &S) {
   {
     vec<Constr*> &watches = S.watches[var_];
     watch_ix_neg = watches.size();
-    if (verbosity >= 2) printf("WATCH_IX_NEG %d\n", watch_ix_neg);
+    if (verbosity >= 2) printf("WATCH_IX_NEG %d %d\n", watch_ix_neg, var_ / 2);
     watches.push(this);
   }
 }
@@ -92,11 +92,13 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
     if (verbosity >= 2) {
       printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, var(S.outputs[old_tag]));
     }
+    std::cout << std::flush; assert(watch_ix_pos >= 0);  // TODO only for assertion
     if (watches.size() == watch_ix_pos + 1) {
       watches.pop();
     } else {
       watches[watch_ix_pos] = &REMOVED_WATCH;
     }
+    watch_ix_pos = -1;  // TODO only for assertion
   }
 
   var_++;
@@ -105,40 +107,42 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
     if (verbosity >= 2) {
       printf("RemoveWatchNeg %d %d %d %d\n", var_, watches.size(), watch_ix_neg, var(S.outputs[old_tag]));
     }
+    std::cout << std::flush; assert(watch_ix_neg >= 0);  // TODO only for assertion
     if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
     } else {
       watches[watch_ix_neg] = &REMOVED_WATCH;
     }
   }
+  watch_ix_neg = -1;  // TODO only for assertion
 }
 
 inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
-  {
-    vec<Constr*> &watches = S.watches[index(lit)];
-    if (verbosity >= 2) {
-      printf("RemoveWatchPos2 %d %d %d\n", watches.size(), watch_ix_pos, var(lit));
-    }
-    if (watches.size() == watch_ix_pos + 1) {
-      watches.pop();
-    } else {
-      watches[watch_ix_pos] = &REMOVED_WATCH;
-    }
+  vec<Constr*> &watches = S.watches[index(lit)];
+  if (verbosity >= 2) {
+    printf("RemoveWatchPos2 %d %d %d\n", watches.size(), watch_ix_pos, var(lit));
   }
+  std::cout << std::flush; assert(watch_ix_pos >= 0);  // TODO only for assertion
+  if (watches.size() == watch_ix_pos + 1) {
+    watches.pop();
+  } else {
+    watches[watch_ix_pos] = &REMOVED_WATCH;
+  }
+  watch_ix_neg = -1;  // TODO only for assertion
 }
 
 inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
-  {
-    vec<Constr*> &watches = S.watches[index(lit)];
-    if (verbosity >= 2) {
-      printf("RemoveWatchNeg2 %d %d %d\n", watches.size(), watch_ix_neg, var(lit));
-    }
-    if (watches.size() == watch_ix_neg + 1) {
-      watches.pop();
-    } else {
-      watches[watch_ix_neg] = &REMOVED_WATCH;
-    }
+  vec<Constr*> &watches = S.watches[index(lit)];
+  if (verbosity >= 2) {
+    printf("RemoveWatchNeg2 %d %d %d\n", watches.size(), watch_ix_neg, var(lit));
   }
+  std::cout << std::flush; assert(watch_ix_neg >= 0);  // TODO only for assertion
+  if (watches.size() == watch_ix_neg + 1) {
+    watches.pop();
+  } else {
+    watches[watch_ix_neg] = &REMOVED_WATCH;
+  }
+  watch_ix_neg = -1;  // TODO only for assertion
 }
 
 WatchedPlace::WatchedPlace(HorLine *hor_)
@@ -704,6 +708,7 @@ void Trie::undo(Solver& S, Lit p) {
         place.remove_watch(S, place.get_tag());
       }
       greater_ix = place.previous;
+      place.enabled = false;
     }
     S.trie.last_greater = IX_NULL;
   }

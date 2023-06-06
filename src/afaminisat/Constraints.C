@@ -36,7 +36,12 @@ using std::swap;
 void removeWatch(vec<Constr*>& ws, Constr* elem)
 {
     int j = 0;
-    for (; ws[j] != elem  ; j++) assert(j < ws.size());
+    for (; ws[j] != elem  ; j++) {
+      if (verbosity >= 2 && j >= ws.size()) {
+        std::cout << "REMOVE_WATCH_ERROR " << elem << std::endl << std::flush;
+      }
+      assert(j < ws.size());
+    }
     if (j + 1 == ws.size()) {
       ws.pop();
     } else {
@@ -121,9 +126,9 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
         }
 
         // Store clause:
-        if (verbosity >= 2) printf("WATCHES_PUSH1 " L_LIT " %d\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size());
+        if (verbosity >= 2) printf("WATCHES_PUSH1 " L_LIT " %d %p\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c);
         S.watches[index(~c->data[0])].push(c);
-        if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size());
+        if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d %p\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c);
         S.watches[index(~c->data[1])].push(c);
         out_clause = c;
 
@@ -175,9 +180,9 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     }
 
     // add watches
-    if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size());
+    if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d %p\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c);
     S.watches[index(~c->data[0])].push(c);
-    if (verbosity >= 2) printf("WATCHES_PUSH3 " L_LIT " %d\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size());
+    if (verbosity >= 2) printf("WATCHES_PUSH3 " L_LIT " %d %p\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c);
     S.watches[index(~c->data[1])].push(c);
     out_clause = c;
     return false;
@@ -193,9 +198,9 @@ bool Clause::locked(const Solver& S) const {
 void Clause::remove(Solver& S, bool just_dealloc)
 {
     if (!just_dealloc){
-        if (verbosity >= 2) printf("WATCHES_REMOVE1 " L_LIT " %d\n", L_lit(~data[0]), S.watches[index(~data[0])].size());
+        if (verbosity >= 2) printf("WATCHES_REMOVE1 " L_LIT " %d %p\n", L_lit(~data[0]), S.watches[index(~data[0])].size(), this);
         removeWatch(S.watches[index(~data[0])], this);
-        if (verbosity >= 2) printf("WATCHES_REMOVE2 " L_LIT " %d\n", L_lit(~data[1]), S.watches[index(~data[1])].size());
+        if (verbosity >= 2) printf("WATCHES_REMOVE2 " L_LIT " %d %p\n", L_lit(~data[1]), S.watches[index(~data[1])].size(), this);
         removeWatch(S.watches[index(~data[1])], this);
     }
 
@@ -244,7 +249,7 @@ bool Clause::propagate(Solver& S, Lit p, bool& keep_watch)
     for (int i = 2; i < size(); i++){
         if (S.value(data[i]) != l_False){
             data[1] = data[i], data[i] = false_lit;
-            if (verbosity >= 2) printf("WATCHES_PUSH4 " L_LIT " %d\n", L_lit(~data[1]), S.watches[index(~data[1])].size());
+            if (verbosity >= 2) printf("WATCHES_PUSH4 " L_LIT " %d %p\n", L_lit(~data[1]), S.watches[index(~data[1])].size(), this);
             S.watches[index(~data[1])].push(this);
             return true; } }
 
