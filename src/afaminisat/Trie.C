@@ -692,6 +692,20 @@ void Trie::undo(Solver& S, Lit p) {
     if (verbosity >= 2) printf("ACC_UNDO_BACKJUMP\n");
     acc_backjumpers[active_var].enabled = false;
     acc_backjumpers[active_var].jump(S);
+
+    int greater_ix = S.trie.last_greater;
+    while (true) {
+      if (greater_ix == IX_NULL) break;
+      GreaterPlace &place = S.trie.greater_places[greater_ix];
+      if (verbosity >= 2) {
+        std::cout << "ResettingGreater2" << PlaceAttrs(place, S) << std::endl;
+      }
+      if (!place.in_conflict()) {
+        place.remove_watch(S, place.get_tag());
+      }
+      greater_ix = place.previous;
+    }
+    S.trie.last_greater = IX_NULL;
   }
 
   active_var = back_ptrs[active_var];
