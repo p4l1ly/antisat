@@ -50,7 +50,6 @@ namespace cnfafa = automata_safa_capnp::model::cnf_afa;
 namespace mc = automata_safa_capnp::rpc::model_checker;
 namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
-bool use_trie = true;
 int port = 4002;
 
 bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
@@ -237,7 +236,7 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     bool short_unsat = false;
 
 public:
-    ModelCheckingImpl(cnfafa::Afa::Reader cnfafa)
+    ModelCheckingImpl(cnfafa::Afa::Reader cnfafa, char mode)
     : solver_input(cnfafa.getOutputs().size())
     , container_supq()
     {
@@ -250,7 +249,13 @@ public:
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        S.trie.init(S.outputs.size());;
+        S.trie.init(S.outputs.size());
+        switch (mode) {
+          case '0': TRIE_MODE = clauses; break;
+          case '1': TRIE_MODE = dnf; break;
+          case '2': TRIE_MODE = branch_on_zero; break;
+          default: TRIE_MODE = branch_always;
+        }
         S.addConstr(&S.trie);
 
         if (verbosity >= 2) {
@@ -408,7 +413,7 @@ public:
 
                       cell_container.add(cell);
 
-                      if (use_trie) {
+                      if (TRIE_MODE != clauses) {
                           S.trie.onSat(S);
                       } else {
                           cell_out.clear();
@@ -475,14 +480,15 @@ class ModelCheckerImpl final: public mc::ModelChecker<cnfafa::Afa, mcs::Emptines
 public:
     kj::Promise<void> load(LoadContext context) override {
         cnfafa::Afa::Reader cnfafa = context.getParams().getModel();
-        context.getResults().setChecking(kj::heap<ModelCheckingImpl>(cnfafa));
+        context.getResults().setChecking(kj::heap<ModelCheckingImpl>(cnfafa, '2'));
         return kj::READY_NOW;
     }
 };
 
 int main(int argc, char** argv) {
     srand(1345719);
-    if (argc >= 2 && argv[1][0] == '0') use_trie = false;
+    char mode = '2';
+    if (argc >= 2) mode = argv[1][0];
     if (argc >= 3) port = atoi(argv[2]);
 
     if (port == 0) {
@@ -492,7 +498,7 @@ int main(int argc, char** argv) {
             return -1;
         }
         capnp::StreamFdMessageReader message(fd);
-        ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>());
+        ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>(), mode);
         close(fd);
         if (mc.modelCheck()) {
             std::cout << "EMPTY" << std::endl;

@@ -13,6 +13,7 @@ int hor_count = 0;
 int ver_count = 0;
 ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO = {};
 RemovedWatch REMOVED_WATCH = {};
+Mode TRIE_MODE = branch_on_zero;
 
 
 using std::cout;
@@ -147,9 +148,11 @@ inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
 
 WatchedPlace::WatchedPlace(HorLine *hor_)
 : Place{hor_, 0, IX_NULL}
+, right_greater_ix(IX_NULL)
 { }
 WatchedPlace::WatchedPlace(Place place)
 : Place(place)
+, right_greater_ix(IX_NULL)
 { }
 
 void Trie::on_accept(Solver &S) {
@@ -525,31 +528,62 @@ void Place::branch(Solver &S) {
     if (verbosity >= 2) {
       std::cout << "ADD_TO_GREATER_STACK " << PlaceAttrs(Place{hor2, 0, IX_NULL}, S) << "\n";
     }
-    S.trie.greater_stack.emplace_back(hor2, 0, IX_NULL);
+    S.trie.greater_stack.emplace_back(GreaterStackItem{Place{hor2, 0, IX_NULL}, NULL});
   } else {
     if (hor_ix + 1 == hor->elems.size()) return;
     if (verbosity >= 2) {
       std::cout << "ADD_TO_GREATER_STACK2 " << PlaceAttrs(Place{hor, hor_ix + 1, IX_NULL}, S) << "\n";
     }
-    S.trie.greater_stack.emplace_back(hor, hor_ix + 1, IX_NULL);
+    S.trie.greater_stack.emplace_back(GreaterStackItem{Place{hor, hor_ix + 1, IX_NULL}, NULL});
   }
 }
 
 
-bool Place::handle_greater_stack(Solver &S) {
+bool GreaterStackItem::handle(Solver &S) {
   if (verbosity >= 2) {
-    std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(*this, S) << "\n";
+    std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << " " << right_branch_watch_parent << "\n";
   }
-  switch (multimove_on_propagate(S, after_hors_change(S))) {
+  switch (place.multimove_on_propagate(S, place.after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
-      save_as_greater(S);
+      GreaterPlace &greater = place.save_as_greater(S);
+
+      if (right_branch_watch_parent) {
+        right_branch_watch_parent->right_greater_ix = greater.ix;
+
+        Place right;
+        if (place.is_ver()) {
+          HorLine *hor2 = place.deref_ver().hor;
+          if (hor2 == NULL) return true;
+          right = {hor2, 0, IX_NULL};
+        } else {
+          if (place.hor_ix + 1 == place.hor->elems.size()) return true;
+          right = {place.hor, place.hor_ix + 1, IX_NULL};
+        }
+        S.trie.greater_stack.push_back(GreaterStackItem{right, &greater});
+      }
+
       return true;
     }
     case MultimoveEnd::E_DONE: {
+      if (right_branch_watch_parent) {
+        Trie &trie = S.trie;
+        ChangedGreaterPlace changed_place = {
+          place,
+          (unsigned)trie.greater_places.size(),
+          trie.greater_backjumpers.empty() ? NULL : &trie.greater_backjumpers.back()
+        };
+        GreaterPlace &greater = trie.greater_places.emplace_back(changed_place, trie.last_greater);
+        greater.enabled = false;
+        right_branch_watch_parent->right_greater_ix = greater.ix;
+      }
       return true;
     }
     case MultimoveEnd::E_PROPAGATE: {
-      return S.enqueue(S.outputs[get_tag()], &save_as_greater(S));
+      GreaterPlace &greater = place.save_as_greater(S);
+      if (right_branch_watch_parent) {
+        right_branch_watch_parent->right_greater_ix = greater.ix;
+      }
+      return S.enqueue(S.outputs[place.get_tag()], &greater);
     }
     default: { // case MultimoveEnd::E_CONFLICT:
       return false;
@@ -558,7 +592,7 @@ bool Place::handle_greater_stack(Solver &S) {
 }
 
 
-WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit) {
+WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
   if (is_ver()) {
     if (S.value(out_lit) == l_True) {
       HorLine *hor2 = deref_ver().hor;
@@ -571,7 +605,7 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit) {
       }
     }
     else {
-      branch(S);
+      if (do_branch && TRIE_MODE != dnf) branch(S);
       ver_ix++;
       return after_vers_change(S);
     }
@@ -582,7 +616,7 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit) {
       return after_hors_change(S);
     }
     else {
-      branch(S);
+      if (do_branch && TRIE_MODE != dnf) branch(S);
       ver_ix++;
       return after_vers_change(S);
     }
@@ -635,7 +669,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       }
     }
 
-    what_to_do = move_on_propagate(S, out_lit);
+    what_to_do = move_on_propagate(S, out_lit, true);
   }
 }
 
@@ -645,6 +679,18 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   switch (end) {
     case MultimoveEnd::E_WATCH: {
       set_watch(S);
+      if (TRIE_MODE == branch_always) {
+        Place right;
+        if (is_ver()) {
+          HorLine *hor2 = deref_ver().hor;
+          if (hor2 == NULL) break;
+          right = {hor2, 0, IX_NULL};
+        } else {
+          if (hor_ix + 1 == hor->elems.size()) break;
+          right = {hor, hor_ix + 1, IX_NULL};
+        }
+        S.trie.greater_stack.push_back(GreaterStackItem{right, this});
+      }
       break;
     }
     case MultimoveEnd::E_DONE: {
@@ -666,9 +712,9 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   }
 
   while (!S.trie.greater_stack.empty()) {
-    Place p = S.trie.greater_stack.back();
+    GreaterStackItem gsi = S.trie.greater_stack.back();
     S.trie.greater_stack.pop_back();
-    if (!p.handle_greater_stack(S)) {
+    if (!gsi.handle(S)) {
       S.trie.greater_stack.clear();
       return false;
     }
@@ -686,7 +732,52 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   } else {
     remove_watch_neg(S, ~p);
   }
-  return full_multimove_on_propagate(S, move_on_propagate(S, S.outputs[get_tag()]));
+
+  unsigned tag = get_tag();
+  Lit out_lit;
+  if (TRIE_MODE == branch_always) {
+    while (true) {
+      out_lit = S.outputs[tag];
+      lbool value = S.value(out_lit);
+      if (value == l_True && !ver_is_last()) {
+        if (is_ver()) { if (deref_ver().hor == NULL) break; }
+        else if (hor_ix + 1 == hor->elems.size()) break;
+
+        if (right_greater_ix == IX_NULL) {
+          if (verbosity >= 2) printf("NULL_RIGHT %p\n", this);
+          on_accept(S);
+          return true;
+        }
+
+        GreaterPlace &right_greater = S.trie.greater_places[right_greater_ix];
+        if (verbosity >= 2) std::cout << "JUMP_RIGHT " << right_greater << std::endl;
+        *(Place *)this = right_greater;
+        right_greater_ix = right_greater.right_greater_ix;
+        if (right_greater.enabled) {
+          if (!S.trie.greater_backjumpers.empty()) {
+            GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
+            if (&last_backjumper != right_greater.last_change_backjumper) {
+              last_backjumper.changed_places.emplace_back(right_greater, right_greater.ix, right_greater.last_change_backjumper);
+              right_greater.last_change_backjumper = &last_backjumper;
+            }
+          }
+
+          tag = get_tag();
+          right_greater.remove_watch(S, tag);
+          right_greater.on_accept(S);
+        } else {
+          if (verbosity >= 2) std::cout << "RIGHT_DISABLED " << right_greater << std::endl;
+          on_accept(S);
+          return true;
+        }
+      } else if (value == l_Undef) {
+        set_watch(S);
+        return true;
+      } else break;
+    }
+  } else out_lit = S.outputs[tag];
+
+  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
 }
 
 
@@ -904,6 +995,10 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
 
     if (verbosity >= 2) std::cout << "CHANGED " << gplace << " " << gplace.ix << " " << changed_place.ix << " " << greater_places_size << "\n" << std::flush;
     gplace.set_watch(S);
+    if (verbosity >= 2) {
+      std::cout << "RESETTING_GREATER_IX " << " " << &gplace << "\n";
+    }
+    gplace.right_greater_ix = IX_NULL;
   }
 
   trie.greater_backjumpers.pop_back();

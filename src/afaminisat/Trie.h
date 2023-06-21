@@ -66,11 +66,10 @@ public:
   void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
   WhatToDo after_vers_change(Solver &S);
-  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
+  WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
   GreaterPlace &save_as_greater(Solver &S);
-  bool handle_greater_stack(Solver &S);
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 };
@@ -85,6 +84,7 @@ struct WatchedPlace : public Place, public Constr {
 public:
   int watch_ix_pos;
   int watch_ix_neg;
+  unsigned right_greater_ix;
 
   WatchedPlace(HorLine *hor_);
   WatchedPlace(Place place);
@@ -227,9 +227,18 @@ struct RemovedWatch : public Constr {
 
 
 struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
+enum Mode { clauses, dnf, branch_on_zero, branch_always };
 
 extern ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO;
 extern RemovedWatch REMOVED_WATCH;
+extern Mode TRIE_MODE;
+
+struct GreaterStackItem {
+  Place place;
+  WatchedPlace *right_branch_watch_parent;
+
+  bool handle(Solver &S);
+};
 
 class Trie : public Undoable, public WatchedPlace {
 public:
@@ -237,7 +246,7 @@ public:
   HorLine root;
 
   deque<GreaterPlace> greater_places;
-  vector<Place> greater_stack;
+  vector<GreaterStackItem> greater_stack;
   unsigned last_greater = IX_NULL;
 
   // constant - the number of states of the analysed AFA
