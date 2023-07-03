@@ -106,25 +106,6 @@ public:
 };
 
 
-struct BackJumper {
-    Place place;
-
-    void jump(Solver &S);
-};
-
-
-struct AccBackJumper : BackJumper {
-  bool enabled;
-
-  AccBackJumper() : enabled(false) {}
-
-  void enable(Place place_) {
-    enabled = true;
-    place = place_;
-  }
-};
-
-
 struct GreaterBackjumper;
 
 struct ChangedGreaterPlace {
@@ -146,8 +127,9 @@ struct GreaterPlace : public WatchedPlace {
 };
 
 struct GreaterBackjumper : Undoable {
-  BackJumper least_backjumper;
-  int level = -1;
+  Place least_place;
+  bool least_enabled;
+  int level;
   unsigned greater_places_size;
   vector<ChangedGreaterPlace> changed_places;
 
@@ -155,15 +137,30 @@ struct GreaterBackjumper : Undoable {
   : greater_places_size(greater_places_size_)
   , changed_places()
   , level(level_)
+  , least_enabled(false)
   {}
 
-  GreaterBackjumper(Place least_place_, unsigned greater_places_size_) noexcept
+  GreaterBackjumper(Place least_place_, int level_, unsigned greater_places_size_) noexcept
   : greater_places_size(greater_places_size_)
   , changed_places()
-  , least_backjumper{least_place_}
+  , level(level_)
+  , least_place{least_place_}
+  , least_enabled(true)
   {}
 
+  GreaterBackjumper(GreaterBackjumper&& old) noexcept
+  : least_place(old.least_place)
+  , least_enabled(old.least_enabled)
+  , level(old.level)
+  , greater_places_size(old.greater_places_size)
+  , changed_places(std::move(old.changed_places)) {
+  }
+
+  GreaterBackjumper(GreaterBackjumper& old) = delete;
+
   void undo(Solver &S, Lit _p);
+
+  void jump_least(Solver &S);
 };
 
 
@@ -262,7 +259,6 @@ public:
 
   unsigned active_var = 0;
   unsigned active_var_old = 0;
-  vector<AccBackJumper> acc_backjumpers;
   deque<GreaterBackjumper> greater_backjumpers;
 
   Place to_cut;

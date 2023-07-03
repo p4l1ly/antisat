@@ -232,7 +232,7 @@ bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
                   out_learnt_final_size = out_learnt.size();
                   out_btlevel_final = out_btlevel;
                 }
-                undoOne();
+                undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
                 goto resolved;
               }
 
@@ -247,12 +247,12 @@ bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
               p_reason.clear();
               confl->calcReason(*this, p, p_reason);
-              undoOne();
+              undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
 
               break;
             }
 
-            undoOne();
+            undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
 
             if (confl == NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
@@ -355,7 +355,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                   out_btlevel_final = out_btlevel;
                 }
 
-                undoOne();
+                undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
                 goto resolved;
               }
 
@@ -382,11 +382,11 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                 printf("\n");
               }
 
-              undoOne();
+              undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
               break;
             }
 
-            undoOne();
+            undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
 
             if (confl == NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");

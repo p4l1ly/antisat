@@ -44,7 +44,6 @@ public:
 
     ~CellContainerSet() {
       for (vector<int> *x: data) {
-        if (verbosity >= 2) {printf("dcellf"); for(int i: *x){printf(" %d", i);} printf("\n");}
         delete x;
       }
     }

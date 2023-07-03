@@ -334,7 +334,6 @@ public:
 
         while (true) {
             if (false) { // (container_supq.get_or_add(*cell)) {
-              if (verbosity >= 2) {printf("dcell0"); for(int i: *cell){printf(" %d", i);} printf("\n");}
               delete cell;
               omitted++;
             } else {
@@ -373,7 +372,6 @@ public:
               }
               st = S.solve(solver_input);
 
-              if (verbosity >= 2) {printf("dcell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
               delete cell;
 
               if (st) {
@@ -403,8 +401,6 @@ public:
                               cell_container, acnt, satCnt,
                               unsatCnt, maxDepth, omitted
                       )) {
-                          if (verbosity >= 2) {printf("ncell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
-                          if (verbosity >= 2) {printf("dcell2"); for(int i: *cell){printf(" %d", i);} printf("\n");}
                           delete cell;
                           empty = false;
                           goto finally;
