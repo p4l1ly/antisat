@@ -1,0 +1,11 @@
+{
+  "languageserver": {
+    "ccls": {
+      "initializationOptions": {
+        "clang": {
+          "extraArgs": ["-std=c++20"]
+        }
+      }
+    }
+  }
+}
