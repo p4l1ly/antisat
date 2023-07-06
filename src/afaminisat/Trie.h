@@ -5,13 +5,17 @@
 #include <vector>
 #include <deque>
 #include <unordered_set>
+#include <utility>
 #include <fstream>
+#include <stdint.h>
 
 #include "Constraints.h"
+#include "LogList.h"
 
 class Solver;
 
 using std::deque;
+using std::pair;
 using std::vector;
 using std::unordered_set;
 
@@ -25,8 +29,11 @@ extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
+typedef pair<unsigned, uint32_t> GreaterIx;
 
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
+const unsigned IX32_NULL = std::numeric_limits<uint32_t>::max();
+const GreaterIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
 
 
 enum WhatToDo {
@@ -84,7 +91,6 @@ struct WatchedPlace : public Place, public Constr {
 public:
   int watch_ix_pos;
   int watch_ix_neg;
-  unsigned right_greater_ix;
 
   WatchedPlace(HorLine *hor_);
   WatchedPlace(Place place);
@@ -110,17 +116,17 @@ struct GreaterBackjumper;
 
 struct ChangedGreaterPlace {
   Place place;
-  unsigned ix;
+  GreaterIx ix;
   GreaterBackjumper *last_change_backjumper;
 };
 
 struct GreaterPlace : public WatchedPlace {
-  unsigned ix;
+  GreaterIx ix;
   bool enabled = true;
   GreaterBackjumper *last_change_backjumper;
-  unsigned previous, next;
+  GreaterIx previous, next;
 
-  GreaterPlace(ChangedGreaterPlace changed_place, unsigned previous_);
+  GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
@@ -130,18 +136,18 @@ struct GreaterBackjumper : Undoable {
   Place least_place;
   bool least_enabled;
   int level;
-  unsigned greater_places_size;
+  LogList<GreaterPlace> greater_places;
   vector<ChangedGreaterPlace> changed_places;
 
-  GreaterBackjumper(int level_, unsigned greater_places_size_)
-  : greater_places_size(greater_places_size_)
+  GreaterBackjumper(int level_)
+  : greater_places()
   , changed_places()
   , level(level_)
   , least_enabled(false)
   {}
 
-  GreaterBackjumper(Place least_place_, int level_, unsigned greater_places_size_) noexcept
-  : greater_places_size(greater_places_size_)
+  GreaterBackjumper(Place least_place_, int level_) noexcept
+  : greater_places()
   , changed_places()
   , level(level_)
   , least_place{least_place_}
@@ -152,7 +158,7 @@ struct GreaterBackjumper : Undoable {
   : least_place(old.least_place)
   , least_enabled(old.least_enabled)
   , level(old.level)
-  , greater_places_size(old.greater_places_size)
+  , greater_places(std::move(old.greater_places))
   , changed_places(std::move(old.changed_places)) {
   }
 
@@ -232,8 +238,6 @@ extern Mode TRIE_MODE;
 
 struct GreaterStackItem {
   Place place;
-  WatchedPlace *right_branch_watch_parent;
-
   bool handle(Solver &S);
 };
 
@@ -242,9 +246,9 @@ public:
   // the underlying automaton
   HorLine root;
 
-  deque<GreaterPlace> greater_places;
+  LogList<GreaterPlace> root_greater_places;
   vector<GreaterStackItem> greater_stack;
-  unsigned last_greater = IX_NULL;
+  GreaterIx last_greater = pair(IX_NULL, IX32_NULL);
 
   // constant - the number of states of the analysed AFA
   unsigned var_count;
@@ -280,8 +284,11 @@ public:
   bool ver_accept = false;
   void on_accept(Solver &S);
 
+  GreaterPlace& greater_place_at(GreaterIx ix);
+
   // debugging
   void to_dot(Solver& S, const char *filename);
+  void print_places();
 };
 
 

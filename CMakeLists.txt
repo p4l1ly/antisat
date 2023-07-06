@@ -21,6 +21,7 @@ add_executable(
   src/afaminisat/Trie.C
   src/afaminisat/SupQ.C
   src/afaminisat/Constraints.C
+  src/afaminisat/LogList.C
 )
 target_include_directories(afaminisat PRIVATE "${AutomataSafaCapnpInclude}")
 target_link_libraries(
