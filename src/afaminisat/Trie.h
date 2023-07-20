@@ -76,7 +76,7 @@ public:
   WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
-  GreaterPlace &save_as_greater(Solver &S);
+  GreaterPlace &save_as_greater(Solver &S, bool enabled = true);
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 };
@@ -101,7 +101,9 @@ public:
   void remove_watch_neg(Solver &S, Lit lit);
 
   virtual void on_accept(Solver &S) = 0;
+  virtual GreaterIx my_greater_ix() = 0;
 
+  void accept_notify_horhead(Solver& S);
   bool full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
   bool propagate (Solver& S, Lit p, bool& keep_watch);
@@ -126,10 +128,15 @@ struct GreaterPlace : public WatchedPlace {
   GreaterBackjumper *last_change_backjumper;
   GreaterIx previous, next;
 
+  GreaterIx swallow_ix;
+  int swallow_level;
+
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
+  void accept_notify_horhead(Solver &S);
   void on_accept(Solver &S);
+  GreaterIx my_greater_ix() { return ix; }
 };
 
 struct GreaterBackjumper : Undoable {
@@ -181,6 +188,9 @@ public:
   unsigned tag;
   HorLine *hor;
 
+  GreaterIx accept_ix;
+  int accept_level;
+
   HorHead(unsigned tag_) : tag(tag_), hor(NULL) {
     if (verbosity >= -2) hor_head_count++;
   }
@@ -206,6 +216,7 @@ public:
 class VerHead {
 public:
   unsigned tag;
+  GreaterIx greater_ix;
   vector<HorHead> hors;
 
   VerHead(unsigned tag_) : tag(tag_), hors() {
@@ -237,7 +248,8 @@ extern RemovedWatch REMOVED_WATCH;
 extern Mode TRIE_MODE;
 
 struct GreaterStackItem {
-  Place place;
+  HorLine* hor;
+  unsigned hor_ix;
   bool handle(Solver &S);
 };
 
@@ -245,6 +257,9 @@ class Trie : public Undoable, public WatchedPlace {
 public:
   // the underlying automaton
   HorLine root;
+
+  GreaterIx root_accept_ix = GREATER_IX_NULL;
+  int root_accept_level = -1;
 
   LogList<GreaterPlace> root_greater_places;
   vector<GreaterStackItem> greater_stack;
@@ -280,9 +295,9 @@ public:
 
 
   // LeastPlace
-  int accept_level = -1;
   bool ver_accept = false;
   void on_accept(Solver &S);
+  GreaterIx my_greater_ix() { return GREATER_IX_NULL; }
 
   GreaterPlace& greater_place_at(GreaterIx ix);
 
