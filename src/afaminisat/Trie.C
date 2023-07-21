@@ -333,8 +333,6 @@ void Trie::onSat(Solver &S) {
     ver_head.hors.emplace_back(added_vars[i].second);
   }
 
-  unsigned i = added_vars.size();
-
   // For each greater/accepting guess, find the least place in the newly
   // created branch, that has higher or equal level as the guess. If such place
   // exists and if it is not the lowest place, set the guess' backjumper to
@@ -393,55 +391,20 @@ void Trie::onSat(Solver &S) {
     acc_level = gplace.swallow_level;
   }
 
-  for (unsigned acc_ptr = active_var_old; acc_ptr--; acc_ptr = back_ptrs[acc_ptr]) {
-    int lvl = S.level[var(S.outputs[acc_ptr])];
+  if (added_vars.size() > 1) {
+    for (unsigned acc_ptr = active_var_old; acc_ptr--; acc_ptr = back_ptrs[acc_ptr]) {
+      int lvl = S.level[var(S.outputs[acc_ptr])];
 
-    // How could this be even possible? If the new branch is added, the list
-    // of the guessed variables does not get fully erased in the conflict
-    // triggered by the new branch.
-    if (lvl <= acc_level) break;
+      // How could this be even possible? If the new branch is added, the list
+      // of the guessed variables does not get fully erased in the conflict
+      // triggered by the new branch.
+      if (lvl <= acc_level) break;
 
-    if (verbosity >= 2) {
-      printf(
-        "LVL %d %d " L_LIT " %d\n",
-        lvl, acc_ptr, L_lit(S.outputs[acc_ptr]), back_ptrs[acc_ptr]
-      );
-    }
-
-    while (true) {
-      const std::pair<int, unsigned>& added_var = added_vars[i - 1];
-      if (added_var.first < lvl) {
-        // We don't set the backjumper to the last added var because it will be
-        // jumped over yet in onSatConflict.
-        if (i + 1 < added_vars.size()) {
-          if (verbosity >= 2) {
-            printf("ACC_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
-          }
-          new_backjumpers.emplace_back(
-            // Place{extended_hor, extended_hor_ix, i - 1},
-            lvl
-          );
-        }
-        break;
+      // We don't set the backjumper to the last added var because it will be
+      // jumped over yet in onSatConflict.
+      if (added_vars[added_vars.size() - 2].first >= lvl) {
+        new_backjumpers.emplace_back(lvl);
       }
-
-      if (verbosity >= 0) printf("I %d\n", i - 1);
-
-      // If there is no added_var before the guessed variable, set its backjumper to the
-      // start of the added branch.
-      if (i == 1) {
-        if (1 != added_vars.size()) {
-          if (verbosity >= 2) {
-            printf("ACC_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
-          }
-          new_backjumpers.emplace_back(
-            // Place{extended_hor, extended_hor_ix, IX_NULL},
-            lvl
-          );
-        }
-        break;
-      }
-      i--;
     }
   }
 
@@ -451,7 +414,7 @@ void Trie::onSat(Solver &S) {
     new_backjumpers.pop_back();
   }
 
-  i = added_vars.size();
+  unsigned i = added_vars.size();
 
   for (auto it = greater_backjumpers.rbegin(); it != greater_backjumpers.rend(); it++) {
     GreaterBackjumper &backjumper = *it;
