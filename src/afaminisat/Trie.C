@@ -501,7 +501,7 @@ void Trie::onSat(Solver &S) {
 WhatToDo Place::after_hors_change(Solver &S) {
   if (hor_is_out()) return WhatToDo::DONE;
 
-  unsigned out = get_tag();
+  unsigned out = deref_hor().tag;
   if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
@@ -517,7 +517,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
 
 
 WhatToDo Place::after_vers_change(Solver &S) {
-  unsigned out = get_tag();
+  unsigned out = deref_ver().tag;
   if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
