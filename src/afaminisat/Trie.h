@@ -134,7 +134,6 @@ struct GreaterPlace : public WatchedPlace {
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
-  void accept_notify_horhead(Solver &S);
   void on_accept(Solver &S);
   GreaterIx my_greater_ix() { return ix; }
 };

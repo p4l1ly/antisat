@@ -611,6 +611,7 @@ bool GreaterStackItem::handle(Solver &S) {
       if (TRIE_MODE == branch_always) {
         GreaterPlace &greater = place.save_as_greater(S, false);
         hor->elems[hor_ix].greater_ix = greater.ix;
+        greater.accept_notify_horhead(S);
       }
       return true;
     }
@@ -643,7 +644,7 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
       }
     }
     else {
-      if (do_branch && TRIE_MODE != dnf) branch(S);
+      if (do_branch) branch(S);
       ver_ix++;
       return after_vers_change(S);
     }
@@ -654,7 +655,7 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
       return after_hors_change(S);
     }
     else {
-      if (do_branch && TRIE_MODE != dnf) branch(S);
+      if (do_branch) branch(S);
       ver_ix++;
       return after_vers_change(S);
     }
@@ -707,7 +708,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       }
     }
 
-    what_to_do = move_on_propagate(S, out_lit, true);
+    what_to_do = move_on_propagate(S, out_lit, TRIE_MODE != dnf);
   }
 }
 
@@ -817,7 +818,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   } else out_lit = S.outputs[tag];
   out_lit = S.outputs[tag];
 
-  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
+  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, TRIE_MODE == branch_on_zero));
 }
 
 
