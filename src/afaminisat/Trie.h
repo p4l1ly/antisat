@@ -189,6 +189,7 @@ public:
 
   GreaterIx accept_ix;
   int accept_level;
+  int visit_level;
 
   HorHead(unsigned tag_) : tag(tag_), hor(NULL) {
     if (verbosity >= -2) hor_head_count++;

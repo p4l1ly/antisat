@@ -349,6 +349,7 @@ void Trie::onSat(Solver &S) {
   // only bind the asserting literal there and continue, so its backjumper does
   // not get called. Anyway, the following paragraph resolves this.
   //
+  // (Not so special edge case, read: Why is the lowest place skipped)
   // A special edge case occurs if there is nowhere further back to jump - all
   // the other my_zeroes have been added through input assumptions. In that
   // case however, the last added_var is forced to 1 via conflict analysis (it
@@ -364,28 +365,83 @@ void Trie::onSat(Solver &S) {
   // of course not in added_vars, as they are 1-valued.
   vector<GreaterBackjumper> new_backjumpers;
 
-  // Ako zistit ci vytvarame nove greater_place?
-  // Verim ze to z niecoho vyplinie...
   GreaterIx acc_ix;
   int acc_level;
+  int visit_level;
 
   if (ver_accept) {
     HorHead &horhead = deref_ver();
     acc_ix = horhead.accept_ix;
     acc_level = horhead.accept_level;
+    visit_level = horhead.visit_level;
   } else {
     Place back = hor->back_ptr;
     if (back.hor == NULL) {
       acc_ix = root_accept_ix;
       acc_level = root_accept_level;
+      visit_level = 0;
     } else {
       HorHead &horhead = back.deref_ver();
       acc_ix = horhead.accept_ix;
       acc_level = horhead.accept_level;
+      visit_level = horhead.visit_level;
     }
   }
 
+  // (Not so special edge case, read: Why is the lowest place skipped)
+  // We need to be in an accepting state because we don't watch anything.
+  // Moreover, there's one special edge case where no backjumper and no reset
+  // is called: all my_zeroes are at root_level, except the last one. In that case,
+  // the conflict machinery will immediately set the last my_zero to 1 and we
+  // should end up in that accepting state. We move there already here.
+  if (added_vars.size() == 1) {
+    ver_accept = false;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix + 1;
+    ver_ix = IX_NULL;
+  } else {
+    ver_accept = true;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix;
+    ver_ix = added_vars.size() - 2;
+  }
+
+  vector<pair<int, GreaterIx>> swallow_line;
+
+  if (TRIE_MODE == branch_always && visit_level != acc_level) {
+    // Create a greater place at the top of the added branch
+
+    LogList<GreaterPlace> *incomplete_greater_places;
+    unsigned incomplete_backjumper_ix;
+    GreaterBackjumper *incomplete_backjumper;
+
+    if (visit_level <= S.root_level) {
+      incomplete_greater_places = &root_greater_places;
+      incomplete_backjumper_ix = IX_NULL;
+      incomplete_backjumper = NULL;
+    } else {
+      incomplete_backjumper_ix = visit_level - S.root_level - 1;
+      incomplete_backjumper = &greater_backjumpers[incomplete_backjumper_ix];
+      incomplete_greater_places = &incomplete_backjumper->greater_places;
+    }
+
+    GreaterIx completion_ix(incomplete_backjumper_ix, incomplete_greater_places->size());
+    swallow_line.emplace_back(visit_level, completion_ix);
+
+    incomplete_greater_places->push_back(
+      GreaterPlace(
+        ChangedGreaterPlace{
+          {extended_hor, extended_hor_ix, IX_NULL},
+          completion_ix,
+          incomplete_backjumper,
+        },
+        GREATER_IX_NULL
+      )
+    );
+  }
+
   while (acc_ix.second != IX32_NULL) {
+    swallow_line.emplace_back(acc_level, acc_ix);
     GreaterPlace &gplace = greater_place_at(acc_ix);
     acc_ix = gplace.swallow_ix;
     acc_level = gplace.swallow_level;
@@ -416,7 +472,8 @@ void Trie::onSat(Solver &S) {
 
   unsigned i = added_vars.size();
 
-  for (auto it = greater_backjumpers.rbegin(); it != greater_backjumpers.rend(); it++) {
+  auto it = greater_backjumpers.rbegin();
+  for (; it != greater_backjumpers.rend(); it++) {
     GreaterBackjumper &backjumper = *it;
     int lvl = backjumper.level;
     if (lvl <= acc_level) break;
@@ -455,41 +512,77 @@ void Trie::onSat(Solver &S) {
     }
   }
 
-  // We need to be in an accepting state because we don't watch anything.
-  // Moreover, there's one special edge case where no backjumper and no reset
-  // is called: all my_zeroes are at root_level, except the last one. In that case,
-  // the conflict machinery will immediately set the last my_zero to 1 and we
-  // should end up in that accepting state. We move there already here.
-  if (added_vars.size() == 1) {
-    ver_accept = false;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix + 1;
-    ver_ix = -1;
-  } else {
-    ver_accept = true;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix;
-    ver_ix = added_vars.size() - 2;
+  for (
+    auto swallow_line_it = swallow_line.rbegin();
+    swallow_line_it != swallow_line.rend();
+    swallow_line_it++
+  ) {
+    pair<int, GreaterIx> lvl_ix = *swallow_line_it; 
+    GreaterPlace gplace = greater_place_at(lvl_ix.second);
+    GreaterBackjumper *next_bjumper = NULL;
+
+    for (; it != greater_backjumpers.rend(); it++) {
+      GreaterBackjumper &backjumper = *it;
+      int lvl = backjumper.level;
+      if (lvl <= lvl_ix.first) break;
+      if (verbosity >= 0) printf("GLVL %d\n", lvl);
+
+      while (true) {
+        const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+        if (added_var.first < lvl) {
+          // We don't set the backjumper to the last added var because it will be
+          // jumped over yet in onSatConflict.
+          if (i + 1 < added_vars.size()) {
+            if (verbosity >= 2) {
+              printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+            }
+            backjumper.changed_places.push_back({
+              {extended_hor, extended_hor_ix, i - 1},
+              lvl_ix.second,
+              gplace.last_change_backjumper
+            });
+            if (next_bjumper) {
+              next_bjumper->changed_places.back().last_change_backjumper = &backjumper;
+            }
+            next_bjumper = &backjumper;
+          }
+          break;
+        }
+
+        if (verbosity >= 0) printf("I %d\n", i - 1);
+
+        // If there is no added_var before the guessed variable, set its backjumper to the
+        // start of the added branch.
+        if (i == 1) {
+          if (1 != added_vars.size()) {
+            if (verbosity >= 2) {
+              printf("GREATER_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
+            }
+            backjumper.changed_places.push_back({
+              {extended_hor, extended_hor_ix, IX_NULL},
+              lvl_ix.second,
+              gplace.last_change_backjumper
+            });
+            if (next_bjumper) {
+              next_bjumper->changed_places.back().last_change_backjumper = &backjumper;
+            }
+            next_bjumper = &backjumper;
+          }
+          break;
+        }
+        i--;
+      }
+    }
   }
 
-  // TODO
   if (ver_accept) {
     HorHead &horhead = deref_ver();
     horhead.accept_ix = GREATER_IX_NULL;
     horhead.accept_level = last_but_max_level;
-    if (verbosity >= 2) { std::cout << "FIRST_ACCEPT4" << std::endl; }
   } else {
-    Place back = hor->back_ptr;
-    if (back.hor == NULL) {
-      root_accept_ix = GREATER_IX_NULL;
-      root_accept_level = last_but_max_level;
-      if (verbosity >= 2) { std::cout << "FIRST_ACCEPT5" << std::endl; }
-    } else {
-      HorHead &horhead = back.deref_ver();
-      horhead.accept_ix = GREATER_IX_NULL;
-      horhead.accept_level = last_but_max_level;
-      if (verbosity >= 2) { std::cout << "FIRST_ACCEPT6" << std::endl; }
-    }
+    HorHead &horhead = hor->back_ptr.deref_ver();
+    horhead.accept_ix = GREATER_IX_NULL;
+    horhead.accept_level = last_but_max_level;
   }
 
   S.cancelUntil(max_level);
@@ -517,7 +610,9 @@ WhatToDo Place::after_hors_change(Solver &S) {
 
 
 WhatToDo Place::after_vers_change(Solver &S) {
-  unsigned out = deref_ver().tag;
+  HorHead &horhead = deref_ver();
+  horhead.visit_level = S.decisionLevel();
+  unsigned out = horhead.tag;
   if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
