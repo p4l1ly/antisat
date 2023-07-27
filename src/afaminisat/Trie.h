@@ -132,6 +132,7 @@ struct GreaterPlace : public WatchedPlace {
   int swallow_level;
 
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
+  GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_, bool enabled_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
@@ -191,11 +192,7 @@ public:
   int accept_level;
   int visit_level;
 
-  HorHead(unsigned tag_) : tag(tag_), hor(NULL) {
-    if (verbosity >= -2) hor_head_count++;
-  }
-  HorHead(HorHead&& old) noexcept : tag(old.tag), hor(old.hor) {
-    old.hor = NULL;
+  HorHead(unsigned tag_, int visit_level_) : tag(tag_), hor(NULL), visit_level(visit_level_) {
     if (verbosity >= -2) hor_head_count++;
   }
 
@@ -259,7 +256,7 @@ public:
   HorLine root;
 
   GreaterIx root_accept_ix = GREATER_IX_NULL;
-  int root_accept_level = -1;
+  int root_accept_level = 0;
 
   LogList<GreaterPlace> root_greater_places;
   vector<GreaterStackItem> greater_stack;

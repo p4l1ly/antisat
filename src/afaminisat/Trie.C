@@ -247,7 +247,7 @@ Lit Trie::guess(Solver &S) {
 }
 
 void Trie::onSat(Solver &S) {
-  if (verbosity >= 2) printf("ON_SAT\n");
+  if (verbosity >= 2) std::cout << "ON_SAT " << *this << std::endl;
 
   unordered_set<unsigned> my_zeroes_set;
 
@@ -327,10 +327,34 @@ void Trie::onSat(Solver &S) {
   VerHead &ver_head = extended_hor->elems.emplace_back(first_added_var.second);
   ver_head.hors.reserve(added_vars.size() - 1);
 
+  GreaterIx acc_ix;
+  int acc_level;
+  int visit_level;
+
+  if (ver_accept) {
+    HorHead &horhead = deref_ver();
+    acc_ix = horhead.accept_ix;
+    acc_level = horhead.accept_level;
+    visit_level = horhead.visit_level;
+  } else {
+    Place back = hor->back_ptr;
+    if (back.hor == NULL) {
+      acc_ix = root_accept_ix;
+      acc_level = root_accept_level;
+      visit_level = 0;
+    } else {
+      HorHead &horhead = back.deref_ver();
+      acc_ix = horhead.accept_ix;
+      acc_level = horhead.accept_level;
+      visit_level = horhead.visit_level;
+    }
+  }
+
   // Continue down with a vertical branch containing the remaining added_vars.
   ver_head.hors.reserve(added_vars.size() - 1);
   for (unsigned i = 1; i < added_vars.size(); i++) {
-    ver_head.hors.emplace_back(added_vars[i].second);
+    pair<int, unsigned> added_var = added_vars[i];
+    ver_head.hors.emplace_back(added_var.second, max(visit_level, added_var.first));
   }
 
   // For each greater/accepting guess, find the least place in the newly
@@ -365,47 +389,6 @@ void Trie::onSat(Solver &S) {
   // of course not in added_vars, as they are 1-valued.
   vector<GreaterBackjumper> new_backjumpers;
 
-  GreaterIx acc_ix;
-  int acc_level;
-  int visit_level;
-
-  if (ver_accept) {
-    HorHead &horhead = deref_ver();
-    acc_ix = horhead.accept_ix;
-    acc_level = horhead.accept_level;
-    visit_level = horhead.visit_level;
-  } else {
-    Place back = hor->back_ptr;
-    if (back.hor == NULL) {
-      acc_ix = root_accept_ix;
-      acc_level = root_accept_level;
-      visit_level = 0;
-    } else {
-      HorHead &horhead = back.deref_ver();
-      acc_ix = horhead.accept_ix;
-      acc_level = horhead.accept_level;
-      visit_level = horhead.visit_level;
-    }
-  }
-
-  // (Not so special edge case, read: Why is the lowest place skipped)
-  // We need to be in an accepting state because we don't watch anything.
-  // Moreover, there's one special edge case where no backjumper and no reset
-  // is called: all my_zeroes are at root_level, except the last one. In that case,
-  // the conflict machinery will immediately set the last my_zero to 1 and we
-  // should end up in that accepting state. We move there already here.
-  if (added_vars.size() == 1) {
-    ver_accept = false;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix + 1;
-    ver_ix = IX_NULL;
-  } else {
-    ver_accept = true;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix;
-    ver_ix = added_vars.size() - 2;
-  }
-
   vector<pair<int, GreaterIx>> swallow_line;
 
   if (TRIE_MODE == branch_always && visit_level != acc_level) {
@@ -426,6 +409,7 @@ void Trie::onSat(Solver &S) {
     }
 
     GreaterIx completion_ix(incomplete_backjumper_ix, incomplete_greater_places->size());
+    extended_hor->elems[extended_hor_ix].greater_ix = completion_ix;
     swallow_line.emplace_back(visit_level, completion_ix);
 
     incomplete_greater_places->push_back(
@@ -435,9 +419,28 @@ void Trie::onSat(Solver &S) {
           completion_ix,
           incomplete_backjumper,
         },
-        GREATER_IX_NULL
+        GREATER_IX_NULL,
+        false
       )
     );
+  }
+
+  // (Not so special edge case, read: Why is the lowest place skipped)
+  // We need to be in an accepting state because we don't watch anything.
+  // Moreover, there's one special edge case where no backjumper and no reset
+  // is called: all my_zeroes are at root_level, except the last one. In that case,
+  // the conflict machinery will immediately set the last my_zero to 1 and we
+  // should end up in that accepting state. We move there already here.
+  if (added_vars.size() == 1) {
+    ver_accept = false;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix + 1;
+    ver_ix = IX_NULL;
+  } else {
+    ver_accept = true;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix;
+    ver_ix = added_vars.size() - 2;
   }
 
   while (acc_ix.second != IX32_NULL) {
@@ -477,7 +480,7 @@ void Trie::onSat(Solver &S) {
     GreaterBackjumper &backjumper = *it;
     int lvl = backjumper.level;
     if (lvl <= acc_level) break;
-    if (verbosity >= 0) printf("GLVL %d\n", lvl);
+    if (verbosity >= 0) printf("GLVL1 %d\n", lvl);
 
     while (true) {
       const std::pair<int, unsigned>& added_var = added_vars[i - 1];
@@ -519,16 +522,23 @@ void Trie::onSat(Solver &S) {
   ) {
     pair<int, GreaterIx> lvl_ix = *swallow_line_it; 
     GreaterPlace gplace = greater_place_at(lvl_ix.second);
+    if (verbosity >= 0) {
+      printf("SWALLOWED_GREATER %d %d %d ", lvl_ix.first, lvl_ix.second.first, lvl_ix.second.second);
+      std::cout << gplace << std::endl;
+    }
     GreaterBackjumper *next_bjumper = NULL;
 
     for (; it != greater_backjumpers.rend(); it++) {
       GreaterBackjumper &backjumper = *it;
       int lvl = backjumper.level;
       if (lvl <= lvl_ix.first) break;
-      if (verbosity >= 0) printf("GLVL %d\n", lvl);
+      if (verbosity >= 0) printf("GLVL2 %d/%d\n", lvl, S.root_level);
 
       while (true) {
         const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+
+        if (verbosity >= 0) printf("I %d " L_LIT " %d\n", i - 1, L_lit(S.outputs[added_var.second]), added_var.first);
+
         if (added_var.first < lvl) {
           // We don't set the backjumper to the last added var because it will be
           // jumped over yet in onSatConflict.
@@ -548,8 +558,6 @@ void Trie::onSat(Solver &S) {
           }
           break;
         }
-
-        if (verbosity >= 0) printf("I %d\n", i - 1);
 
         // If there is no added_var before the guessed variable, set its backjumper to the
         // start of the added branch.
@@ -579,10 +587,12 @@ void Trie::onSat(Solver &S) {
     HorHead &horhead = deref_ver();
     horhead.accept_ix = GREATER_IX_NULL;
     horhead.accept_level = last_but_max_level;
+    horhead.visit_level = last_but_max_level;
   } else {
     HorHead &horhead = hor->back_ptr.deref_ver();
     horhead.accept_ix = GREATER_IX_NULL;
     horhead.accept_level = last_but_max_level;
+    horhead.visit_level = last_but_max_level;
   }
 
   S.cancelUntil(max_level);
@@ -595,7 +605,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
   if (hor_is_out()) return WhatToDo::DONE;
 
   unsigned out = deref_hor().tag;
-  if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
+  if (verbosity >= 2) printf("OUTVER %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -613,7 +623,7 @@ WhatToDo Place::after_vers_change(Solver &S) {
   HorHead &horhead = deref_ver();
   horhead.visit_level = S.decisionLevel();
   unsigned out = horhead.tag;
-  if (verbosity >= 2) printf("OUT %d " L_LIT "\n", out, L_lit(S.outputs[out]));
+  if (verbosity >= 2) printf("OUTHOR %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -1042,6 +1052,17 @@ GreaterPlace::GreaterPlace(
 , next(GREATER_IX_NULL)
 { }
 
+GreaterPlace::GreaterPlace(
+  ChangedGreaterPlace changed_place, GreaterIx previous_, bool enabled_
+)
+: WatchedPlace(changed_place.place)
+, ix(changed_place.ix)
+, last_change_backjumper(changed_place.last_change_backjumper)
+, previous(previous_)
+, next(GREATER_IX_NULL)
+, enabled(enabled_)
+{ }
+
 
 void GreaterPlace::on_accept(Solver &S) {
   enabled = false;
@@ -1074,6 +1095,7 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
 
   if (verbosity >= 2) {
     std::cout << "GREATER_UNDO "
+        << level << " "
         << greater_places.size() << " "
         << changed_places.size() << "\n"
         << std::flush;
@@ -1206,12 +1228,12 @@ std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
 void Trie::print_places() {
     std::cout << "LEAST_PLACE " << (Place &)(*this) << std::endl;
     ITER_LOGLIST(root_greater_places, GreaterPlace, {
-      std::cout << "GREATER_PLACE -1 " << (Place &)x << std::endl;
+      std::cout << "GREATER_PLACE -1 " << (Place &)x << " " << x.enabled << std::endl;
     })
     unsigned i = 0;
     for (GreaterBackjumper& backj: greater_backjumpers) {
       ITER_LOGLIST(backj.greater_places, GreaterPlace, {
-        std::cout << "GREATER_PLACE " << i << " " << (Place &)x << std::endl;
+        std::cout << "GREATER_PLACE " << i << " " << (Place &)x << " " << x.enabled << std::endl;
       })
       ++i;
     }
