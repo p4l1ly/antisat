@@ -503,8 +503,8 @@ Constr* Solver::propagate(void)
         vec<Constr*>& ws = watches[index(p)];
         if (verbosity >= 2) printf("WS_LEN %d " L_LIT "\n", ws.size(), L_lit(p));
         bool          keep_watch;
-        Constr        **i, **j, **end = (Constr**)ws + ws.size();
-        for (i = j = (Constr**)ws; confl == NULL && i < end; i++){
+        Constr        **i, **j;
+        for (i = j = (Constr**)ws; confl == NULL && i < (Constr**)ws + ws.size(); i++){
             stats.inspects++;
             keep_watch = false;
             if (verbosity >= 2) {
@@ -520,6 +520,8 @@ Constr* Solver::propagate(void)
               printf("REMOVE_WATCH_PROP " L_LIT " %p\n", L_lit(p), *i);
             }
         }
+
+        Constr **end = (Constr**)ws + ws.size();
 
         if (confl == NULL) {
           // Copy the remaining watches:

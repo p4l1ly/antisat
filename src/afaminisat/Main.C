@@ -441,9 +441,7 @@ public:
 
             if (verbosity >= -2) {
               reset_count++;
-              if (reset_count % 10000 == 0) {
-                printf("memstats %u %d %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count, S.nLearnts());
-              }
+              printf("memstats %u %d %d %d %d\n", reset_count, hor_head_count, hor_count, ver_count, S.nLearnts());
             }
         }
 
@@ -487,14 +485,18 @@ int main(int argc, char** argv) {
             std::cout << "ERROR: Could not open file" << std::endl;
             return -1;
         }
-        capnp::StreamFdMessageReader message(fd);
-        ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>(), mode);
-        close(fd);
-        if (mc.modelCheck()) {
-            std::cout << "EMPTY" << std::endl;
-        } else {
-            std::cout << "NOT EMPTY" << std::endl;
+        {
+          capnp::StreamFdMessageReader message(fd);
+          ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>(), mode);
+          close(fd);
+          if (mc.modelCheck()) {
+              std::cout << "EMPTY" << std::endl;
+          } else {
+              std::cout << "NOT EMPTY" << std::endl;
+          }
+          if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
         }
+        if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
     } else {
         capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", port);
         auto& waitScope = server.getWaitScope();

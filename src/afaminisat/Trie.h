@@ -219,7 +219,9 @@ public:
   VerHead(unsigned tag_) : tag(tag_), hors() {
     if (verbosity >= -2) ver_count++;
   }
-  VerHead(VerHead&& old) noexcept : tag(old.tag), hors(std::move(old.hors)) {
+  VerHead(VerHead&& old) noexcept
+  : tag(old.tag), greater_ix(old.greater_ix), hors(std::move(old.hors)) {
+    if (verbosity >= -2) ver_count++;
   }
 
   ~VerHead() {

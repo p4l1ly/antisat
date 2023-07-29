@@ -45,7 +45,7 @@ inline bool Place::is_ver() const {
 }
 
 inline bool Place::in_conflict() const {
-  return ver_ix == deref_hor().hors.size();
+  return !hor_is_out() && ver_ix == deref_hor().hors.size();
 }
 
 void Place::cut_away() {
@@ -205,11 +205,11 @@ Lit Trie::guess(Solver &S) {
 
     if (verbosity >= 2) {
       printf(
-          "GUESS_%s %d %d %d " L_LIT "\n",
+          "GUESS_%s %d " L_LIT " ",
           is_ver() ? "VER" : "HOR",
-          hor_ix, ver_ix, tag,
-          L_lit(out_lit)
+          tag, L_lit(out_lit)
       );
+      std::cout << *this << std::endl;
     }
     return out_lit;
   }
@@ -305,8 +305,6 @@ void Trie::onSat(Solver &S) {
      }
   }
 
-  const std::pair<int, unsigned>& first_added_var = added_vars[0];
-
   HorLine *extended_hor;
   unsigned extended_hor_ix;
   if (ver_accept) {
@@ -315,6 +313,7 @@ void Trie::onSat(Solver &S) {
     // vertical places).
     HorLine *new_active_hor = new HorLine{*this};
     if (verbosity >= -2) hor_count++;
+    assert(deref_ver().hor == NULL);
     deref_ver().hor = new_active_hor;
     extended_hor = new_active_hor;
     extended_hor_ix = 0;
@@ -322,10 +321,6 @@ void Trie::onSat(Solver &S) {
     extended_hor = hor;
     extended_hor_ix = hor_ix;
   }
-
-  // Add the first added_var to the current horizontal branch.
-  VerHead &ver_head = extended_hor->elems.emplace_back(first_added_var.second);
-  ver_head.hors.reserve(added_vars.size() - 1);
 
   GreaterIx acc_ix;
   int acc_level;
@@ -350,11 +345,19 @@ void Trie::onSat(Solver &S) {
     }
   }
 
-  // Continue down with a vertical branch containing the remaining added_vars.
+  if (verbosity >= 2) printf("ACC_IX_LVL_VISIT %d %d %d %d\n", acc_ix.first, acc_ix.second, acc_level, visit_level);
+
+
+  // Add the first added_var to the current horizontal branch.
+  const std::pair<int, unsigned>& first_added_var = added_vars[0];
+  int previous_var_level = first_added_var.first;
+  VerHead &ver_head = extended_hor->elems.emplace_back(first_added_var.second);
   ver_head.hors.reserve(added_vars.size() - 1);
+  // Continue down with a vertical branch containing the remaining added_vars.
   for (unsigned i = 1; i < added_vars.size(); i++) {
     pair<int, unsigned> added_var = added_vars[i];
-    ver_head.hors.emplace_back(added_var.second, max(visit_level, added_var.first));
+    ver_head.hors.emplace_back(added_var.second, max(visit_level, previous_var_level));
+    previous_var_level = added_var.first;
   }
 
   // For each greater/accepting guess, find the least place in the newly
@@ -390,6 +393,7 @@ void Trie::onSat(Solver &S) {
   vector<GreaterBackjumper> new_backjumpers;
 
   vector<pair<int, GreaterIx>> swallow_line;
+  GreaterIx new_acc_ix = GREATER_IX_NULL;
 
   if (TRIE_MODE == branch_always && visit_level != acc_level) {
     // Create a greater place at the top of the added branch
@@ -410,9 +414,10 @@ void Trie::onSat(Solver &S) {
 
     GreaterIx completion_ix(incomplete_backjumper_ix, incomplete_greater_places->size());
     extended_hor->elems[extended_hor_ix].greater_ix = completion_ix;
+    if (verbosity >= 2) printf("WRITE_RIGHT_IX1 %p %d %d %d\n", extended_hor, extended_hor_ix, completion_ix.first, completion_ix.second);
     swallow_line.emplace_back(visit_level, completion_ix);
 
-    incomplete_greater_places->push_back(
+    GreaterPlace &gplace = incomplete_greater_places->push_back(
       GreaterPlace(
         ChangedGreaterPlace{
           {extended_hor, extended_hor_ix, IX_NULL},
@@ -423,31 +428,18 @@ void Trie::onSat(Solver &S) {
         false
       )
     );
-  }
-
-  // (Not so special edge case, read: Why is the lowest place skipped)
-  // We need to be in an accepting state because we don't watch anything.
-  // Moreover, there's one special edge case where no backjumper and no reset
-  // is called: all my_zeroes are at root_level, except the last one. In that case,
-  // the conflict machinery will immediately set the last my_zero to 1 and we
-  // should end up in that accepting state. We move there already here.
-  if (added_vars.size() == 1) {
-    ver_accept = false;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix + 1;
-    ver_ix = IX_NULL;
-  } else {
-    ver_accept = true;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix;
-    ver_ix = added_vars.size() - 2;
+    gplace.swallow_ix = acc_ix;
+    gplace.swallow_level = acc_level;
+    if (acc_level > last_but_max_level) new_acc_ix = completion_ix;
   }
 
   while (acc_ix.second != IX32_NULL) {
+    if (verbosity >= 2) printf("SWALLOW_LINE %d %d %d\n", acc_level, acc_ix.first, acc_ix.second);
     swallow_line.emplace_back(acc_level, acc_ix);
     GreaterPlace &gplace = greater_place_at(acc_ix);
-    acc_ix = gplace.swallow_ix;
     acc_level = gplace.swallow_level;
+    if (acc_level > last_but_max_level && new_acc_ix.second == IX32_NULL) new_acc_ix = acc_ix;
+    acc_ix = gplace.swallow_ix;
   }
 
   if (added_vars.size() > 1) {
@@ -474,6 +466,30 @@ void Trie::onSat(Solver &S) {
   }
 
   unsigned i = added_vars.size();
+
+  // (Not so special edge case, read: Why is the lowest place skipped)
+  // We need to be in an accepting state because we don't watch anything.
+  // Moreover, there's one special edge case where no backjumper and no reset
+  // is called: all my_zeroes are at root_level, except the last one. In that case,
+  // the conflict machinery will immediately set the last my_zero to 1 and we
+  // should end up in that accepting state. We move there already here.
+  hor = extended_hor;
+  if (added_vars.size() == 1) {
+    ver_accept = false;
+    hor_ix = extended_hor_ix + 1;
+    ver_ix = IX_NULL;
+  } else {
+    ver_accept = true;
+    hor_ix = extended_hor_ix;
+    ver_ix = added_vars.size() - 2;
+  }
+
+  {
+    HorHead &horhead = ver_accept ? deref_ver() : hor->back_ptr.deref_ver();
+    horhead.accept_ix = new_acc_ix;
+    horhead.accept_level = last_but_max_level;
+    horhead.visit_level = last_but_max_level;
+  }
 
   auto it = greater_backjumpers.rbegin();
   for (; it != greater_backjumpers.rend(); it++) {
@@ -521,11 +537,25 @@ void Trie::onSat(Solver &S) {
     swallow_line_it++
   ) {
     pair<int, GreaterIx> lvl_ix = *swallow_line_it; 
-    GreaterPlace gplace = greater_place_at(lvl_ix.second);
+    GreaterPlace &gplace = greater_place_at(lvl_ix.second);
     if (verbosity >= 0) {
       printf("SWALLOWED_GREATER %d %d %d ", lvl_ix.first, lvl_ix.second.first, lvl_ix.second.second);
       std::cout << gplace << std::endl;
     }
+
+    gplace.hor = extended_hor;
+    if (added_vars.size() == 1) {
+      gplace.hor_ix = extended_hor_ix + 1;
+      gplace.ver_ix = IX_NULL;
+    } else {
+      gplace.hor_ix = extended_hor_ix;
+      gplace.ver_ix = added_vars.size() - 2;
+    }
+
+    if (verbosity >= 0) {
+      std::cout << "GPLACE_MOVED_TO " << gplace << std::endl;
+    }
+
     GreaterBackjumper *next_bjumper = NULL;
 
     for (; it != greater_backjumpers.rend(); it++) {
@@ -583,18 +613,6 @@ void Trie::onSat(Solver &S) {
     }
   }
 
-  if (ver_accept) {
-    HorHead &horhead = deref_ver();
-    horhead.accept_ix = GREATER_IX_NULL;
-    horhead.accept_level = last_but_max_level;
-    horhead.visit_level = last_but_max_level;
-  } else {
-    HorHead &horhead = hor->back_ptr.deref_ver();
-    horhead.accept_ix = GREATER_IX_NULL;
-    horhead.accept_level = last_but_max_level;
-    horhead.visit_level = last_but_max_level;
-  }
-
   S.cancelUntil(max_level);
 
   if (verbosity >= 2) printf("ACCEPT_LVL1 %d\n", last_but_max_level);
@@ -605,7 +623,7 @@ WhatToDo Place::after_hors_change(Solver &S) {
   if (hor_is_out()) return WhatToDo::DONE;
 
   unsigned out = deref_hor().tag;
-  if (verbosity >= 2) printf("OUTVER %d " L_LIT "\n", out, L_lit(S.outputs[out]));
+  if (verbosity >= 2) printf("OUTHOR %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -623,7 +641,7 @@ WhatToDo Place::after_vers_change(Solver &S) {
   HorHead &horhead = deref_ver();
   horhead.visit_level = S.decisionLevel();
   unsigned out = horhead.tag;
-  if (verbosity >= 2) printf("OUTHOR %d " L_LIT "\n", out, L_lit(S.outputs[out]));
+  if (verbosity >= 2) printf("OUTVER %d " L_LIT "\n", out, L_lit(S.outputs[out]));
   lbool val = S.value(S.outputs[out]);
 
   if (val == l_Undef) {
@@ -708,6 +726,16 @@ bool GreaterStackItem::handle(Solver &S) {
       GreaterPlace &greater = place.save_as_greater(S);
       if (TRIE_MODE == branch_always) {
         hor->elems[hor_ix].greater_ix = greater.ix;
+        if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
+
+        if (place.is_ver()) {
+          HorLine *hor2 = place.deref_ver().hor;
+          if (hor2 == NULL) return true;
+          S.trie.greater_stack.emplace_back(hor2, 0);
+        } else {
+          if (place.hor_ix + 1 == place.hor->elems.size()) return true;
+          S.trie.greater_stack.emplace_back(place.hor, place.hor_ix + 1);
+        }
       }
 
       return true;
@@ -716,6 +744,7 @@ bool GreaterStackItem::handle(Solver &S) {
       if (TRIE_MODE == branch_always) {
         GreaterPlace &greater = place.save_as_greater(S, false);
         hor->elems[hor_ix].greater_ix = greater.ix;
+        if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
         greater.accept_notify_horhead(S);
       }
       return true;
@@ -724,6 +753,7 @@ bool GreaterStackItem::handle(Solver &S) {
       GreaterPlace &greater = place.save_as_greater(S);
       if (TRIE_MODE == branch_always) {
         hor->elems[hor_ix].greater_ix = greater.ix;
+        if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
       }
       assert(S.enqueue(S.outputs[place.get_tag()], &greater));
 
@@ -865,7 +895,8 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
 bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) {
-    printf("PROP %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(p));
+    printf("PROP " L_LIT " ", L_lit(p));
+    std::cout << *this << std::endl;
   }
   if (sign(p)) {
     remove_watch_pos(S, ~p);
@@ -885,10 +916,12 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
           HorLine *hor2 = deref_ver().hor;
           if (hor2 == NULL) break;
           right_greater_ix = hor2->elems[0].greater_ix;
+          if (verbosity >= 2) printf("READ_RIGHT_IX1 %p %d %d %d\n", hor2, 0, right_greater_ix.first, right_greater_ix.second);
         }
         else {
           if (hor_ix + 1 == hor->elems.size()) break;
           right_greater_ix = hor->elems[hor_ix + 1].greater_ix;
+          if (verbosity >= 2) printf("READ_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix + 1, right_greater_ix.first, right_greater_ix.second);
         }
 
         GreaterPlace &right_greater = S.trie.greater_place_at(right_greater_ix);
@@ -923,6 +956,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   } else out_lit = S.outputs[tag];
   out_lit = S.outputs[tag];
 
+  if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
   return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, TRIE_MODE == branch_on_zero));
 }
 
@@ -976,6 +1010,7 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 }
 
 GreaterPlace& Trie::greater_place_at(GreaterIx ix) {
+  if (verbosity >= 2) printf("GREATER_PLACE_AT %d %d\n", ix.first, ix.second);
   return ix.first == IX_NULL
     ? root_greater_places[ix.second]
     : greater_backjumpers[ix.first].greater_places[ix.second];
@@ -1226,14 +1261,14 @@ std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
 }
 
 void Trie::print_places() {
-    std::cout << "LEAST_PLACE " << (Place &)(*this) << std::endl;
+    std::cout << "LEAST_PLACE " << (Place &)(*this) << " " << in_conflict() << std::endl;
     ITER_LOGLIST(root_greater_places, GreaterPlace, {
-      std::cout << "GREATER_PLACE -1 " << (Place &)x << " " << x.enabled << std::endl;
+      std::cout << "GREATER_PLACE -1 " << (Place &)x << " " << x.enabled << " " << x.in_conflict() << std::endl;
     })
     unsigned i = 0;
     for (GreaterBackjumper& backj: greater_backjumpers) {
       ITER_LOGLIST(backj.greater_places, GreaterPlace, {
-        std::cout << "GREATER_PLACE " << i << " " << (Place &)x << " " << x.enabled << std::endl;
+        std::cout << "GREATER_PLACE " << i << " " << (Place &)x << " " << x.enabled << " " << x.in_conflict() << std::endl;
       })
       ++i;
     }
