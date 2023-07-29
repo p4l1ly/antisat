@@ -484,7 +484,7 @@ void Trie::onSat(Solver &S) {
     ver_ix = added_vars.size() - 2;
   }
 
-  {
+  if (last_but_max_level >= 0) {
     HorHead &horhead = ver_accept ? deref_ver() : hor->back_ptr.deref_ver();
     horhead.accept_ix = new_acc_ix;
     horhead.accept_level = last_but_max_level;
