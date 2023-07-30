@@ -46,3 +46,4 @@ except AssertionError:
     print(name, end="")
     for line in valgrind_lines:
         print(line, end="")
+    raise SystemExit(1)
