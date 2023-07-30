@@ -1,4 +1,4 @@
-while read -r f do
+while read -r f; do
   echo -n $f' ';
 
   for mode in 3 2 1 0; do
