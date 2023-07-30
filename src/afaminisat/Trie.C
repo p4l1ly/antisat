@@ -996,19 +996,29 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     S.cancelUntil(max_level);
   }
   else {
-    ITER_MY_ZEROES(*this, x,
-        if (p == S.outputs[x]) goto p_found;
-        out_reason.push(~S.outputs[x]);
+    Place place(*this);
+    if (in_conflict()) place.ver_ix--;
+    else if (hor_is_out()) place.hor_ix--;
+    while (S.outputs[place.get_tag()] != p) {
+      if (place.is_ver()) {
+        place.ver_ix = IX_NULL;
+      }
+      if (place.hor_ix) {
+        place.hor_ix--;
+      } else {
+        place = place.hor->back_ptr;
+      }
+    }
+    ITER_MY_ZEROES(place, x,
+      out_reason.push(~S.outputs[x]);
     )
-    p_found:
 
     if (verbosity >= 2) {
-      printf("CALC_REASON_PLACE " L_LIT, L_lit(p));
-      ITER_MY_ZEROES(*this, x,
-          if (p == S.outputs[x]) goto p_found2;
+      printf("CALC_REASON_PLACE " L_LIT " ", L_lit(p));
+      std::cout << place << " " << *this;
+      ITER_MY_ZEROES(place, x,
           printf(" " L_LIT, L_lit(S.outputs[x]));
       )
-      p_found2:
       printf("\n");
     }
   }

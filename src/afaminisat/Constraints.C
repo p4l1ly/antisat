@@ -126,9 +126,9 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
         }
 
         // Store clause:
-        if (verbosity >= 2) printf("WATCHES_PUSH1 " L_LIT " %d %p\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c);
+        if (verbosity >= 2) printf("WATCHES_PUSH1 " L_LIT " %d %p %d\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c, S.value(~c->data[0]).toInt());
         S.watches[index(~c->data[0])].push(c);
-        if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d %p\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c);
+        if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d %p %d\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c, S.value(~c->data[1]).toInt());
         S.watches[index(~c->data[1])].push(c);
         out_clause = c;
 
@@ -180,9 +180,9 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     }
 
     // add watches
-    if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d %p\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c);
+    if (verbosity >= 2) printf("WATCHES_PUSH2 " L_LIT " %d %p %d\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c, S.value(~c->data[0]).toInt());
     S.watches[index(~c->data[0])].push(c);
-    if (verbosity >= 2) printf("WATCHES_PUSH3 " L_LIT " %d %p\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c);
+    if (verbosity >= 2) printf("WATCHES_PUSH3 " L_LIT " %d %p %d\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c, S.value(~c->data[1]).toInt());
     S.watches[index(~c->data[1])].push(c);
     out_clause = c;
     return false;
@@ -249,7 +249,7 @@ bool Clause::propagate(Solver& S, Lit p, bool& keep_watch)
     for (int i = 2; i < size(); i++){
         if (S.value(data[i]) != l_False){
             data[1] = data[i], data[i] = false_lit;
-            if (verbosity >= 2) printf("WATCHES_PUSH4 " L_LIT " %d %p\n", L_lit(~data[1]), S.watches[index(~data[1])].size(), this);
+            if (verbosity >= 2) printf("WATCHES_PUSH4 " L_LIT " %d %p %d\n", L_lit(~data[1]), S.watches[index(~data[1])].size(), this, S.value(~data[1]).toInt());
             S.watches[index(~data[1])].push(this);
             return true; } }
 
