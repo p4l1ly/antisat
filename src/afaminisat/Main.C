@@ -50,6 +50,8 @@ namespace cnfafa = automata_safa_capnp::model::cnf_afa;
 namespace mc = automata_safa_capnp::rpc::model_checker;
 namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
+int verbosity = -3;
+const int VERBOSE_FROM = -1;
 int port = 4002;
 
 bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
@@ -357,24 +359,26 @@ public:
                 printf("\n==================\n");
               }
 
+              if (solveCnt == VERBOSE_FROM) verbosity = 2;
+              if (verbosity >= 2) printf("SOLVING %d\n", solveCnt);
               if (verbosity >= 2) {
-                printf("SOLVING %d\n", solveCnt);
                 S.trie.print_places();
                 std::stringstream ss;
                 ss << "debug/trie" << solveCnt << ".dot";
                 string s;
                 ss >> s;
                 S.trie.to_dot(S, s.c_str());
-                solveCnt++;
               }
+              solveCnt++;
               st = S.solve(solver_input);
 
               delete cell;
 
               if (st) {
                   while (true) {
+                      if (solveCnt == VERBOSE_FROM) verbosity = 2;
+                      if (verbosity >= 2) printf("SOLVING_RESUME %d\n", solveCnt);
                       if (verbosity >= 2) {
-                        printf("SOLVING_RESUME %d\n", solveCnt);
                         S.trie.print_places();
 
                         std::stringstream ss;
@@ -382,8 +386,8 @@ public:
                         string s;
                         ss >> s;
                         S.trie.to_dot(S, s.c_str());
-                        solveCnt++;
                       }
+                      solveCnt++;
 
                       if (!S.resume()) break;
                       satCnt++;
@@ -492,7 +496,7 @@ int main(int argc, char** argv) {
           if (mc.modelCheck()) {
               std::cout << "EMPTY" << std::endl;
           } else {
-              std::cout << "NOT EMPTY" << std::endl;
+              std::cout << "NOT_EMPTY" << std::endl;
           }
           if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
         }

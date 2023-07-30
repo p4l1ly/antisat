@@ -551,6 +551,7 @@ void Trie::onSat(Solver &S) {
       gplace.hor_ix = extended_hor_ix;
       gplace.ver_ix = added_vars.size() - 2;
     }
+    GreaterBackjumper *original_last_change_backjumper = gplace.last_change_backjumper;
 
     if (verbosity >= 0) {
       std::cout << "GPLACE_MOVED_TO " << gplace << std::endl;
@@ -579,10 +580,12 @@ void Trie::onSat(Solver &S) {
             backjumper.changed_places.push_back({
               {extended_hor, extended_hor_ix, i - 1},
               lvl_ix.second,
-              gplace.last_change_backjumper
+              original_last_change_backjumper
             });
             if (next_bjumper) {
               next_bjumper->changed_places.back().last_change_backjumper = &backjumper;
+            } else {
+              gplace.last_change_backjumper = &backjumper;
             }
             next_bjumper = &backjumper;
           }
@@ -599,10 +602,12 @@ void Trie::onSat(Solver &S) {
             backjumper.changed_places.push_back({
               {extended_hor, extended_hor_ix, IX_NULL},
               lvl_ix.second,
-              gplace.last_change_backjumper
+              original_last_change_backjumper
             });
             if (next_bjumper) {
               next_bjumper->changed_places.back().last_change_backjumper = &backjumper;
+            } else {
+              gplace.last_change_backjumper = &backjumper;
             }
             next_bjumper = &backjumper;
           }
@@ -1113,6 +1118,12 @@ bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
   if (!S.trie.greater_backjumpers.empty()) {
     GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
     if (&last_backjumper != last_change_backjumper) {
+      if (verbosity >= 2) {
+        std::cout << "GREATER_BACKJUMPER_ENABLE3 "
+          << (last_change_backjumper ? last_change_backjumper->level : -1) << " "
+          << last_backjumper.level << " "
+          << *this << " " << ix.first << " " << ix.second << std::endl;
+      }
       last_backjumper.changed_places.emplace_back(*this, ix, last_change_backjumper);
       last_change_backjumper = &last_backjumper;
     }
@@ -1161,6 +1172,11 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
   for (ChangedGreaterPlace changed_place: changed_places) {
     GreaterPlace &gplace = trie.greater_place_at(changed_place.ix);
 
+    if (verbosity >= 2) {
+      std::cout << "CHANGED " << gplace << " " << changed_place.place
+        << " " << changed_place.ix.first << "," << changed_place.ix.second << "\n" << std::flush;
+    }
+
     if (gplace.enabled) {
       if (!gplace.in_conflict()) {
         gplace.remove_watch(S, gplace.get_tag());
@@ -1178,10 +1194,6 @@ void GreaterBackjumper::undo(Solver &S, Lit _p) {
       trie.last_greater = changed_place.ix;
     }
 
-    if (verbosity >= 2) {
-      std::cout << "CHANGED " << gplace << " " << gplace.ix.first << "," << gplace.ix.second 
-        << " " << changed_place.ix.first << "," << changed_place.ix.second << "\n" << std::flush;
-    }
     gplace.set_watch(S);
   }
 
