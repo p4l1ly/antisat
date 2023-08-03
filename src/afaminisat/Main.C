@@ -50,8 +50,8 @@ namespace cnfafa = automata_safa_capnp::model::cnf_afa;
 namespace mc = automata_safa_capnp::rpc::model_checker;
 namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
-int verbosity = -3;
-const int VERBOSE_FROM = -1;
+// int verbosity = -3;
+// const int VERBOSE_FROM = -1;
 int port = 4002;
 
 bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
@@ -359,7 +359,7 @@ public:
                 printf("\n==================\n");
               }
 
-              if (solveCnt == VERBOSE_FROM) verbosity = 2;
+              // if (solveCnt == VERBOSE_FROM) verbosity = 2;
               if (verbosity >= 2) printf("SOLVING %d\n", solveCnt);
               if (verbosity >= 2) {
                 S.trie.print_places();
@@ -376,7 +376,7 @@ public:
 
               if (st) {
                   while (true) {
-                      if (solveCnt == VERBOSE_FROM) verbosity = 2;
+                      // if (solveCnt == VERBOSE_FROM) verbosity = 2;
                       if (verbosity >= 2) printf("SOLVING_RESUME %d\n", solveCnt);
                       if (verbosity >= 2) {
                         S.trie.print_places();

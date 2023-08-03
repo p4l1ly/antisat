@@ -13,8 +13,7 @@ ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO = {};
 RemovedWatch REMOVED_WATCH = {};
 Mode TRIE_MODE = branch_on_zero;
 
-
-using std::cout;
+inline void check(bool expr) { assert(expr); }
 
 inline HorHead &Place::deref_ver() const {
   return hor->elems[hor_ix].hors[ver_ix];
@@ -112,13 +111,17 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
     if (verbosity >= 2) {
       printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, var(S.outputs[old_tag]));
     }
-    std::cout << std::flush; assert(watch_ix_pos >= 0);  // TODO only for assertion
+#ifdef MY_DEBUG
+    std::cout << std::flush; assert(watch_ix_pos >= 0);
+#endif
     if (watches.size() == watch_ix_pos + 1) {
       watches.pop();
     } else {
       watches[watch_ix_pos] = &REMOVED_WATCH;
     }
-    watch_ix_pos = -1;  // TODO only for assertion
+#ifdef MY_DEBUG
+    watch_ix_pos = -1;
+#endif
   }
 
   var_++;
@@ -127,14 +130,18 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
     if (verbosity >= 2) {
       printf("RemoveWatchNeg %d %d %d %d\n", var_, watches.size(), watch_ix_neg, var(S.outputs[old_tag]));
     }
-    std::cout << std::flush; assert(watch_ix_neg >= 0);  // TODO only for assertion
+#ifdef MY_DEBUG
+    std::cout << std::flush; assert(watch_ix_neg >= 0);
+#endif
     if (watches.size() == watch_ix_neg + 1) {
       watches.pop();
     } else {
       watches[watch_ix_neg] = &REMOVED_WATCH;
     }
   }
-  watch_ix_neg = -1;  // TODO only for assertion
+#ifdef MY_DEBUG
+  watch_ix_neg = -1;
+#endif
 }
 
 inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
@@ -142,13 +149,17 @@ inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
   if (verbosity >= 2) {
     printf("RemoveWatchPos2 %d %d %d\n", watches.size(), watch_ix_pos, var(lit));
   }
-  std::cout << std::flush; assert(watch_ix_pos >= 0);  // TODO only for assertion
+#ifdef MY_DEBUG
+  std::cout << std::flush; assert(watch_ix_pos >= 0);
+#endif
   if (watches.size() == watch_ix_pos + 1) {
     watches.pop();
   } else {
     watches[watch_ix_pos] = &REMOVED_WATCH;
   }
-  watch_ix_neg = -1;  // TODO only for assertion
+#ifdef MY_DEBUG
+  watch_ix_neg = -1;
+#endif
 }
 
 inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
@@ -156,13 +167,17 @@ inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
   if (verbosity >= 2) {
     printf("RemoveWatchNeg2 %d %d %d\n", watches.size(), watch_ix_neg, var(lit));
   }
-  std::cout << std::flush; assert(watch_ix_neg >= 0);  // TODO only for assertion
+#ifdef MY_DEBUG
+  std::cout << std::flush; assert(watch_ix_neg >= 0);
+#endif
   if (watches.size() == watch_ix_neg + 1) {
     watches.pop();
   } else {
     watches[watch_ix_neg] = &REMOVED_WATCH;
   }
-  watch_ix_neg = -1;  // TODO only for assertion
+#ifdef MY_DEBUG
+  watch_ix_neg = -1;
+#endif
 }
 
 WatchedPlace::WatchedPlace(HorLine *hor_)
@@ -760,7 +775,7 @@ bool GreaterStackItem::handle(Solver &S) {
         hor->elems[hor_ix].greater_ix = greater.ix;
         if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
       }
-      assert(S.enqueue(S.outputs[place.get_tag()], &greater));
+      check(S.enqueue(S.outputs[place.get_tag()], &greater));
 
       return true;
     }
@@ -877,7 +892,7 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     }
     case MultimoveEnd::E_PROPAGATE: {
       set_watch(S);
-      assert(S.enqueue(S.outputs[get_tag()], this));
+      check(S.enqueue(S.outputs[get_tag()], this));
       break;
     }
     default: {  // MultimoveEnd::E_CONFLICT
