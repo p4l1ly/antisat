@@ -139,41 +139,37 @@ struct GreaterPlace : public WatchedPlace {
   GreaterIx my_greater_ix() { return ix; }
 };
 
-struct GreaterBackjumper : Undoable {
+struct GreaterBackjumper {
   Place least_place;
   bool least_enabled;
-  int level;
+  bool is_acc;
   LogList<GreaterPlace> greater_places;
   vector<ChangedGreaterPlace> changed_places;
 
-  GreaterBackjumper(int level_)
+  GreaterBackjumper()
   : greater_places()
   , changed_places()
-  , level(level_)
   , least_enabled(false)
+  , is_acc(false)
   {}
 
-  GreaterBackjumper(Place least_place_, int level_) noexcept
+  GreaterBackjumper(Place least_place_) noexcept
   : greater_places()
   , changed_places()
-  , level(level_)
   , least_place{least_place_}
   , least_enabled(true)
+  , is_acc(false)
   {}
 
   GreaterBackjumper(GreaterBackjumper&& old) noexcept
   : least_place(old.least_place)
   , least_enabled(old.least_enabled)
-  , level(old.level)
   , greater_places(std::move(old.greater_places))
-  , changed_places(std::move(old.changed_places)) {
-  }
+  , changed_places(std::move(old.changed_places))
+  , is_acc(false)
+  {}
 
   GreaterBackjumper(GreaterBackjumper& old) = delete;
-
-  void undo(Solver &S, Lit _p);
-
-  void jump_least(Solver &S);
 };
 
 
@@ -239,10 +235,8 @@ struct RemovedWatch : public Constr {
 };
 
 
-struct ActiveVarDoneUndo : public Undoable { void undo(Solver &S, Lit _p); };
 enum Mode { clauses, dnf, branch_on_zero, branch_always };
 
-extern ActiveVarDoneUndo ACTIVE_VAR_DONE_UNDO;
 extern RemovedWatch REMOVED_WATCH;
 extern Mode TRIE_MODE;
 
