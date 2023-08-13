@@ -61,8 +61,9 @@ inline void WatchedPlace::accept_notify_horhead(Solver& S) {
   } else {
     Place back = hor->back_ptr;
     if (back.hor == NULL) {
-      S.trie.root_accept_ix = my_greater_ix();
-      S.trie.root_accept_level = S.decisionLevel();
+      Trie &trie = S.trie;
+      trie.root_accept_ix = my_greater_ix();
+      trie.root_accept_level = S.decisionLevel();
       if (verbosity >= 2) { std::cout << "FIRST_ACCEPT2" << std::endl; }
     } else {
       HorHead &horhead = back.deref_ver();
@@ -214,7 +215,14 @@ Lit Trie::guess(Solver &S) {
     Lit out_lit = S.outputs[tag];
 
     if (verbosity >= 2) std::cout << "GREATER_PUSH1 " << S.decisionLevel() << " " << *this << std::endl;
-    greater_backjumpers.emplace_back(*this);
+
+    GreaterBackjumper &backj = new_backjumper();
+    backj.greater_places.clear_nodestroy();
+    backj.changed_places.clear();
+    backj.is_acc = false;
+    backj.least_enabled = true;
+    backj.least_place = *this;
+
     S.undos[var(out_lit)].push(this);
 
     if (verbosity >= 2) {
@@ -236,7 +244,13 @@ Lit Trie::guess(Solver &S) {
     }
     Lit out_lit = S.outputs[tag];
     if (verbosity >= 2) std::cout << "GREATER_PUSH2 " << S.decisionLevel() << (L_lit(out_lit)) << std::endl;
-    greater_backjumpers.emplace_back();
+
+    GreaterBackjumper &backj = new_backjumper();
+    backj.greater_places.clear_nodestroy();
+    backj.changed_places.clear();
+    backj.is_acc = false;
+    backj.least_enabled = false;
+
     S.undos[var(out_lit)].push(this);
     return out_lit;
   }
@@ -248,7 +262,13 @@ Lit Trie::guess(Solver &S) {
       Lit p = S.outputs[active_var];
       if (S.value(p) == l_Undef) {
         if (verbosity >= 2) printf("GUESS_ACC %d " L_LIT "\n", active_var, L_lit(p));
-        greater_backjumpers.emplace_back().is_acc = true;
+
+        GreaterBackjumper &backj = new_backjumper();
+        backj.greater_places.clear_nodestroy();
+        backj.changed_places.clear();
+        backj.is_acc = true;
+        backj.least_enabled = false;
+
         S.undos[var(p)].push(this);
         back_ptrs[active_var] = active_var_old;
         active_var++;
@@ -455,31 +475,6 @@ void Trie::onSat(Solver &S) {
     acc_ix = gplace.swallow_ix;
   }
 
-  vector<GreaterBackjumper> new_backjumpers;
-
-  // if (added_vars.size() > 1) {
-  //   for (unsigned acc_ptr = active_var_old; acc_ptr--; acc_ptr = back_ptrs[acc_ptr]) {
-  //     int lvl = S.level[var(S.outputs[acc_ptr])];
-
-  //     // How could this be even possible? If the new branch is added, the list
-  //     // of the guessed variables does not get fully erased in the conflict
-  //     // triggered by the new branch.
-  //     if (lvl <= acc_level) break;
-
-  //     // We don't set the backjumper to the last added var because it will be
-  //     // jumped over yet in onSatConflict.
-  //     if (added_vars[added_vars.size() - 2].first >= lvl) {
-  //       new_backjumpers.emplace_back(lvl);
-  //     }
-  //   }
-  // }
-
-  // while (!new_backjumpers.empty()) {
-  //   if (verbosity >= 2) std::cout << "GREATER_PUSH3 " << new_backjumpers.back().level << " " << std::endl;
-  //   greater_backjumpers.push_back(std::move(new_backjumpers.back()));
-  //   new_backjumpers.pop_back();
-  // }
-
   // (Not so special edge case, read: Why is the lowest place skipped)
   // We need to be in an accepting state because we don't watch anything.
   // Moreover, there's one special edge case where no backjumper and no reset
@@ -681,7 +676,7 @@ WhatToDo Place::after_vers_change(Solver &S) {
 GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
   Trie &trie = S.trie;
 
-  unsigned backj_size = trie.greater_backjumpers.size();
+  unsigned backj_size = trie.backjumper_count;
   GreaterIx last_greater = trie.last_greater;
   if (backj_size == 0) {
     GreaterIx ix = pair(IX_NULL, trie.root_greater_places.size());
@@ -698,7 +693,7 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
     }
     return place;
   } else {
-    GreaterBackjumper &last_backj = trie.greater_backjumpers.back();
+    GreaterBackjumper &last_backj = trie.get_last_backjumper();
     GreaterIx ix = pair(backj_size - 1, last_backj.greater_places.size());
     ChangedGreaterPlace changed_place = {*this, ix, S.decisionLevel()};
     GreaterPlace &place = last_backj.greater_places.push_back(GreaterPlace(changed_place, last_greater));
@@ -873,6 +868,8 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   MultimoveEnd end = multimove_on_propagate(S, what_to_do);
 
+  Trie &trie = S.trie;
+
   switch (end) {
     case MultimoveEnd::E_WATCH: {
       set_watch(S);
@@ -880,10 +877,10 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
         if (is_ver()) {
           HorLine *hor2 = deref_ver().hor;
           if (hor2 == NULL) break;
-          S.trie.greater_stack.emplace_back(hor2, 0);
+          trie.greater_stack.emplace_back(hor2, 0);
         } else {
           if (hor_ix + 1 == hor->elems.size()) break;
-          S.trie.greater_stack.emplace_back(hor, hor_ix + 1);
+          trie.greater_stack.emplace_back(hor, hor_ix + 1);
         }
       }
       break;
@@ -899,16 +896,16 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       break;
     }
     default: {  // MultimoveEnd::E_CONFLICT
-      S.trie.greater_stack.clear();
+      trie.greater_stack.clear();
       return false;
     }
   }
 
-  while (!S.trie.greater_stack.empty()) {
-    GreaterStackItem gsi = S.trie.greater_stack.back();
-    S.trie.greater_stack.pop_back();
+  while (!trie.greater_stack.empty()) {
+    GreaterStackItem gsi = trie.greater_stack.back();
+    trie.greater_stack.pop_back();
     if (!gsi.handle(S)) {
-      S.trie.greater_stack.clear();
+      trie.greater_stack.clear();
       return false;
     }
   }
@@ -930,6 +927,8 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   unsigned tag = get_tag();
   Lit out_lit;
   if (TRIE_MODE == branch_always) {
+    Trie& trie = S.trie;
+
     while (true) {
       out_lit = S.outputs[tag];
       lbool value = S.value(out_lit);
@@ -947,7 +946,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
           if (verbosity >= 2) printf("READ_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix + 1, right_greater_ix.first, right_greater_ix.second);
         }
 
-        GreaterPlace &right_greater = S.trie.greater_place_at(right_greater_ix);
+        GreaterPlace &right_greater = trie.greater_place_at(right_greater_ix);
         if (verbosity >= 2) std::cout << "JUMP_RIGHT " << right_greater << std::endl;
         *(Place *)this = right_greater;
 
@@ -955,10 +954,10 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
         right_greater.swallow_level = S.decisionLevel();
 
         if (right_greater.enabled) {
-          if (!S.trie.greater_backjumpers.empty()) {
+          if (trie.backjumper_count) {
             int level = S.decisionLevel();
             if (level != right_greater.last_change_level) {
-              GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
+              GreaterBackjumper &last_backjumper = trie.get_last_backjumper();
               last_backjumper.changed_places.emplace_back(right_greater, right_greater.ix, right_greater.last_change_level);
               right_greater.last_change_level = level;
             }
@@ -986,7 +985,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 
 
 void Trie::undo(Solver& S, Lit p) {
-  if (verbosity >= 2) printf("UNDO %d %d %lu\n", S.decisionLevel(), S.root_level, greater_backjumpers.size());
+  if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, backjumper_count);
   if (active_var > var_count) {
     if (verbosity >= 2) {
       printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(S.outputs[active_var_old]));
@@ -997,7 +996,7 @@ void Trie::undo(Solver& S, Lit p) {
     return;
   }
 
-  GreaterBackjumper &backj = greater_backjumpers.back();
+  GreaterBackjumper &backj = get_last_backjumper();
   if (backj.is_acc) {
     active_var--;
     if (verbosity >= 2) {
@@ -1079,7 +1078,19 @@ void Trie::undo(Solver& S, Lit p) {
     gplace.set_watch(S);
   }
 
-  greater_backjumpers.pop_back();
+  --backjumper_count;
+}
+
+
+GreaterBackjumper& Trie::new_backjumper() {
+  unsigned ix = backjumper_count;
+  ++backjumper_count;
+
+  if (ix == greater_backjumpers.size()) {
+    return greater_backjumpers.emplace_back();
+  } else {
+    return greater_backjumpers[ix];
+  }
 }
 
 
@@ -1153,7 +1164,7 @@ bool Trie::reset(Solver &S) {
       greater_ix = gplace.previous;
     }
   }
-  root_greater_places.clear();
+  root_greater_places.clear_nodestroy();
   last_greater = GREATER_IX_NULL;
 
   hor = &root;
@@ -1207,7 +1218,8 @@ void GreaterPlace::on_accept(Solver &S) {
 
 
 bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
-  if (!S.trie.greater_backjumpers.empty()) {
+  Trie& trie = S.trie;
+  if (trie.backjumper_count) {
     int level = S.decisionLevel();
     if (level != last_change_level) {
       if (verbosity >= 2) {
@@ -1215,7 +1227,7 @@ bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
           << level << " " << last_change_level << " "
           << *this << " " << ix.first << " " << ix.second << std::endl;
       }
-      S.trie.greater_backjumpers.back().changed_places.emplace_back(*this, ix, last_change_level);
+      trie.get_last_backjumper().changed_places.emplace_back(*this, ix, last_change_level);
       last_change_level = level;
     }
   }

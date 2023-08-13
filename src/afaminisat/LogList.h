@@ -65,8 +65,11 @@ public:
     ++_size;
     return ref;
   }
-  void clear() {  // TODO clear is not used in Trie
+  void clear() {
     ITER_LOGLIST(*this, T, x.~T(););
+    _size = 0;
+  }
+  inline void clear_nodestroy() {
     _size = 0;
   }
   uint32_t size() { return _size; }

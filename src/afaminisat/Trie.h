@@ -144,20 +144,7 @@ struct GreaterBackjumper {
   LogList<GreaterPlace> greater_places;
   vector<ChangedGreaterPlace> changed_places;
 
-  GreaterBackjumper()
-  : greater_places()
-  , changed_places()
-  , least_enabled(false)
-  , is_acc(false)
-  {}
-
-  GreaterBackjumper(Place least_place_) noexcept
-  : greater_places()
-  , changed_places()
-  , least_place{least_place_}
-  , least_enabled(true)
-  , is_acc(false)
-  {}
+  GreaterBackjumper() : greater_places(), changed_places() {}
 
   GreaterBackjumper(GreaterBackjumper&& old) noexcept
   : least_place(old.least_place)
@@ -269,7 +256,15 @@ public:
 
   unsigned active_var = 0;
   unsigned active_var_old = 0;
+
+  unsigned backjumper_count = 0;
   std::vector<GreaterBackjumper> greater_backjumpers;
+
+  GreaterBackjumper &get_last_backjumper() {
+    return greater_backjumpers[backjumper_count - 1];
+  }
+
+  GreaterBackjumper& new_backjumper();
 
   Place to_cut;
 
