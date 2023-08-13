@@ -3,7 +3,6 @@
 
 #include <limits>
 #include <vector>
-#include <deque>
 #include <unordered_set>
 #include <utility>
 #include <fstream>
@@ -14,7 +13,6 @@
 
 class Solver;
 
-using std::deque;
 using std::pair;
 using std::vector;
 using std::unordered_set;
@@ -119,13 +117,13 @@ struct GreaterBackjumper;
 struct ChangedGreaterPlace {
   Place place;
   GreaterIx ix;
-  GreaterBackjumper *last_change_backjumper;
+  int last_change_level;
 };
 
 struct GreaterPlace : public WatchedPlace {
   GreaterIx ix;
   bool enabled = true;
-  GreaterBackjumper *last_change_backjumper;
+  int last_change_level;
   GreaterIx previous, next;
 
   GreaterIx swallow_ix;
@@ -166,7 +164,7 @@ struct GreaterBackjumper {
   , least_enabled(old.least_enabled)
   , greater_places(std::move(old.greater_places))
   , changed_places(std::move(old.changed_places))
-  , is_acc(false)
+  , is_acc(old.is_acc)
   {}
 
   GreaterBackjumper(GreaterBackjumper& old) = delete;
@@ -271,7 +269,7 @@ public:
 
   unsigned active_var = 0;
   unsigned active_var_old = 0;
-  deque<GreaterBackjumper> greater_backjumpers;
+  std::vector<GreaterBackjumper> greater_backjumpers;
 
   Place to_cut;
 

@@ -407,6 +407,7 @@ void Trie::onSat(Solver &S) {
   // Why is this so complicated? Shouldn't that always be just the added_var
   // immediately before the guessed added var? No because guessed variables are
   // of course not in added_vars, as they are 1-valued.
+
   vector<pair<int, GreaterIx>> swallow_line;
   GreaterIx new_acc_ix = GREATER_IX_NULL;
 
@@ -415,16 +416,13 @@ void Trie::onSat(Solver &S) {
 
     LogList<GreaterPlace> *incomplete_greater_places;
     unsigned incomplete_backjumper_ix;
-    GreaterBackjumper *incomplete_backjumper;
 
     if (visit_level <= S.root_level) {
       incomplete_greater_places = &root_greater_places;
       incomplete_backjumper_ix = IX_NULL;
-      incomplete_backjumper = NULL;
     } else {
       incomplete_backjumper_ix = visit_level - S.root_level - 1;
-      incomplete_backjumper = &greater_backjumpers[incomplete_backjumper_ix];
-      incomplete_greater_places = &incomplete_backjumper->greater_places;
+      incomplete_greater_places = &greater_backjumpers[incomplete_backjumper_ix].greater_places;
     }
 
     GreaterIx completion_ix(incomplete_backjumper_ix, incomplete_greater_places->size());
@@ -437,7 +435,7 @@ void Trie::onSat(Solver &S) {
         ChangedGreaterPlace{
           {extended_hor, extended_hor_ix, IX_NULL},
           completion_ix,
-          incomplete_backjumper,
+          visit_level,
         },
         GREATER_IX_NULL,
         false
@@ -482,8 +480,6 @@ void Trie::onSat(Solver &S) {
   //   new_backjumpers.pop_back();
   // }
 
-  unsigned i = added_vars.size();
-
   // (Not so special edge case, read: Why is the lowest place skipped)
   // We need to be in an accepting state because we don't watch anything.
   // Moreover, there's one special edge case where no backjumper and no reset
@@ -508,46 +504,54 @@ void Trie::onSat(Solver &S) {
     horhead.visit_level = last_but_max_level;
   }
 
-  int iter = greater_backjumpers.size();  // TODO start with the backjumper that would get enabled
-  while (iter) {
-    int lvl = iter + S.root_level;
-    if (lvl <= acc_level) break;
-    iter--;
-    GreaterBackjumper &backjumper = greater_backjumpers[iter];
-    if (verbosity >= 0) printf("GLVL1 %d\n", lvl);
+  unsigned i = added_vars.size();
+  bool populate_backjumpers = i != 1;
+  int iter, lvl;
 
-    while (true) {
-      const std::pair<int, unsigned>& added_var = added_vars[i - 1];
-      if (added_var.first < lvl) {
-        // We don't set the backjumper to the last added var because it will be
-        // jumped over yet in onSatConflict.
-        if (i + 1 < added_vars.size()) {
-          if (verbosity >= 2) {
-            printf("LEAST_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+  if (populate_backjumpers) {
+    i -= 2;
+    lvl = added_vars[i].first;
+    if (lvl < S.root_level) {
+      populate_backjumpers = false;
+      goto after_least;
+    }
+    iter = lvl - S.root_level;
+
+    for (; iter; lvl--) {
+      if (lvl <= acc_level) break;
+      --iter;
+      GreaterBackjumper &backjumper = greater_backjumpers[iter];
+      if (verbosity >= 0) printf("GLVL1 %d\n", lvl);
+
+      for (; i; --i) {
+        if (verbosity >= 0) printf("I %d\n", i - 1);
+        const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+        if (added_var.first < lvl) {
+          // We don't set the backjumper to the last added var because it will be
+          // jumped over yet in onSatConflict.
+          if (i + 1 < added_vars.size()) {
+            if (verbosity >= 2) {
+              printf("LEAST_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+            }
+            backjumper.least_enabled = true;
+            backjumper.least_place = {extended_hor, extended_hor_ix, i - 1};
           }
-          backjumper.least_enabled = true;
-          backjumper.least_place = {extended_hor, extended_hor_ix, i - 1};
+          goto continue_least;
         }
-        break;
       }
-
-      if (verbosity >= 0) printf("I %d\n", i - 1);
 
       // If there is no added_var before the guessed variable, set its backjumper to the
       // start of the added branch.
-      if (i == 1) {
-        if (1 != added_vars.size()) {
-          if (verbosity >= 2) {
-            printf("LEAST_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
-          }
-          backjumper.least_enabled = true;
-          backjumper.least_place = {extended_hor, extended_hor_ix, IX_NULL};
-        }
-        break;
+      if (verbosity >= 2) {
+        printf("LEAST_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
       }
-      i--;
+      backjumper.least_enabled = true;
+      backjumper.least_place = {extended_hor, extended_hor_ix, IX_NULL};
+
+continue_least: ;
     }
   }
+after_least:
 
   for (
     auto swallow_line_it = swallow_line.rbegin();
@@ -569,70 +573,65 @@ void Trie::onSat(Solver &S) {
       gplace.hor_ix = extended_hor_ix;
       gplace.ver_ix = added_vars.size() - 2;
     }
-    GreaterBackjumper *original_last_change_backjumper = gplace.last_change_backjumper;
-
     if (verbosity >= 0) {
       std::cout << "GPLACE_MOVED_TO " << gplace << std::endl;
     }
 
-    GreaterBackjumper *next_bjumper = NULL;
+    if (populate_backjumpers) {
+      int original_last_change_level = gplace.last_change_level;
+      GreaterBackjumper *next_bjumper = NULL;
 
-    while (iter) {
-      int lvl = iter + S.root_level;
-      if (lvl <= lvl_ix.first) break;
-      iter--;
-      GreaterBackjumper &backjumper = greater_backjumpers[iter];
-      if (verbosity >= 0) printf("GLVL2 %d/%d\n", lvl, S.root_level);
+      for (; iter; lvl--) {
+        if (lvl <= lvl_ix.first) break;
+        --iter;
+        GreaterBackjumper &backjumper = greater_backjumpers[iter];
+        if (verbosity >= 0) printf("GLVL2 %d/%d\n", lvl, S.root_level);
 
-      while (true) {
-        const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+        for (; i; --i) {
+          const std::pair<int, unsigned>& added_var = added_vars[i - 1];
 
-        if (verbosity >= 0) printf("I %d " L_LIT " %d\n", i - 1, L_lit(S.outputs[added_var.second]), added_var.first);
+          if (verbosity >= 0) printf("I %d " L_LIT " %d\n", i - 1, L_lit(S.outputs[added_var.second]), added_var.first);
 
-        if (added_var.first < lvl) {
-          // We don't set the backjumper to the last added var because it will be
-          // jumped over yet in onSatConflict.
-          if (i + 1 < added_vars.size()) {
-            if (verbosity >= 2) {
-              printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+          if (added_var.first < lvl) {
+            // We don't set the backjumper to the last added var because it will be
+            // jumped over yet in onSatConflict.
+            if (i + 1 < added_vars.size()) {
+              if (verbosity >= 2) {
+                printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+              }
+              backjumper.changed_places.push_back({
+                {extended_hor, extended_hor_ix, i - 1},
+                lvl_ix.second,
+                original_last_change_level
+              });
+              if (next_bjumper) {
+                next_bjumper->changed_places.back().last_change_level = lvl;
+              } else {
+                gplace.last_change_level = lvl;
+              }
+              next_bjumper = &backjumper;
             }
-            backjumper.changed_places.push_back({
-              {extended_hor, extended_hor_ix, i - 1},
-              lvl_ix.second,
-              original_last_change_backjumper
-            });
-            if (next_bjumper) {
-              next_bjumper->changed_places.back().last_change_backjumper = &backjumper;
-            } else {
-              gplace.last_change_backjumper = &backjumper;
-            }
-            next_bjumper = &backjumper;
+            goto continue_greater;
           }
-          break;
         }
 
         // If there is no added_var before the guessed variable, set its backjumper to the
         // start of the added branch.
-        if (i == 1) {
-          if (1 != added_vars.size()) {
-            if (verbosity >= 2) {
-              printf("GREATER_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
-            }
-            backjumper.changed_places.push_back({
-              {extended_hor, extended_hor_ix, IX_NULL},
-              lvl_ix.second,
-              original_last_change_backjumper
-            });
-            if (next_bjumper) {
-              next_bjumper->changed_places.back().last_change_backjumper = &backjumper;
-            } else {
-              gplace.last_change_backjumper = &backjumper;
-            }
-            next_bjumper = &backjumper;
-          }
-          break;
+        if (verbosity >= 2) {
+          printf("GREATER_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
         }
-        i--;
+        backjumper.changed_places.push_back({
+          {extended_hor, extended_hor_ix, IX_NULL},
+          lvl_ix.second,
+          original_last_change_level
+        });
+        if (next_bjumper) {
+          next_bjumper->changed_places.back().last_change_level = lvl;
+        } else {
+          gplace.last_change_level = lvl;
+        }
+        next_bjumper = &backjumper;
+continue_greater: ;
       }
     }
   }
@@ -686,7 +685,7 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
   GreaterIx last_greater = trie.last_greater;
   if (backj_size == 0) {
     GreaterIx ix = pair(IX_NULL, trie.root_greater_places.size());
-    ChangedGreaterPlace changed_place = {*this, ix, NULL};
+    ChangedGreaterPlace changed_place = {*this, ix, S.decisionLevel()};
     GreaterPlace &place = trie.root_greater_places.push_back(GreaterPlace(changed_place, last_greater));
     if (enabled) {
       if (trie.last_greater.second != IX32_NULL) {
@@ -701,7 +700,7 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
   } else {
     GreaterBackjumper &last_backj = trie.greater_backjumpers.back();
     GreaterIx ix = pair(backj_size - 1, last_backj.greater_places.size());
-    ChangedGreaterPlace changed_place = {*this, ix, &last_backj};
+    ChangedGreaterPlace changed_place = {*this, ix, S.decisionLevel()};
     GreaterPlace &place = last_backj.greater_places.push_back(GreaterPlace(changed_place, last_greater));
     if (enabled) {
       if (last_greater.second != IX32_NULL) {
@@ -957,10 +956,11 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 
         if (right_greater.enabled) {
           if (!S.trie.greater_backjumpers.empty()) {
-            GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
-            if (&last_backjumper != right_greater.last_change_backjumper) {
-              last_backjumper.changed_places.emplace_back(right_greater, right_greater.ix, right_greater.last_change_backjumper);
-              right_greater.last_change_backjumper = &last_backjumper;
+            int level = S.decisionLevel();
+            if (level != right_greater.last_change_level) {
+              GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
+              last_backjumper.changed_places.emplace_back(right_greater, right_greater.ix, right_greater.last_change_level);
+              right_greater.last_change_level = level;
             }
           }
 
@@ -1064,11 +1064,11 @@ void Trie::undo(Solver& S, Lit p) {
         gplace.remove_watch(S, gplace.get_tag());
       }
       (Place &)gplace = changed_place.place;
-      gplace.last_change_backjumper = changed_place.last_change_backjumper;
+      gplace.last_change_level = changed_place.last_change_level;
     } else {
       (Place &)gplace = changed_place.place;
       gplace.enabled = true;
-      gplace.last_change_backjumper = changed_place.last_change_backjumper;
+      gplace.last_change_level = changed_place.last_change_level;
 
       gplace.previous = last_greater;
       gplace.next = GREATER_IX_NULL;
@@ -1179,7 +1179,7 @@ GreaterPlace::GreaterPlace(
 )
 : WatchedPlace(changed_place.place)
 , ix(changed_place.ix)
-, last_change_backjumper(changed_place.last_change_backjumper)
+, last_change_level(changed_place.last_change_level)
 , previous(previous_)
 , next(GREATER_IX_NULL)
 { }
@@ -1189,7 +1189,7 @@ GreaterPlace::GreaterPlace(
 )
 : WatchedPlace(changed_place.place)
 , ix(changed_place.ix)
-, last_change_backjumper(changed_place.last_change_backjumper)
+, last_change_level(changed_place.last_change_level)
 , previous(previous_)
 , next(GREATER_IX_NULL)
 , enabled(enabled_)
@@ -1208,15 +1208,15 @@ void GreaterPlace::on_accept(Solver &S) {
 
 bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
   if (!S.trie.greater_backjumpers.empty()) {
-    GreaterBackjumper &last_backjumper = S.trie.greater_backjumpers.back();
-    if (&last_backjumper != last_change_backjumper) {
+    int level = S.decisionLevel();
+    if (level != last_change_level) {
       if (verbosity >= 2) {
         std::cout << "GREATER_BACKJUMPER_ENABLE3 "
-          << (last_change_backjumper ? 1 : -1) << " "
+          << level << " " << last_change_level << " "
           << *this << " " << ix.first << " " << ix.second << std::endl;
       }
-      last_backjumper.changed_places.emplace_back(*this, ix, last_change_backjumper);
-      last_change_backjumper = &last_backjumper;
+      S.trie.greater_backjumpers.back().changed_places.emplace_back(*this, ix, last_change_level);
+      last_change_level = level;
     }
   }
   return WatchedPlace::propagate(S, p, keep_watch);

@@ -44,7 +44,9 @@ public:
   LogList(LogList&& old) noexcept
   : _size(old._size)
   , _stages(std::move(old._stages))
-  {};
+  {
+    old._size = 0;
+  }
 
   LogList(LogList& old) = delete;
 
