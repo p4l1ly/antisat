@@ -251,7 +251,7 @@ public:
         for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        S.trie.init(S.outputs.size());
+        S.trie.init(S.outputs);
         switch (mode) {
           case '0': TRIE_MODE = clauses; break;
           case '1': TRIE_MODE = dnf; break;

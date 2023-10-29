@@ -22,7 +22,7 @@ inline VerHead &Place::deref_hor() const {
   return hor->elems[hor_ix];
 }
 
-inline unsigned Place::get_tag() const {
+inline Lit Place::get_tag() const {
   return ver_ix == IX_NULL ? deref_hor().tag : deref_ver().tag;
 }
 
@@ -76,9 +76,9 @@ inline void WatchedPlace::accept_notify_horhead(Solver& S) {
 
 inline void WatchedPlace::set_watch(Solver &S) {
   if (verbosity >= 2) {
-    printf("WATCHING " L_LIT "\n", L_lit(S.outputs[get_tag()]));
+    printf("WATCHING " L_LIT "\n", L_lit(get_tag()));
   }
-  int var_ = var(S.outputs[get_tag()]);
+  int var_ = var(get_tag());
   var_ += var_;
   {
     vec<Constr*> &watches = S.watches[var_];
@@ -103,13 +103,13 @@ void WatchedPlace::moveWatch(int i, Lit p) {
 }
 
 
-inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
-  int var_ = var(S.outputs[old_tag]);
+inline void WatchedPlace::remove_watch(Solver &S, Lit old_tag) {
+  int var_ = var(old_tag);
   var_ += var_;
   {
     vec<Constr*> &watches = S.watches[var_];
     if (verbosity >= 2) {
-      printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, var(S.outputs[old_tag]));
+      printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, var(old_tag));
     }
 #ifdef MY_DEBUG
     std::cout << std::flush; assert(watch_ix_pos >= 0);
@@ -128,7 +128,7 @@ inline void WatchedPlace::remove_watch(Solver &S, unsigned old_tag) {
   {
     vec<Constr*> &watches = S.watches[var_];
     if (verbosity >= 2) {
-      printf("RemoveWatchNeg %d %d %d %d\n", var_, watches.size(), watch_ix_neg, var(S.outputs[old_tag]));
+      printf("RemoveWatchNeg %d %d %d %d\n", var_, watches.size(), watch_ix_neg, var(old_tag));
     }
 #ifdef MY_DEBUG
     std::cout << std::flush; assert(watch_ix_neg >= 0);
@@ -196,23 +196,25 @@ Trie::Trie()
 : WatchedPlace(&root)
 , root{{NULL, 0, 0}, vector<VerHead>()}
 , root_greater_places()
-, var_count()
+, my_literals()
 , back_ptrs()
 , greater_backjumpers()
 , greater_stack()
 , to_cut{NULL}
 { }
 
-void Trie::init(unsigned var_count_) {
-  var_count = var_count_;
-  back_ptrs.resize(var_count_);
-  greater_stack.reserve(var_count_);
+void Trie::init(const vec<Lit> &my_literals_) {
+  my_literals.reserve(my_literals_.size());
+  for (int i = 0; i < my_literals_.size(); i++) {
+    my_literals.push_back(my_literals_[i]);
+  }
+  back_ptrs.resize(my_literals_.size());
+  greater_stack.reserve(my_literals_.size());
 }
 
 Lit Trie::guess(Solver &S) {
   if (!ver_accept && !hor_is_out()) {
-    unsigned tag = get_tag();
-    Lit out_lit = S.outputs[tag];
+    Lit out_lit = get_tag();
 
     if (verbosity >= 2) std::cout << "GREATER_PUSH1 " << S.decisionLevel() << " " << *this << std::endl;
 
@@ -226,23 +228,18 @@ Lit Trie::guess(Solver &S) {
     S.undos[var(out_lit)].push(this);
 
     if (verbosity >= 2) {
-      printf(
-          "GUESS_%s %d " L_LIT " ",
-          is_ver() ? "VER" : "HOR",
-          tag, L_lit(out_lit)
-      );
+      printf("GUESS_%s " L_LIT " ", is_ver() ? "VER" : "HOR", L_lit(out_lit));
       std::cout << *this << std::endl;
     }
     return out_lit;
   }
   else if (last_greater.second != IX32_NULL) {
     GreaterPlace &gplace = greater_place_at(last_greater);
-    unsigned tag = gplace.get_tag();
+    Lit out_lit = gplace.get_tag();
     if (verbosity >= 2) {
       std::cout << "GUESS_GREATER " << gplace << " ";
-      printf(L_LIT "\n", L_lit(S.outputs[tag]));
+      printf(L_LIT "\n", L_lit(out_lit));
     }
-    Lit out_lit = S.outputs[tag];
     if (verbosity >= 2) std::cout << "GREATER_PUSH2 " << S.decisionLevel() << (L_lit(out_lit)) << std::endl;
 
     GreaterBackjumper &backj = new_backjumper();
@@ -255,11 +252,11 @@ Lit Trie::guess(Solver &S) {
     return out_lit;
   }
   else {
-    if (active_var >= var_count) return lit_Undef;
+    if (active_var >= my_literals.size()) return lit_Undef;
     active_var_old = active_var;
 
-    while (active_var < var_count) {
-      Lit p = S.outputs[active_var];
+    do {
+      Lit p = my_literals[active_var];
       if (S.value(p) == l_Undef) {
         if (verbosity >= 2) printf("GUESS_ACC %d " L_LIT "\n", active_var, L_lit(p));
 
@@ -275,7 +272,8 @@ Lit Trie::guess(Solver &S) {
         return p;
       }
       active_var++;
-    }
+    } while (active_var < my_literals.size());
+
     active_var++;
     S.undos[var(S.trail.last())].push(this);
     if (verbosity >= 2) printf("noguess %d\n", active_var_old);
@@ -286,10 +284,10 @@ Lit Trie::guess(Solver &S) {
 void Trie::onSat(Solver &S) {
   if (verbosity >= 2) std::cout << "ON_SAT " << *this << std::endl;
 
-  unordered_set<unsigned> my_zeroes_set;
+  unordered_set<int> my_zeroes_set;
 
   ITER_MY_ZEROES(*this, x,
-      my_zeroes_set.insert(x);
+      my_zeroes_set.insert(index(x));
   )
 
   // max level of added_vars+my_zeroes
@@ -298,21 +296,21 @@ void Trie::onSat(Solver &S) {
 
   // added_vars are (level, variable) pairs, of zero variables added in the
   // accepting condition (= not included in my_zeroes)
-  vector<std::pair<int, unsigned>> added_vars;
-  added_vars.reserve(var_count);
-  for (unsigned x = 0; x < var_count; x++) {
-    if (S.value(S.outputs[x]) == l_False) {
+  vector<std::pair<int, Lit>> added_vars;
+  added_vars.reserve(my_literals.size());
+  for (Lit x: my_literals) {
+    if (S.value(x) == l_False) {
       if (verbosity >= 2) {
-        printf("MY_ZERO2 " L_LIT " %d\n", L_lit(S.outputs[x]), S.value(S.outputs[x]).toInt());
+        printf("MY_ZERO2 " L_LIT " %d\n", L_lit(x), S.value(x).toInt());
       }
-      int lvl = S.level[var(S.outputs[x])];
+      int lvl = S.level[var(x)];
       if (lvl > max_level) {
         last_but_max_level = max_level;
         max_level = lvl;
       } else if (lvl > last_but_max_level && lvl != max_level) {
         last_but_max_level = lvl;
       }
-      if (!my_zeroes_set.contains(x)) {
+      if (!my_zeroes_set.contains(index(x))) {
         added_vars.emplace_back(lvl, x);
       }
     }
@@ -336,8 +334,8 @@ void Trie::onSat(Solver &S) {
   if (verbosity >= 2) {
     for (auto x: added_vars) {
        printf(
-          "ADDED_VAR %d %d " L_LIT "\n",
-          std::get<0>(x), std::get<1>(x), L_lit(S.outputs[std::get<1>(x)])
+          "ADDED_VAR %d " L_LIT "\n",
+          std::get<0>(x), L_lit(std::get<1>(x))
        );
      }
   }
@@ -386,13 +384,13 @@ void Trie::onSat(Solver &S) {
 
 
   // Add the first added_var to the current horizontal branch.
-  const std::pair<int, unsigned>& first_added_var = added_vars[0];
+  const std::pair<int, Lit>& first_added_var = added_vars[0];
   int previous_var_level = first_added_var.first;
   VerHead &ver_head = extended_hor->elems.emplace_back(first_added_var.second);
   ver_head.hors.reserve(added_vars.size() - 1);
   // Continue down with a vertical branch containing the remaining added_vars.
   for (unsigned i = 1; i < added_vars.size(); i++) {
-    pair<int, unsigned> added_var = added_vars[i];
+    pair<int, Lit> added_var = added_vars[i];
     ver_head.hors.emplace_back(added_var.second, max(visit_level, previous_var_level));
     previous_var_level = added_var.first;
   }
@@ -520,7 +518,7 @@ void Trie::onSat(Solver &S) {
 
       for (; i; --i) {
         if (verbosity >= 0) printf("I %d\n", i - 1);
-        const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+        const std::pair<int, Lit>& added_var = added_vars[i - 1];
         if (added_var.first < lvl) {
           // We don't set the backjumper to the last added var because it will be
           // jumped over yet in onSatConflict.
@@ -583,9 +581,9 @@ after_least:
         if (verbosity >= 0) printf("GLVL2 %d/%d\n", lvl, S.root_level);
 
         for (; i; --i) {
-          const std::pair<int, unsigned>& added_var = added_vars[i - 1];
+          const std::pair<int, Lit>& added_var = added_vars[i - 1];
 
-          if (verbosity >= 0) printf("I %d " L_LIT " %d\n", i - 1, L_lit(S.outputs[added_var.second]), added_var.first);
+          if (verbosity >= 0) printf("I %d " L_LIT " %d\n", i - 1, L_lit(added_var.second), added_var.first);
 
           if (added_var.first < lvl) {
             // We don't set the backjumper to the last added var because it will be
@@ -640,9 +638,9 @@ continue_greater: ;
 WhatToDo Place::after_hors_change(Solver &S) {
   if (hor_is_out()) return WhatToDo::DONE;
 
-  unsigned out = deref_hor().tag;
-  if (verbosity >= 2) printf("OUTHOR %d " L_LIT "\n", out, L_lit(S.outputs[out]));
-  lbool val = S.value(S.outputs[out]);
+  Lit out = deref_hor().tag;
+  if (verbosity >= 2) printf("OUTHOR " L_LIT "\n", L_lit(out));
+  lbool val = S.value(out);
 
   if (val == l_Undef) {
     return ver_is_singleton() ? WhatToDo::PROPAGATE : WhatToDo::WATCH;
@@ -658,9 +656,9 @@ WhatToDo Place::after_hors_change(Solver &S) {
 WhatToDo Place::after_vers_change(Solver &S) {
   HorHead &horhead = deref_ver();
   horhead.visit_level = S.decisionLevel();
-  unsigned out = horhead.tag;
-  if (verbosity >= 2) printf("OUTVER %d " L_LIT "\n", out, L_lit(S.outputs[out]));
-  lbool val = S.value(S.outputs[out]);
+  Lit out = horhead.tag;
+  if (verbosity >= 2) printf("OUTVER " L_LIT "\n", L_lit(out));
+  lbool val = S.value(out);
 
   if (val == l_Undef) {
     return ver_is_last() ? WhatToDo::PROPAGATE : WhatToDo::WATCH;
@@ -773,7 +771,7 @@ bool GreaterStackItem::handle(Solver &S) {
         hor->elems[hor_ix].greater_ix = greater.ix;
         if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
       }
-      check(S.enqueue(S.outputs[place.get_tag()], &greater));
+      check(S.enqueue(place.get_tag(), &greater));
 
       return true;
     }
@@ -817,23 +815,21 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
 
 
 MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
-  unsigned out;
   Lit out_lit;
 
   while (true) {
     switch (what_to_do) {
       case AGAIN: {
         if (verbosity >= 2) {
-          printf("AGAIN %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(S.outputs[get_tag()]));
+          printf("AGAIN %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(get_tag()));
         }
-        out = get_tag();
-        out_lit = S.outputs[out];
+        out_lit = get_tag();
         break;
       }
 
       case WATCH: {
         if (verbosity >= 2) {
-          printf("WATCH %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(S.outputs[get_tag()]));
+          printf("WATCH %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(get_tag()));
         }
         return MultimoveEnd::E_WATCH;
       }
@@ -847,7 +843,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
       case PROPAGATE: {
         if (verbosity >= 2) {
-          printf("PROPAGATE %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(S.outputs[get_tag()]));
+          printf("PROPAGATE %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(get_tag()));
         }
 
         return MultimoveEnd::E_PROPAGATE;
@@ -892,7 +888,7 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     }
     case MultimoveEnd::E_PROPAGATE: {
       set_watch(S);
-      check(S.enqueue(S.outputs[get_tag()], this));
+      check(S.enqueue(get_tag(), this));
       break;
     }
     default: {  // MultimoveEnd::E_CONFLICT
@@ -924,13 +920,11 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
     remove_watch_neg(S, ~p);
   }
 
-  unsigned tag = get_tag();
-  Lit out_lit;
+  Lit out_lit = get_tag();
   if (TRIE_MODE == branch_always) {
     Trie& trie = S.trie;
 
     while (true) {
-      out_lit = S.outputs[tag];
       lbool value = S.value(out_lit);
       if (value == l_True && !ver_is_last()) {
         GreaterIx right_greater_ix;
@@ -963,8 +957,8 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
             }
           }
 
-          tag = get_tag();
-          right_greater.remove_watch(S, tag);
+          out_lit = get_tag();
+          right_greater.remove_watch(S, out_lit);
           right_greater.on_accept(S);
         } else {
           if (verbosity >= 2) std::cout << "RIGHT_DISABLED " << right_greater << std::endl;
@@ -976,8 +970,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
         return true;
       } else break;
     }
-  } else out_lit = S.outputs[tag];
-  out_lit = S.outputs[tag];
+  }
 
   if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
   return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, TRIE_MODE == branch_on_zero));
@@ -986,7 +979,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 
 void Trie::undo(Solver& S, Lit p) {
   if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, backjumper_count);
-  if (active_var > var_count) {
+  if (active_var > my_literals.size()) {
     if (verbosity >= 2) {
       printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(S.outputs[active_var_old]));
       std::cout << std::flush;
@@ -1016,7 +1009,7 @@ void Trie::undo(Solver& S, Lit p) {
     if (verbosity >= 2) {
       printf("LEAST_UNDO %d %d %lu\n", backj.least_place.hor_ix, backj.least_place.ver_ix, backj.least_place.hor->elems.size());
     }
-    Lit out_lit = S.outputs[backj.least_place.get_tag()];
+    Lit out_lit = backj.least_place.get_tag();
     set_watch(S);
     if (verbosity >= 2) printf("WU " L_LIT "\n", L_lit(out_lit));
   }
@@ -1034,7 +1027,7 @@ void Trie::undo(Solver& S, Lit p) {
       if (!gplace.in_conflict()) {
         if (verbosity >= 2) {
           std::cout << "REMOVE_GREATER " << gplace << " ";
-          printf(L_LIT, L_lit(S.outputs[gplace.get_tag()]));
+          printf(L_LIT, L_lit(gplace.get_tag()));
           std::cout << std::endl << std::flush;
         }
         gplace.remove_watch(S, gplace.get_tag());
@@ -1098,14 +1091,13 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   if (p == lit_Undef) {
     int max_level = -1;
     ITER_MY_ZEROES(*this, x,
-      Lit out_lit = S.outputs[x];
-      max_level = max(max_level, S.level[var(out_lit)]);
-      out_reason.push(~out_lit);
+      max_level = max(max_level, S.level[var(x)]);
+      out_reason.push(~x);
     )
 
     if (verbosity >= 2) {
       printf("CALC_REASON_CONFLICT");
-      ITER_MY_ZEROES(*this, x, printf(" " L_LIT, L_lit(S.outputs[x]));)
+      ITER_MY_ZEROES(*this, x, printf(" " L_LIT, L_lit(x));)
       printf("\n");
     }
 
@@ -1115,7 +1107,7 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     Place place(*this);
     if (in_conflict()) place.ver_ix--;
     else if (hor_is_out()) place.hor_ix--;
-    while (S.outputs[place.get_tag()] != p) {
+    while (place.get_tag() != p) {
       if (place.is_ver()) {
         place.ver_ix = IX_NULL;
       }
@@ -1126,14 +1118,14 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
       }
     }
     ITER_MY_ZEROES(place, x,
-      out_reason.push(~S.outputs[x]);
+      out_reason.push(~x);
     )
 
     if (verbosity >= 2) {
       printf("CALC_REASON_PLACE " L_LIT " ", L_lit(p));
       std::cout << place << " " << *this;
       ITER_MY_ZEROES(place, x,
-          printf(" " L_LIT, L_lit(S.outputs[x]));
+          printf(" " L_LIT, L_lit(x));
       )
       printf("\n");
     }
@@ -1298,7 +1290,7 @@ std::ostream& operator<<(std::ostream& os, Place const &p) {
 }
 
 std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
-  Lit out = p.S.outputs[p.get_tag()];
+  Lit out = p.get_tag();
   return
     os << "["
     << "label=\"" << (sign(out) ? "~" : "") << var(out) << "\","

@@ -61,7 +61,7 @@ public:
   void cut_away();
   HorHead &deref_ver() const;
   VerHead &deref_hor() const;
-  unsigned get_tag() const;
+  Lit get_tag() const;
   bool hor_is_out() const;
   bool ver_is_last() const;
   bool ver_is_singleton() const;
@@ -94,7 +94,7 @@ public:
   WatchedPlace(Place place);
 
   void set_watch(Solver &S);
-  void remove_watch(Solver &S, unsigned old_tag);
+  void remove_watch(Solver &S, Lit old_tag);
   void remove_watch_pos(Solver &S, Lit lit);
   void remove_watch_neg(Solver &S, Lit lit);
 
@@ -166,14 +166,14 @@ struct HorLine {
 
 class HorHead {
 public:
-  unsigned tag;
+  Lit tag;
   HorLine *hor;
 
   GreaterIx accept_ix;
   int accept_level;
   int visit_level;
 
-  HorHead(unsigned tag_, int visit_level_) : tag(tag_), hor(NULL), visit_level(visit_level_) {
+  HorHead(Lit tag_, int visit_level_) : tag(tag_), hor(NULL), visit_level(visit_level_) {
     if (verbosity >= -2) hor_head_count++;
   }
 
@@ -193,11 +193,11 @@ public:
 
 class VerHead {
 public:
-  unsigned tag;
+  Lit tag;
   GreaterIx greater_ix;
   vector<HorHead> hors;
 
-  VerHead(unsigned tag_) : tag(tag_), hors() {
+  VerHead(Lit tag_) : tag(tag_), hors() {
     if (verbosity >= -2) ver_count++;
   }
   VerHead(VerHead&& old) noexcept
@@ -244,7 +244,7 @@ public:
   GreaterIx last_greater = pair(IX_NULL, IX32_NULL);
 
   // constant - the number of states of the analysed AFA
-  unsigned var_count;
+  vector<Lit> my_literals;
 
   // There is one back_ptr for each variable (= state of the analysed AFA).
   // If the trie is already in the accepting condition (all places have accepted),
@@ -269,7 +269,7 @@ public:
   Place to_cut;
 
   Trie();
-  void init(unsigned var_count);
+  void init(const vec<Lit>& my_literals);
 
   Lit guess(Solver &S);
 
@@ -299,10 +299,10 @@ public:
   for (HorLine *__hor = ((place).hor); __hor;) { \
     VerHead &__ver = __hor->elems[__hix]; \
     if (__vix >= 0) { \
-      unsigned x = __ver.tag; \
+      Lit x = __ver.tag; \
       {fn} \
       for (unsigned __i = 0; __i < __vix; __i++) { \
-        unsigned x = __ver.hors[__i].tag; \
+        Lit x = __ver.hors[__i].tag; \
         {fn} \
       } \
     } \
