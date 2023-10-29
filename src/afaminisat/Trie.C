@@ -362,23 +362,27 @@ void Trie::onSat(Solver &S) {
   GreaterIx acc_ix;
   int acc_level;
   int visit_level;
+  int depth;
 
   if (ver_accept) {
     HorHead &horhead = deref_ver();
     acc_ix = horhead.accept_ix;
     acc_level = horhead.accept_level;
     visit_level = horhead.visit_level;
+    depth = horhead.depth;
   } else {
     Place back = hor->back_ptr;
     if (back.hor == NULL) {
       acc_ix = root_accept_ix;
       acc_level = root_accept_level;
       visit_level = 0;
+      depth = 0;
     } else {
       HorHead &horhead = back.deref_ver();
       acc_ix = horhead.accept_ix;
       acc_level = horhead.accept_level;
       visit_level = horhead.visit_level;
+      depth = horhead.depth;
     }
   }
 
@@ -393,7 +397,7 @@ void Trie::onSat(Solver &S) {
   // Continue down with a vertical branch containing the remaining added_vars.
   for (unsigned i = 1; i < added_vars.size(); i++) {
     pair<int, Lit> added_var = added_vars[i];
-    ver_head.hors.emplace_back(added_var.second, max(visit_level, previous_var_level));
+    ver_head.hors.emplace_back(added_var.second, max(visit_level, previous_var_level), ++depth);
     previous_var_level = added_var.first;
   }
 

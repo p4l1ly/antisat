@@ -172,13 +172,17 @@ public:
   GreaterIx accept_ix;
   int accept_level;
   int visit_level;
+  int depth;
 
-  HorHead(Lit tag_, int visit_level_) : tag(tag_), hor(NULL), visit_level(visit_level_) {
+  HorHead(Lit tag_, int visit_level_, int depth_)
+  : tag(tag_), hor(NULL), visit_level(visit_level_), depth(depth_)
+  {
     if (verbosity >= -2) hor_head_count++;
   }
 
   HorHead& operator=(const HorHead&) {
-    return *this;  // WARNING: not implemented, only to make vector::erase happy
+    assert(false);
+    return *this;
   }
 
   ~HorHead() {
