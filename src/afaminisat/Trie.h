@@ -271,13 +271,13 @@ public:
   Trie();
   void init(const vec<Lit>& my_literals);
 
-  Lit guess(Solver &S);
+  bool guess(Solver &S);
 
   // Result: should the trie be cut at the active place's back_ptr?
   void onSat(Solver &S);
   bool reset(Solver &S);
 
-  void undo(Solver& S, Lit p);
+  void undo(Solver& S);
 
 
   // LeastPlace

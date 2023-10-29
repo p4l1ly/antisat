@@ -86,13 +86,13 @@ public:
     VarOrder            order;          // Keeps track of the decision variable order.
 
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
-    vec<vec<Undoable*> >  undos;          // 'undos[var]' is a list of constraints that will be called when 'var' becomes unbound.
+    std::vector<Undoable*> undos;
 
     Queue<Lit>          propQ;          // Propagation queue.
 
     vec<char>           assigns;        // The current assignments (lbool:s stored as char:s).
     vec<Lit>            trail;          // List of assignments made. 
-    vec<int>            trail_lim;      // Separator indices for different decision levels in 'trail'.
+    vec<std::pair<int, int>>            trail_lim;      // Separator indices for different decision levels in 'trail'.
     vec<Constr*>        reason;         // 'reason[var]' is the clause that implied the variables current value, or 'NULL' if none.
     vec<int>            level;          // 'level[var]' is the decision level at which assignment was made.
     int                 root_level;     // Level of first proper decision.
@@ -114,6 +114,7 @@ public:
     //
     bool        assume       (Lit p);
     void        undoOne      (void);
+    void        undoOneLevel (void);
     void        cancel       (void);
     void        cancelUntil  (int level);
     void        record       (const vec<Lit>& clause);
@@ -182,7 +183,6 @@ public:
     friend class Clause;
     friend class AtMost;
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
-    friend bool AtMost_new(Solver& S, const vec<Lit>& ps, int  max   , AtMost*& out_constr);
 
     void  addClause(const vec<Lit>& ps) {
       if (ok){
@@ -197,14 +197,6 @@ public:
     }
 
     bool onSatConflict(const vector<int>& cell);
-
-    void    addAtMost(const vec<Lit>& ps, int n) {
-        if (ok){
-            AtMost* c;
-            ok = AtMost_new(*this, ps, n, c);
-            if (c != NULL) constrs.push(c);
-        }
-    }
 
     // Solving:
     //

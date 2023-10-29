@@ -54,7 +54,6 @@ Var Solver::newVar(bool pure)
     index = nVars();
     watches  .push();          // (list for positive literal)
     watches  .push();          // (list for negative literal)
-    undos    .push();
     reason   .push(NULL);
     assigns  .push(toInt(l_Undef));
     level    .push(-1);
@@ -70,8 +69,8 @@ bool Solver::assume(Lit p) {
     if (verbosity >= 2) {
         printf(L_LIT "\n", L_lit(p));
     }
-    if (verbosity >= 2) printf(L_IND "assume(" L_LIT ")\n", L_ind, L_lit(p));
-    trail_lim.push(trail.size());
+    if (verbosity >= 2) printf(L_IND "assume(" L_LIT ", %d, %ld)\n", L_ind, L_lit(p), trail.size(), undos.size());
+    trail_lim.push(std::pair(trail.size(), undos.size()));
     return enqueue(p); }
 
 
@@ -80,14 +79,20 @@ bool Solver::assume(Lit p) {
 inline void Solver::undoOne(void)
 {
     if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND "unbind(" L_LIT ")\n", L_ind, L_lit(p)); }
-    Lit     p  = trail.last(); trail.pop();
-    Var     x  = var(p);
+    Var     x  = var(trail.last()); trail.pop();
     assigns[x] = toInt(l_Undef);
     reason [x] = NULL;
     order.undo(x);
-    while (undos[x].size() > 0)
-        undos[x].last()->undo(*this, p),
-        undos[x].pop();
+}
+
+
+inline void Solver::undoOneLevel() {
+    auto start_u = undos.begin() + trail_lim.last().second;
+    auto stop_u = undos.end();
+    if (verbosity >= 2) printf(L_IND "undoOneLevel(%d, %ld)\n", L_ind, trail_lim.last().second, undos.size());
+    for (auto u = start_u; u != stop_u; ++u) (*u)->undo(*this);
+    undos.erase(start_u, stop_u);
+    trail_lim.pop();
 }
 
 
@@ -96,10 +101,14 @@ inline void Solver::undoOne(void)
 void Solver::cancel(void)
 {
     assert(propQ.size() == 0);
-    if (verbosity >= 2){ if (trail.size() != trail_lim.last()){ Lit p = trail[trail_lim.last()]; printf(L_IND "cancel(" L_LIT ")\n", L_ind, L_lit(p)); } }
-    for (int c = trail.size() - trail_lim.last(); c > 0; c--)
-        undoOne();
-    trail_lim.pop();
+    int stop = trail_lim.last().first;
+    if (verbosity >= 2){
+      if (trail.size() != stop){
+        Lit p = trail[stop]; printf(L_IND "cancel(" L_LIT ")\n", L_ind, L_lit(p));
+      }
+    }
+    for (int c = trail.size() - stop; c; c--) undoOne();
+    undoOneLevel();
 }
 
 
@@ -232,7 +241,7 @@ bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
                   out_learnt_final_size = out_learnt.size();
                   out_btlevel_final = out_btlevel;
                 }
-                undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
+                undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
                 goto resolved;
               }
 
@@ -247,12 +256,12 @@ bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
               p_reason.clear();
               confl->calcReason(*this, p, p_reason);
-              undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
+              undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
 
               break;
             }
 
-            undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
+            undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
 
             if (confl == NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
@@ -355,7 +364,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                   out_btlevel_final = out_btlevel;
                 }
 
-                undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
+                undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
                 goto resolved;
               }
 
@@ -382,11 +391,11 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                 printf("\n");
               }
 
-              undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
+              undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
               break;
             }
 
-            undoOne(); if (trail_lim.last() == trail.size()) trail_lim.pop();
+            undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
 
             if (confl == NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
@@ -683,9 +692,7 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
-            Lit decision = trie.guess(*this);
-
-            if (decision == lit_Undef) {
+            if (!trie.guess(*this)) {
               Var next = order.select(params.random_var_freq);
 
               if (next == var_Undef){
@@ -698,10 +705,6 @@ lbool Solver::search()
               }
 
               check(assume(Lit(next, true)));
-            }
-            else {
-              // printf("out decision %c%d %d\n", sign(decision) ? '-' : '+', var(decision));
-              check(assume(decision));
             }
         }
     }

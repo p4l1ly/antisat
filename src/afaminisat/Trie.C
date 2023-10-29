@@ -212,7 +212,7 @@ void Trie::init(const vec<Lit> &my_literals_) {
   greater_stack.reserve(my_literals_.size());
 }
 
-Lit Trie::guess(Solver &S) {
+bool Trie::guess(Solver &S) {
   if (!ver_accept && !hor_is_out()) {
     Lit out_lit = get_tag();
 
@@ -225,13 +225,13 @@ Lit Trie::guess(Solver &S) {
     backj.least_enabled = true;
     backj.least_place = *this;
 
-    S.undos[var(out_lit)].push(this);
-
     if (verbosity >= 2) {
       printf("GUESS_%s " L_LIT " ", is_ver() ? "VER" : "HOR", L_lit(out_lit));
       std::cout << *this << std::endl;
     }
-    return out_lit;
+    S.assume(out_lit);
+    S.undos.push_back(this);
+    return true;
   }
   else if (last_greater.second != IX32_NULL) {
     GreaterPlace &gplace = greater_place_at(last_greater);
@@ -248,11 +248,12 @@ Lit Trie::guess(Solver &S) {
     backj.is_acc = false;
     backj.least_enabled = false;
 
-    S.undos[var(out_lit)].push(this);
-    return out_lit;
+    S.assume(out_lit);
+    S.undos.push_back(this);
+    return true;
   }
   else {
-    if (active_var >= my_literals.size()) return lit_Undef;
+    if (active_var >= my_literals.size()) return false;
     active_var_old = active_var;
 
     do {
@@ -266,18 +267,19 @@ Lit Trie::guess(Solver &S) {
         backj.is_acc = true;
         backj.least_enabled = false;
 
-        S.undos[var(p)].push(this);
         back_ptrs[active_var] = active_var_old;
         active_var++;
-        return p;
+        S.assume(p);
+        S.undos.push_back(this);
+        return true;
       }
       active_var++;
     } while (active_var < my_literals.size());
 
     active_var++;
-    S.undos[var(S.trail.last())].push(this);
     if (verbosity >= 2) printf("noguess %d\n", active_var_old);
-    return lit_Undef;
+    S.undos.push_back(this);
+    return false;
   }
 }
 
@@ -967,7 +969,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 }
 
 
-void Trie::undo(Solver& S, Lit p) {
+void Trie::undo(Solver& S) {
   if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, backjumper_count);
   if (active_var > my_literals.size()) {
     if (verbosity >= 2) {
@@ -983,7 +985,7 @@ void Trie::undo(Solver& S, Lit p) {
   if (backj.is_acc) {
     active_var--;
     if (verbosity >= 2) {
-      printf("ACC_UNDO " L_LIT " " L_LIT "\n", L_lit(S.outputs[active_var]), L_lit(p));
+      printf("ACC_UNDO " L_LIT "\n", L_lit(S.outputs[active_var]));
       std::cout << std::flush;
     }
     active_var = back_ptrs[active_var];

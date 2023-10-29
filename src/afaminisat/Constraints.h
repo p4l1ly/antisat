@@ -34,7 +34,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 class Solver;
 
 struct Undoable {
-    virtual void undo      (Solver& S, Lit p) { };
+    virtual void undo      (Solver& S) = 0;
 
     virtual ~Undoable(void) { };  // (not used, just to keep the compiler happy)
 };
@@ -54,7 +54,7 @@ struct Constr {
 // Clauses:
 
 
-class Clause : public Constr, public Undoable {
+class Clause : public Constr {
     unsigned    size_learnt;
     Lit         data[0];
 
@@ -81,30 +81,6 @@ public:
     void remove    (Solver& S, bool just_dealloc = false);
     bool propagate (Solver& S, Lit p, bool& keep_watch);
     bool simplify  (Solver& S);
-    void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
-    void moveWatch(int i, Lit p);
-};
-
-
-//=================================================================================================
-// AtMost:
-
-
-class AtMost : public Constr, public Undoable {
-    int     n;
-    int     counter;
-    int     size;
-    Lit     lits[0];
-
-public:
-    // Constructor -- creates a new AtMost-constraint and add it to watcher lists.
-    friend bool AtMost_new(Solver& S, const vec<Lit>& ps, int n, AtMost*& out);
-
-    // Constraint interface:
-    void remove    (Solver& S, bool just_dealloc = false);
-    bool propagate (Solver& S, Lit p, bool& keep_watch);
-    bool simplify  (Solver& S);
-    void undo      (Solver& S, Lit p);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
     void moveWatch(int i, Lit p);
 };
