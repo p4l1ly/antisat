@@ -220,7 +220,7 @@ struct RemovedWatch : public Constr {
 };
 
 
-enum Mode { clauses, dnf, branch_on_zero, branch_always };
+enum Mode { clauses, branch_always };
 
 extern RemovedWatch REMOVED_WATCH;
 extern Mode TRIE_MODE;

@@ -254,8 +254,6 @@ public:
         S.trie.init(S.outputs);
         switch (mode) {
           case '0': TRIE_MODE = clauses; break;
-          case '1': TRIE_MODE = dnf; break;
-          case '2': TRIE_MODE = branch_on_zero; break;
           default: TRIE_MODE = branch_always;
         }
         S.addConstr(&S.trie);
@@ -407,9 +405,7 @@ public:
 
                       cell_container.add(cell);
 
-                      if (TRIE_MODE != clauses) {
-                          S.trie.onSat(S);
-                      } else {
+                      if (TRIE_MODE == clauses) {
                           cell_out.clear();
                           for (int i: *cell) {
                               cell_out.push(S.outputs[i]);
@@ -420,6 +416,8 @@ public:
                           assert(!ok_);
                           if (c == NULL) break;
                           S.addConstr(c);
+                      } else {
+                          S.trie.onSat(S);
                       }
 
                       if (!S.onSatConflict(*cell)) {

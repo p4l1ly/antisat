@@ -10,7 +10,7 @@ int hor_head_count = 0;
 int hor_count = 0;
 int ver_count = 0;
 RemovedWatch REMOVED_WATCH = {};
-Mode TRIE_MODE = branch_on_zero;
+Mode TRIE_MODE = branch_always;
 
 inline void check(bool expr) { assert(expr); }
 
@@ -429,7 +429,7 @@ void Trie::onSat(Solver &S) {
   vector<pair<int, GreaterIx>> swallow_line;
   GreaterIx new_acc_ix = GREATER_IX_NULL;
 
-  if (TRIE_MODE == branch_always && visit_level != acc_level) {
+  if (visit_level != acc_level) {
     // Create a greater place at the top of the added branch
 
     LogList<GreaterPlace> *incomplete_greater_places;
@@ -740,37 +740,31 @@ bool GreaterStackItem::handle(Solver &S) {
   switch (place.multimove_on_propagate(S, place.after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
       GreaterPlace &greater = place.save_as_greater(S);
-      if (TRIE_MODE == branch_always) {
-        hor->elems[hor_ix].greater_ix = greater.ix;
-        if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
+      hor->elems[hor_ix].greater_ix = greater.ix;
+      if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
 
-        if (place.is_ver()) {
-          HorLine *hor2 = place.deref_ver().hor;
-          if (hor2 == NULL) return true;
-          S.trie.greater_stack.emplace_back(hor2, 0);
-        } else {
-          if (place.hor_ix + 1 == place.hor->elems.size()) return true;
-          S.trie.greater_stack.emplace_back(place.hor, place.hor_ix + 1);
-        }
+      if (place.is_ver()) {
+        HorLine *hor2 = place.deref_ver().hor;
+        if (hor2 == NULL) return true;
+        S.trie.greater_stack.emplace_back(hor2, 0);
+      } else {
+        if (place.hor_ix + 1 == place.hor->elems.size()) return true;
+        S.trie.greater_stack.emplace_back(place.hor, place.hor_ix + 1);
       }
 
       return true;
     }
     case MultimoveEnd::E_DONE: {
-      if (TRIE_MODE == branch_always) {
-        GreaterPlace &greater = place.save_as_greater(S, false);
-        hor->elems[hor_ix].greater_ix = greater.ix;
-        if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
-        greater.accept_notify_horhead(S);
-      }
+      GreaterPlace &greater = place.save_as_greater(S, false);
+      hor->elems[hor_ix].greater_ix = greater.ix;
+      if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
+      greater.accept_notify_horhead(S);
       return true;
     }
     case MultimoveEnd::E_PROPAGATE: {
       GreaterPlace &greater = place.save_as_greater(S);
-      if (TRIE_MODE == branch_always) {
-        hor->elems[hor_ix].greater_ix = greater.ix;
-        if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
-      }
+      hor->elems[hor_ix].greater_ix = greater.ix;
+      if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
       check(S.enqueue(place.get_tag(), &greater));
 
       return true;
@@ -857,7 +851,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       }
     }
 
-    what_to_do = move_on_propagate(S, out_lit, TRIE_MODE != dnf);
+    what_to_do = move_on_propagate(S, out_lit, true);
   }
 }
 
@@ -869,15 +863,13 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   switch (end) {
     case MultimoveEnd::E_WATCH: {
       set_watch(S);
-      if (TRIE_MODE == branch_always) {
-        if (is_ver()) {
-          HorLine *hor2 = deref_ver().hor;
-          if (hor2 == NULL) break;
-          trie.greater_stack.emplace_back(hor2, 0);
-        } else {
-          if (hor_ix + 1 == hor->elems.size()) break;
-          trie.greater_stack.emplace_back(hor, hor_ix + 1);
-        }
+      if (is_ver()) {
+        HorLine *hor2 = deref_ver().hor;
+        if (hor2 == NULL) break;
+        trie.greater_stack.emplace_back(hor2, 0);
+      } else {
+        if (hor_ix + 1 == hor->elems.size()) break;
+        trie.greater_stack.emplace_back(hor, hor_ix + 1);
       }
       break;
     }
@@ -921,59 +913,57 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   }
 
   Lit out_lit = get_tag();
-  if (TRIE_MODE == branch_always) {
-    Trie& trie = S.trie;
+  Trie& trie = S.trie;
 
-    while (true) {
-      lbool value = S.value(out_lit);
-      if (value == l_True && !ver_is_last()) {
-        GreaterIx right_greater_ix;
-        if (is_ver()) {
-          HorLine *hor2 = deref_ver().hor;
-          if (hor2 == NULL) break;
-          right_greater_ix = hor2->elems[0].greater_ix;
-          if (verbosity >= 2) printf("READ_RIGHT_IX1 %p %d %d %d\n", hor2, 0, right_greater_ix.first, right_greater_ix.second);
-        }
-        else {
-          if (hor_ix + 1 == hor->elems.size()) break;
-          right_greater_ix = hor->elems[hor_ix + 1].greater_ix;
-          if (verbosity >= 2) printf("READ_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix + 1, right_greater_ix.first, right_greater_ix.second);
-        }
+  while (true) {
+    lbool value = S.value(out_lit);
+    if (value == l_True && !ver_is_last()) {
+      GreaterIx right_greater_ix;
+      if (is_ver()) {
+        HorLine *hor2 = deref_ver().hor;
+        if (hor2 == NULL) break;
+        right_greater_ix = hor2->elems[0].greater_ix;
+        if (verbosity >= 2) printf("READ_RIGHT_IX1 %p %d %d %d\n", hor2, 0, right_greater_ix.first, right_greater_ix.second);
+      }
+      else {
+        if (hor_ix + 1 == hor->elems.size()) break;
+        right_greater_ix = hor->elems[hor_ix + 1].greater_ix;
+        if (verbosity >= 2) printf("READ_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix + 1, right_greater_ix.first, right_greater_ix.second);
+      }
 
-        GreaterPlace &right_greater = trie.greater_place_at(right_greater_ix);
-        if (verbosity >= 2) std::cout << "JUMP_RIGHT " << right_greater << std::endl;
-        *(Place *)this = right_greater;
+      GreaterPlace &right_greater = trie.greater_place_at(right_greater_ix);
+      if (verbosity >= 2) std::cout << "JUMP_RIGHT " << right_greater << std::endl;
+      *(Place *)this = right_greater;
 
-        right_greater.swallow_ix = my_greater_ix();
-        right_greater.swallow_level = S.decisionLevel();
+      right_greater.swallow_ix = my_greater_ix();
+      right_greater.swallow_level = S.decisionLevel();
 
-        if (right_greater.enabled) {
-          if (trie.backjumper_count) {
-            int level = S.decisionLevel();
-            if (level != right_greater.last_change_level) {
-              GreaterBackjumper &last_backjumper = trie.get_last_backjumper();
-              last_backjumper.changed_places.emplace_back(right_greater, right_greater.ix, right_greater.last_change_level);
-              right_greater.last_change_level = level;
-            }
+      if (right_greater.enabled) {
+        if (trie.backjumper_count) {
+          int level = S.decisionLevel();
+          if (level != right_greater.last_change_level) {
+            GreaterBackjumper &last_backjumper = trie.get_last_backjumper();
+            last_backjumper.changed_places.emplace_back(right_greater, right_greater.ix, right_greater.last_change_level);
+            right_greater.last_change_level = level;
           }
-
-          out_lit = get_tag();
-          right_greater.remove_watch(S, out_lit);
-          right_greater.on_accept(S);
-        } else {
-          if (verbosity >= 2) std::cout << "RIGHT_DISABLED " << right_greater << std::endl;
-          on_accept(S);
-          return true;
         }
-      } else if (value == l_Undef) {
-        set_watch(S);
+
+        out_lit = get_tag();
+        right_greater.remove_watch(S, out_lit);
+        right_greater.on_accept(S);
+      } else {
+        if (verbosity >= 2) std::cout << "RIGHT_DISABLED " << right_greater << std::endl;
+        on_accept(S);
         return true;
-      } else break;
-    }
+      }
+    } else if (value == l_Undef) {
+      set_watch(S);
+      return true;
+    } else break;
   }
 
   if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
-  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, TRIE_MODE == branch_on_zero));
+  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
 }
 
 
