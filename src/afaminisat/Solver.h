@@ -34,7 +34,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Trie.h"
 
 #define L_IND    "%-*d"
-#define L_ind    decisionLevel()*3+3,decisionLevel()
+#define L_ind    3,decisionLevel()
 
 void check(bool expr);
 

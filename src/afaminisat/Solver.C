@@ -38,11 +38,7 @@ inline void check(bool expr) { assert(expr); }
 
 Solver::~Solver(void) {
     for (int i = 0; i < learnts.size(); i++) xfree(learnts[i]);
-    for (int i = 0; i < constrs.size(); i++) {
-      if (constrs[i] != &trie) {
-        xfree(constrs[i]);
-      }
-    }
+    for (int i = 0; i < constrs.size(); i++) xfree(constrs[i]);
 }
 
 // Creates a new SAT variable in the solver. If 'decision_var' is cleared, variable will not be
@@ -742,6 +738,7 @@ void Solver::claRescaleActivity(void)
 |________________________________________________________________________________________________@*/
 bool Solver::solve(const vec<Lit>& assumps)
 {
+    if (trie.root.elems.size() && !trie.reset(*this)) return false;
     simplifyDB();
     if (!ok) return false;
 
@@ -751,15 +748,6 @@ bool Solver::solve(const vec<Lit>& assumps)
 
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
-
-    if (trie.root.elems.size()) {
-      if (!trie.reset(*this) || propagate() != NULL) {
-        if (verbosity >= 2) printf("RESET_CONFLICT\n");
-        propQ.clear();
-        cancelUntil(0);
-        return false;
-      }
-    }
 
     for (int i = 0; i < assumps.size(); i++)
         if (!assume(assumps[i]) || propagate() != NULL){

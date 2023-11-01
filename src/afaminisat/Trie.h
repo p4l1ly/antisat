@@ -32,6 +32,7 @@ typedef pair<unsigned, uint32_t> GreaterIx;
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
 const unsigned IX32_NULL = std::numeric_limits<uint32_t>::max();
 const GreaterIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
+const GreaterIx GREATER_IX_FIRST = pair(IX_NULL, 0);
 
 
 enum WhatToDo {
@@ -90,7 +91,6 @@ public:
   int watch_ix_pos;
   int watch_ix_neg;
 
-  WatchedPlace(HorLine *hor_);
   WatchedPlace(Place place);
 
   void set_watch(Solver &S);
@@ -112,8 +112,6 @@ public:
 };
 
 
-struct GreaterBackjumper;
-
 struct ChangedGreaterPlace {
   Place place;
   GreaterIx ix;
@@ -126,32 +124,33 @@ struct GreaterPlace : public WatchedPlace {
   int last_change_level;
   GreaterIx previous, next;
 
-  GreaterIx swallow_ix;
-  int swallow_level;
-
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_, bool enabled_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
   GreaterIx my_greater_ix() { return ix; }
+  void onSat(Solver &S, int accept_level);
 };
 
 struct GreaterBackjumper {
-  Place least_place;
-  bool least_enabled;
   bool is_acc;
   LogList<GreaterPlace> greater_places;
   vector<ChangedGreaterPlace> changed_places;
 
+  int accept_depth = -2;
+  int accept_level = -1;
+  GreaterPlace *accept_place = NULL;
+
   GreaterBackjumper() : greater_places(), changed_places() {}
 
   GreaterBackjumper(GreaterBackjumper&& old) noexcept
-  : least_place(old.least_place)
-  , least_enabled(old.least_enabled)
-  , greater_places(std::move(old.greater_places))
+  : greater_places(std::move(old.greater_places))
   , changed_places(std::move(old.changed_places))
   , is_acc(old.is_acc)
+  , accept_depth(old.accept_depth)
+  , accept_level(old.accept_level)
+  , accept_place(old.accept_place)
   {}
 
   GreaterBackjumper(GreaterBackjumper& old) = delete;
@@ -169,7 +168,6 @@ public:
   Lit tag;
   HorLine *hor;
 
-  GreaterIx accept_ix;
   int accept_level;
   int visit_level;
   int depth;
@@ -235,13 +233,10 @@ struct GreaterStackItem {
   bool handle(Solver &S);
 };
 
-class Trie : public Undoable, public WatchedPlace {
+class Trie : public Undoable {
 public:
   // the underlying automaton
   HorLine root;
-
-  GreaterIx root_accept_ix = GREATER_IX_NULL;
-  int root_accept_level = 0;
 
   LogList<GreaterPlace> root_greater_places;
   vector<GreaterStackItem> greater_stack;
@@ -264,6 +259,10 @@ public:
   unsigned backjumper_count = 0;
   std::vector<GreaterBackjumper> greater_backjumpers;
 
+  int accept_depth = -1;
+  int accept_level = -1;
+  GreaterPlace *accept_place = NULL;
+
   GreaterBackjumper &get_last_backjumper() {
     return greater_backjumpers[backjumper_count - 1];
   }
@@ -282,12 +281,6 @@ public:
   bool reset(Solver &S);
 
   void undo(Solver& S);
-
-
-  // LeastPlace
-  bool ver_accept = false;
-  void on_accept(Solver &S);
-  GreaterIx my_greater_ix() { return GREATER_IX_NULL; }
 
   GreaterPlace& greater_place_at(GreaterIx ix);
 
