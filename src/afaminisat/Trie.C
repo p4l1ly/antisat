@@ -560,7 +560,7 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
     GreaterIx ix = pair(IX_NULL, trie.root_greater_places.size());
     ChangedGreaterPlace changed_place = {*this, ix, S.decisionLevel()};
     GreaterPlace &place = trie.root_greater_places.push_back(GreaterPlace(changed_place, last_greater));
-    std::cout << "NEW_GREATER_PLACE1 " << &place << std::endl;
+    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE1 " << &place << std::endl;
     if (enabled) {
       if (trie.last_greater.second != IX32_NULL) {
         trie.root_greater_places[last_greater.second].next = ix;
@@ -869,9 +869,17 @@ void Trie::undo(Solver& S) {
         << " " << gplace.enabled << "\n" << std::flush;
     }
 
+    bool watch_unwatch = false;
+    Lit new_tag = changed_place.place.get_tag();
+
     if (gplace.enabled) {
       if (!gplace.in_conflict()) {
-        gplace.remove_watch(S, gplace.get_tag());
+        Lit old_tag = gplace.get_tag();
+        if (old_tag == new_tag) {
+          watch_unwatch = true;
+        } else {
+          gplace.remove_watch(S, gplace.get_tag());
+        }
       }
       (Place &)gplace = changed_place.place;
       gplace.last_change_level = changed_place.last_change_level;
@@ -886,7 +894,7 @@ void Trie::undo(Solver& S) {
       last_greater = changed_place.ix;
     }
 
-    gplace.set_watch(S);
+    if (!watch_unwatch) gplace.set_watch(S);
   }
 
   if (backj.accept_depth != -2) {
@@ -1194,6 +1202,3 @@ void Trie::print_places() {
       ++i;
     }
 }
-
-
-// TODO unwatch-watch same
