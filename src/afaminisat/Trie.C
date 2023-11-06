@@ -264,6 +264,9 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
         printf("MY_ZERO1 " L_LIT " %d %d\n", L_lit(x), S.value(x).toInt(), S.level[var(x)]);
       }
       my_zeroes_set.insert(index(x));
+#ifdef MY_DEBUG
+      assert(S.value(x) == l_False);
+#endif
   )
 
   // max level of added_vars+my_zeroes
@@ -356,6 +359,25 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
       depth = horhead.depth;
     }
   }
+
+#ifdef MY_DEBUG
+  {
+    Lit first_lit = added_vars[0].second;
+    if (ver_accept) {
+      HorHead &horhead = deref_ver();
+      assert(horhead.tag != first_lit);
+    } else {
+      Place back = hor->back_ptr;
+      if (back.hor != NULL) {
+        HorHead &horhead = back.deref_ver();
+        assert(horhead.tag != first_lit);
+      }
+    }
+    for (VerHead &verhead: extended_hor->elems) {
+      assert(verhead.tag != first_lit);
+    }
+  }
+#endif
 
   if (verbosity >= 2) printf("ACC_LVL_VISIT %d %d\n", accept_level, visit_level);
 
