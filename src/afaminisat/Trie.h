@@ -69,10 +69,9 @@ public:
   bool is_ver() const;
   bool in_conflict() const;
 
-  void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
   WhatToDo after_vers_change(Solver &S);
-  WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
+  WhatToDo move_on_propagate(Solver &S, Lit out_lit);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
   GreaterPlace &save_as_greater(Solver &S, bool enabled = true);

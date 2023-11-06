@@ -583,7 +583,10 @@ break_greater:
 
 
 WhatToDo Place::after_hors_change(Solver &S) {
-  if (hor_is_out()) return WhatToDo::DONE;
+  if (hor_is_out()) {
+    assert(false);
+    return WhatToDo::DONE;
+  }
 
   Lit out = deref_hor().tag;
   if (verbosity >= 2) printf("OUTHOR " L_LIT "\n", L_lit(out));
@@ -603,8 +606,22 @@ WhatToDo Place::after_hors_change(Solver &S) {
 }
 
 
+void branch(Solver &S, HorLine *horline, unsigned i) {
+  if (horline == NULL) return;
+
+  unsigned size = horline->elems.size();
+  for (; i < size; ++i) {
+    if (verbosity >= 2) {
+      std::cout << "ADD_TO_GREATER_STACK " << PlaceAttrs(Place{horline, i, IX_NULL}, S) << "\n";
+    }
+    S.trie.greater_stack.emplace_back(horline, i);
+  }
+}
+
+
 WhatToDo Place::after_vers_change(Solver &S) {
   HorHead &horhead = deref_ver();
+  branch(S, horhead.hor, 0);
   horhead.visit_level = S.decisionLevel();
 
   if (verbosity >= 2) {
@@ -682,25 +699,6 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
 }
 
 
-void Place::branch(Solver &S) {
-  if (is_ver()) {
-    HorLine *hor2 = deref_ver().hor;
-    if (hor2 == NULL) return;
-
-    if (verbosity >= 2) {
-      std::cout << "ADD_TO_GREATER_STACK " << PlaceAttrs(Place{hor2, 0, IX_NULL}, S) << "\n";
-    }
-    S.trie.greater_stack.emplace_back(hor2, 0);
-  } else {
-    if (hor_ix + 1 == hor->elems.size()) return;
-    if (verbosity >= 2) {
-      std::cout << "ADD_TO_GREATER_STACK2 " << PlaceAttrs(Place{hor, hor_ix + 1, IX_NULL}, S) << "\n";
-    }
-    S.trie.greater_stack.emplace_back(hor, hor_ix + 1);
-  }
-}
-
-
 bool GreaterStackItem::handle(Solver &S) {
   Place place = {hor, hor_ix, IX_NULL};
   if (verbosity >= 2) {
@@ -711,15 +709,6 @@ bool GreaterStackItem::handle(Solver &S) {
       GreaterPlace &greater = place.save_as_greater(S);
       hor->elems[hor_ix].greater_ix = greater.ix;
       if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
-
-      if (place.is_ver()) {
-        HorLine *hor2 = place.deref_ver().hor;
-        if (hor2 == NULL) return true;
-        S.trie.greater_stack.emplace_back(hor2, 0);
-      } else {
-        if (place.hor_ix + 1 == place.hor->elems.size()) return true;
-        S.trie.greater_stack.emplace_back(place.hor, place.hor_ix + 1);
-      }
 
       return true;
     }
@@ -745,47 +734,13 @@ bool GreaterStackItem::handle(Solver &S) {
 }
 
 
-WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
-  if (is_ver()) {
-    if (S.value(out_lit) == l_True) {
-      HorLine *hor2 = deref_ver().hor;
-      if (hor2 == NULL) return WhatToDo::DONE;
-      else {
-        hor = hor2;
-        hor_ix = 0;
-        ver_ix = IX_NULL;
+WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit) {
+  if (S.value(out_lit) == l_True) return WhatToDo::DONE;
+  ver_ix++;
 #ifdef MY_DEBUG
-        check_all_duplicate_places(S.trie);
+  check_all_duplicate_places(S.trie);
 #endif
-        return after_hors_change(S);
-      }
-    }
-    else {
-      if (do_branch) branch(S);
-      ver_ix++;
-#ifdef MY_DEBUG
-      check_all_duplicate_places(S.trie);
-#endif
-      return after_vers_change(S);
-    }
-  }
-  else {
-    if (S.value(out_lit) == l_True) {
-      hor_ix++;
-#ifdef MY_DEBUG
-      check_all_duplicate_places(S.trie);
-#endif
-      return after_hors_change(S);
-    }
-    else {
-      if (do_branch) branch(S);
-      ver_ix++;
-#ifdef MY_DEBUG
-      check_all_duplicate_places(S.trie);
-#endif
-      return after_vers_change(S);
-    }
-  }
+  return after_vers_change(S);
 }
 
 
@@ -832,7 +787,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       }
     }
 
-    what_to_do = move_on_propagate(S, out_lit, true);
+    what_to_do = move_on_propagate(S, out_lit);
   }
 }
 
@@ -844,14 +799,6 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   switch (end) {
     case MultimoveEnd::E_WATCH: {
       set_watch(S);
-      if (is_ver()) {
-        HorLine *hor2 = deref_ver().hor;
-        if (hor2 == NULL) break;
-        trie.greater_stack.emplace_back(hor2, 0);
-      } else {
-        if (hor_ix + 1 == hor->elems.size()) break;
-        trie.greater_stack.emplace_back(hor, hor_ix + 1);
-      }
       break;
     }
     case MultimoveEnd::E_DONE: {
@@ -906,7 +853,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 
   lbool value = S.value(out_lit);
 
-  if (value == l_True && !ver_is_last()) {  // ver_is_last() means - we were propagating
+  if (value == l_True) {  // ver_is_last() means - we were propagating
     if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
     on_accept(S);
 #ifdef MY_DEBUG
@@ -919,7 +866,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 #ifdef MY_DEBUG
   check_all_duplicate_places(trie);
 #endif
-  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
+  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit));
 }
 
 
@@ -1149,6 +1096,7 @@ bool Trie::reset(Solver &S) {
   check_all_duplicate_places(*this);
 #endif
 
+  branch(S, &root, 1);
   return root_place.full_multimove_on_propagate(S, root_place.after_hors_change(S));
 }
 
