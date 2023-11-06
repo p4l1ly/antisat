@@ -11,7 +11,7 @@ using std::vector;
 
 pair<uint32_t, uint32_t> _LogList_stage_ix(uint32_t ix);
 
-#define ITER_LOGLIST(self, T, fn) { \
+#define ITER_LOGLIST(self, T, x, fn) { \
   if ((self)._size != 0) { \
     pair<uint32_t, uint32_t> stageix = _LogList_stage_ix((self)._size); \
     if (stageix.first != 0) { \
@@ -66,7 +66,7 @@ public:
     return ref;
   }
   void clear() {
-    ITER_LOGLIST(*this, T, x.~T(););
+    ITER_LOGLIST(*this, T, x, x.~T(););
     _size = 0;
   }
   inline void clear_nodestroy() {
@@ -75,7 +75,7 @@ public:
   uint32_t size() { return _size; }
 
   ~LogList() {
-    ITER_LOGLIST(*this, T, x.~T(););
+    ITER_LOGLIST(*this, T, x, x.~T(););
     for (unsigned i = 0; i < _stages.size(); ++i) {
       ::operator delete(_stages[i]);
     }

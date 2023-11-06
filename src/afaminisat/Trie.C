@@ -12,6 +12,34 @@ int ver_count = 0;
 RemovedWatch REMOVED_WATCH = {};
 Mode TRIE_MODE = branch_always;
 
+void check_duplicate_places(Trie &trie, GreaterPlace &p) {
+  ITER_LOGLIST(trie.root_greater_places, GreaterPlace, x, {
+    assert(x.ix == p.ix || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+  })
+  unsigned i = 0;
+  for (int j = 0; j < trie.backjumper_count; j++) {
+    GreaterBackjumper& backj = trie.greater_backjumpers[j];
+    ITER_LOGLIST(backj.greater_places, GreaterPlace, x, {
+      assert(x.ix == p.ix || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+    })
+    ++i;
+  }
+}
+
+void check_all_duplicate_places(Trie &trie) {
+  ITER_LOGLIST(trie.root_greater_places, GreaterPlace, x, {
+    check_duplicate_places(trie, x);
+  })
+  unsigned i = 0;
+  for (int j = 0; j < trie.backjumper_count; j++) {
+    GreaterBackjumper& backj = trie.greater_backjumpers[j];
+    ITER_LOGLIST(backj.greater_places, GreaterPlace, x, {
+      check_duplicate_places(trie, x);
+    })
+    ++i;
+  }
+}
+
 inline void check(bool expr) { assert(expr); }
 
 inline HorHead &Place::deref_ver() const {
@@ -196,6 +224,10 @@ void Trie::init(const vec<Lit> &my_literals_) {
 }
 
 bool Trie::guess(Solver &S) {
+#ifdef MY_DEBUG
+  check_all_duplicate_places(*this);
+#endif
+
   if (last_greater.second != IX32_NULL) {
     GreaterPlace &gplace = greater_place_at(last_greater);
     Lit out_lit = gplace.get_tag();
@@ -241,7 +273,15 @@ bool Trie::guess(Solver &S) {
 }
 
 void Trie::onSat(Solver &S) {
+#ifdef MY_DEBUG
+  check_all_duplicate_places(*this);
+#endif
+
   accept_place->onSat(S, accept_level);
+
+#ifdef MY_DEBUG
+  check_all_duplicate_places(*this);
+#endif
 }
 
 void GreaterPlace::onSat(Solver &S, int accept_level) {
@@ -362,6 +402,7 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
 
 #ifdef MY_DEBUG
   {
+    std::cout << std::flush;
     Lit first_lit = added_vars[0].second;
     if (ver_accept) {
       HorHead &horhead = deref_ver();
@@ -541,6 +582,9 @@ WhatToDo Place::after_hors_change(Solver &S) {
   }
   if (val == l_False && ver_is_singleton()) {
     ver_ix = 0;
+#ifdef MY_DEBUG
+    check_all_duplicate_places(S.trie);
+#endif
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -567,6 +611,9 @@ WhatToDo Place::after_vers_change(Solver &S) {
   }
   if (val == l_False && ver_is_last()) {
     ++ver_ix;
+#ifdef MY_DEBUG
+  check_all_duplicate_places(S.trie);
+#endif
     return WhatToDo::CONFLICT;
   }
   return WhatToDo::AGAIN;
@@ -592,6 +639,9 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
     } else {
       place.enabled = false;
     }
+#ifdef MY_DEBUG
+  check_all_duplicate_places(trie);
+#endif
     return place;
   } else {
     GreaterBackjumper &last_backj = trie.get_last_backjumper();
@@ -612,6 +662,9 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
     } else {
       place.enabled = false;
     }
+#ifdef MY_DEBUG
+    check_all_duplicate_places(trie);
+#endif
     return place;
   }
 }
@@ -662,6 +715,7 @@ bool GreaterStackItem::handle(Solver &S) {
       GreaterPlace &greater = place.save_as_greater(S, false);
       hor->elems[hor_ix].greater_ix = greater.ix;
       if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
+      greater.on_accept(S);
       return true;
     }
     case MultimoveEnd::E_PROPAGATE: {
@@ -688,23 +742,35 @@ WhatToDo Place::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
         hor = hor2;
         hor_ix = 0;
         ver_ix = IX_NULL;
+#ifdef MY_DEBUG
+        check_all_duplicate_places(S.trie);
+#endif
         return after_hors_change(S);
       }
     }
     else {
       if (do_branch) branch(S);
       ver_ix++;
+#ifdef MY_DEBUG
+      check_all_duplicate_places(S.trie);
+#endif
       return after_vers_change(S);
     }
   }
   else {
     if (S.value(out_lit) == l_True) {
       hor_ix++;
+#ifdef MY_DEBUG
+      check_all_duplicate_places(S.trie);
+#endif
       return after_hors_change(S);
     }
     else {
       if (do_branch) branch(S);
       ver_ix++;
+#ifdef MY_DEBUG
+      check_all_duplicate_places(S.trie);
+#endif
       return after_vers_change(S);
     }
   }
@@ -787,6 +853,9 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     }
     default: {  // MultimoveEnd::E_CONFLICT
       trie.greater_stack.clear();
+#ifdef MY_DEBUG
+  check_all_duplicate_places(trie);
+#endif
       return false;
     }
   }
@@ -796,10 +865,16 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     trie.greater_stack.pop_back();
     if (!gsi.handle(S)) {
       trie.greater_stack.clear();
+#ifdef MY_DEBUG
+  check_all_duplicate_places(trie);
+#endif
       return false;
     }
   }
 
+#ifdef MY_DEBUG
+  check_all_duplicate_places(trie);
+#endif
   return true;
 }
 
@@ -822,10 +897,16 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (value == l_True && !ver_is_last()) {  // ver_is_last() means - we were propagating
     if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
     on_accept(S);
+#ifdef MY_DEBUG
+    check_all_duplicate_places(trie);
+#endif
     return true;
   }
 
   if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
+#ifdef MY_DEBUG
+  check_all_duplicate_places(trie);
+#endif
   return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
 }
 
@@ -859,8 +940,7 @@ void Trie::undo(Solver& S) {
         << std::flush;
   }
 
-  ITER_LOGLIST(backj.greater_places, GreaterPlace, {
-    GreaterPlace &gplace = x;
+  ITER_LOGLIST(backj.greater_places, GreaterPlace, gplace, {
     if (gplace.enabled) {
       if (!gplace.in_conflict()) {
         if (verbosity >= 2) {
@@ -941,6 +1021,10 @@ void Trie::undo(Solver& S) {
   }
 
   --backjumper_count;
+
+#ifdef MY_DEBUG
+  check_all_duplicate_places(*this);
+#endif
 }
 
 
@@ -1049,6 +1133,10 @@ bool Trie::reset(Solver &S) {
 
   accept_depth = -1;
 
+#ifdef MY_DEBUG
+  check_all_duplicate_places(*this);
+#endif
+
   return root_place.full_multimove_on_propagate(S, root_place.after_hors_change(S));
 }
 
@@ -1118,6 +1206,8 @@ void GreaterPlace::on_accept(Solver &S) {
     trie.accept_depth = depth;
     trie.accept_level = S.decisionLevel();
     trie.accept_place = this;
+  } else if (verbosity >= 2) {
+    std::cout << "NOSET " << trie.accept_depth << " " << depth << std::endl;
   }
 }
 
@@ -1212,13 +1302,13 @@ std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
 }
 
 void Trie::print_places() {
-    ITER_LOGLIST(root_greater_places, GreaterPlace, {
+    ITER_LOGLIST(root_greater_places, GreaterPlace, x, {
       std::cout << "GREATER_PLACE -1 " << (Place &)x << " " << x.enabled << " " << x.in_conflict() << " " << &x << std::endl;
     })
     unsigned i = 0;
     for (int j = 0; j < backjumper_count; j++) {
       GreaterBackjumper& backj = greater_backjumpers[j];
-      ITER_LOGLIST(backj.greater_places, GreaterPlace, {
+      ITER_LOGLIST(backj.greater_places, GreaterPlace, x, {
         std::cout << "GREATER_PLACE " << i << " " << (Place &)x << " " << x.enabled << " " << x.in_conflict() << " " << &x << std::endl;
       })
       ++i;
