@@ -47,17 +47,20 @@ enum MultimoveEnd {
   E_WATCH = -3,
   E_DONE = -2,
   E_CONFLICT = 0,
-  E_PROPAGATE = 1,
 };
 
 
 struct GreaterPlace;
 
-struct Place {
+struct Place : public Reason {
 public:
   HorLine *hor;
   unsigned hor_ix;
   unsigned ver_ix;
+
+  Place(HorLine *hor_, unsigned hor_ix_, unsigned ver_ix_)
+  : hor(hor_), hor_ix(hor_ix_), ver_ix(ver_ix_)
+  {}
 
   void cut_away();
   HorHead &deref_ver() const;
@@ -78,6 +81,8 @@ public:
   GreaterPlace &save_as_greater(Solver &S, bool enabled = true);
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
+
+  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 };
 
 struct PlaceAttrs : Place {
@@ -102,12 +107,11 @@ public:
   virtual GreaterIx my_greater_ix() = 0;
 
   void accept_notify_horhead(Solver& S);
-  bool full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
+  Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
-  bool propagate (Solver& S, Lit p, bool& keep_watch);
+  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
-  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
   void moveWatch(int i, Lit p);
 };
 
@@ -126,7 +130,7 @@ struct GreaterPlace : public WatchedPlace {
 
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
   GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_, bool enabled_);
-  bool propagate (Solver& S, Lit p, bool& keep_watch);
+  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
   GreaterIx my_greater_ix() { return ix; }
@@ -137,6 +141,7 @@ struct GreaterBackjumper {
   bool is_acc;
   LogList<GreaterPlace> greater_places;
   vector<ChangedGreaterPlace> changed_places;
+  LogList<Place> reasons;
 
   int accept_depth = -2;
   int accept_level = -1;
@@ -151,6 +156,7 @@ struct GreaterBackjumper {
   , accept_depth(old.accept_depth)
   , accept_level(old.accept_level)
   , accept_place(old.accept_place)
+  , reasons(std::move(old.reasons))
   {}
 
   GreaterBackjumper(GreaterBackjumper& old) = delete;
@@ -215,9 +221,8 @@ public:
 
 struct RemovedWatch : public Constr {
   void remove    (Solver& S, bool just_dealloc = false) { };
-  bool propagate (Solver& S, Lit p, bool& keep_watch) { return true; };
+  Reason* propagate (Solver& S, Lit p, bool& keep_watch) { return NULL; };
   bool simplify  (Solver& S) { return false; };
-  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) { };
   void moveWatch(int i, Lit p) {};
 };
 
@@ -239,6 +244,7 @@ public:
   HorLine root;
 
   LogList<GreaterPlace> root_greater_places;
+  LogList<Place> root_reasons;
   vector<GreaterStackItem> greater_stack;
   GreaterIx last_greater = pair(IX_NULL, IX32_NULL);
 
@@ -278,7 +284,7 @@ public:
 
   // Result: should the trie be cut at the active place's back_ptr?
   void onSat(Solver &S);
-  bool reset(Solver &S);
+  Reason* reset(Solver &S);
 
   void undo(Solver& S);
 

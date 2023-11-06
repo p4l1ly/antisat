@@ -232,7 +232,7 @@ bool Clause::simplify(Solver& S)
 
 
 // 'p' is the literal that became TRUE
-bool Clause::propagate(Solver& S, Lit p, bool& keep_watch)
+Reason *Clause::propagate(Solver& S, Lit p, bool& keep_watch)
 {
     // Make sure the false literal is data[1]:
     Lit     false_lit = ~p;
@@ -243,7 +243,7 @@ bool Clause::propagate(Solver& S, Lit p, bool& keep_watch)
     // If 0th watch is true, then clause is already satisfied.
     if (S.value(data[0]) == l_True){
         keep_watch = true;
-        return true; }
+        return NULL; }
 
     // Look for new watch:
     for (int i = 2; i < size(); i++){
@@ -251,11 +251,12 @@ bool Clause::propagate(Solver& S, Lit p, bool& keep_watch)
             data[1] = data[i], data[i] = false_lit;
             if (verbosity >= 2) printf("WATCHES_PUSH4 " L_LIT " %d %p %d\n", L_lit(~data[1]), S.watches[index(~data[1])].size(), this, S.value(~data[1]).toInt());
             S.watches[index(~data[1])].push(this);
-            return true; } }
+            return NULL; } }
 
     // Clause is unit under assignment:
     keep_watch = true;
-    return S.enqueue(data[0], this);
+    if (S.enqueue(data[0], this)) return NULL;
+    return this;
 }
 
 

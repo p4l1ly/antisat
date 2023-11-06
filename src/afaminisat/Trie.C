@@ -191,13 +191,14 @@ WatchedPlace::WatchedPlace(Place place)
 { }
 
 Trie::Trie()
-: root{{NULL, 0, 0}, vector<VerHead>()}
+: root{Place(NULL, 0, 0), vector<VerHead>()}
 , root_greater_places()
+, root_reasons()
 , my_literals()
 , back_ptrs()
 , greater_backjumpers()
 , greater_stack()
-, to_cut{NULL}
+, to_cut(NULL, 0, 0)
 { }
 
 bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& init_clause_omits) {
@@ -227,7 +228,7 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     }
   }
 
-  ChangedGreaterPlace changed_place = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
+  ChangedGreaterPlace changed_place = {Place(&root, 0, IX_NULL), GREATER_IX_FIRST, 0};
   GreaterPlace &root_place = root_greater_places.push_back(
     GreaterPlace(changed_place, GREATER_IX_NULL, true)
   );
@@ -244,10 +245,14 @@ bool Trie::guess(Solver &S) {
     GreaterPlace &gplace = greater_place_at(last_greater);
     Lit out_lit = gplace.get_tag();
     if (verbosity >= 2) {
-      std::cout << "GUESS_GREATER " << gplace << " ";
+      std::cout << "GUESS_GREATER " << gplace << " " << &gplace << " ";
       printf(L_LIT "\n", L_lit(out_lit));
     }
     if (verbosity >= 2) std::cout << "GREATER_PUSH2 " << S.decisionLevel() << (L_lit(out_lit)) << std::endl;
+#ifdef MY_DEBUG
+    assert(gplace.enabled);
+    assert(!gplace.in_conflict());
+#endif
 
     GreaterBackjumper &backj = new_backjumper();
     backj.is_acc = false;
@@ -314,6 +319,7 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
   ITER_MY_ZEROES(*this, x,
       if (verbosity >= 2) {
         printf("MY_ZERO1 " L_LIT " %d %d\n", L_lit(x), S.value(x).toInt(), S.level[var(x)]);
+        std::cout << std::flush;
       }
       my_zeroes_set.insert(index(x));
 #ifdef MY_DEBUG
@@ -480,9 +486,20 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
 
   GreaterPlace *gplace;
 
-  {
+  if (visit_level == accept_level) {
+    gplace = this;
+    enabled = true;
+    hor = extended_hor;
+    hor_ix = extended_hor_ix;
+    ver_ix = (unsigned)added_vars.size() - 1;
+    trie.last_greater = ix;
+    next = previous = GREATER_IX_NULL;
+    if (verbosity >= 2) {
+      std::cout << "REUSING_GREATER_PLACE " << (Place &)*this
+        << " " << ix.first << "," << ix.second << " " << last_change_level << std::endl;
+    }
+  } else {
     // Create a greater place at the top of the added branch
-
     LogList<GreaterPlace> *incomplete_greater_places;
     unsigned incomplete_backjumper_ix;
 
@@ -517,7 +534,7 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
   unsigned i = added_vars.size() - 1;
 
   {
-    GreaterIx ix = gplace->ix;
+    GreaterIx gplace_ix = gplace->ix;
     // if (i) --i;
     int lvl = added_vars[i].first;
     if (verbosity >= 2) printf("LVLLVL %d\n", lvl);
@@ -542,7 +559,7 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
           }
           backjumper.changed_places.push_back({
             {extended_hor, extended_hor_ix, i - 1},
-            ix,
+            gplace_ix,
             original_last_change_level
           });
           if (next_bjumper) {
@@ -562,7 +579,7 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
       }
       backjumper.changed_places.push_back({
         {extended_hor, extended_hor_ix, IX_NULL},
-        ix,
+        gplace_ix,
         original_last_change_level
       });
       if (next_bjumper) {
@@ -730,14 +747,6 @@ bool GreaterStackItem::handle(Solver &S) {
       greater.on_accept(S);
       return true;
     }
-    case MultimoveEnd::E_PROPAGATE: {
-      GreaterPlace &greater = place.save_as_greater(S);
-      hor->elems[hor_ix].greater_ix = greater.ix;
-      if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
-      check(S.enqueue(place.get_tag(), &greater));
-
-      return true;
-    }
     default: { // case MultimoveEnd::E_CONFLICT:
       return false;
     }
@@ -821,7 +830,35 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
           printf("PROPAGATE %d %d " L_LIT "\n", hor_ix, ver_ix, L_lit(get_tag()));
         }
 
-        return MultimoveEnd::E_PROPAGATE;
+        Trie &trie = S.trie;
+        if (!trie.backjumper_count) {
+          check(S.enqueue(get_tag(), &trie.root_reasons.push_back(Place(hor, hor_ix, ver_ix))));
+        } else {
+          GreaterBackjumper &backj = trie.get_last_backjumper();
+          check(S.enqueue(get_tag(), &backj.reasons.push_back(Place(hor, hor_ix, ver_ix))));
+        }
+
+        if (is_ver()) {
+          HorLine *hor2 = deref_ver().hor;
+          if (hor2 == NULL) what_to_do = DONE;
+          else {
+            hor = hor2;
+            hor_ix = 0;
+            ver_ix = IX_NULL;
+#ifdef MY_DEBUG
+            check_all_duplicate_places(trie);
+#endif
+            what_to_do = after_hors_change(S);
+          }
+        }
+        else {
+          hor_ix++;
+#ifdef MY_DEBUG
+          check_all_duplicate_places(trie);
+#endif
+          what_to_do = after_hors_change(S);
+        }
+        continue;
       }
 
       case CONFLICT: {
@@ -836,7 +873,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   }
 }
 
-bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
+Reason* WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   MultimoveEnd end = multimove_on_propagate(S, what_to_do);
 
   Trie &trie = S.trie;
@@ -858,17 +895,12 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       on_accept(S);
       break;
     }
-    case MultimoveEnd::E_PROPAGATE: {
-      set_watch(S);
-      check(S.enqueue(get_tag(), this));
-      break;
-    }
     default: {  // MultimoveEnd::E_CONFLICT
       trie.greater_stack.clear();
 #ifdef MY_DEBUG
   check_all_duplicate_places(trie);
 #endif
-      return false;
+      return this;
     }
   }
 
@@ -880,17 +912,17 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 #ifdef MY_DEBUG
   check_all_duplicate_places(trie);
 #endif
-      return false;
+      return this;
     }
   }
 
 #ifdef MY_DEBUG
   check_all_duplicate_places(trie);
 #endif
-  return true;
+  return NULL;
 }
 
-bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
+Reason* WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) {
     printf("PROP " L_LIT " ", L_lit(p));
     std::cout << *this << " " << this << std::endl;
@@ -906,13 +938,13 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 
   lbool value = S.value(out_lit);
 
-  if (value == l_True && !ver_is_last()) {  // ver_is_last() means - we were propagating
+  if (value == l_True) {
     if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
     on_accept(S);
 #ifdef MY_DEBUG
     check_all_duplicate_places(trie);
 #endif
-    return true;
+    return NULL;
   }
 
   if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
@@ -978,9 +1010,11 @@ void Trie::undo(Solver& S) {
     GreaterPlace &gplace = greater_place_at(changed_place.ix);
 
     if (verbosity >= 2) {
-      std::cout << "CHANGED " << gplace << " " << changed_place.place
+      std::cout << "CHANGED " << &gplace << " " << gplace << " " << changed_place.place
         << " " << changed_place.ix.first << "," << changed_place.ix.second
-        << " " << gplace.enabled << "\n" << std::flush;
+        << " " << gplace.enabled << " LCLVL "
+        << gplace.last_change_level << "->" << changed_place.last_change_level
+        << "\n" << std::flush;
     }
 
     bool watch_unwatch = false;
@@ -1052,6 +1086,7 @@ GreaterBackjumper& Trie::new_backjumper() {
   }
 
   backj->greater_places.clear_nodestroy();
+  backj->reasons.clear_nodestroy();
   backj->changed_places.clear();
   backj->accept_depth = -2;
 
@@ -1059,7 +1094,7 @@ GreaterBackjumper& Trie::new_backjumper() {
 }
 
 
-void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
+void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   if (p == lit_Undef) {
     int max_level = -1;
     ITER_MY_ZEROES(*this, x,
@@ -1111,7 +1146,7 @@ GreaterPlace& Trie::greater_place_at(GreaterIx ix) {
     : greater_backjumpers[ix.first].greater_places[ix.second];
 }
 
-bool Trie::reset(Solver &S) {
+Reason* Trie::reset(Solver &S) {
   {
     GreaterIx greater_ix = last_greater;
     while (true) {
@@ -1125,6 +1160,7 @@ bool Trie::reset(Solver &S) {
     }
   }
   root_greater_places.clear_nodestroy();
+  root_reasons.clear_nodestroy();
 
   ChangedGreaterPlace changed_place = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
   GreaterPlace &root_place = root_greater_places.push_back(
@@ -1192,16 +1228,20 @@ void GreaterPlace::on_accept(Solver &S) {
     depth = hor->back_ptr.deref_ver().depth;
   }
 
-  if (trie.accept_depth < depth) {
+  int old_depth = trie.accept_depth;
+  if (
+    old_depth < depth || old_depth == depth &&
+    trie.accept_place->hor == hor && trie.accept_place->hor_ix <= hor_ix
+  ) {
     if (trie.backjumper_count != 0) {
       GreaterBackjumper &last_backj = trie.get_last_backjumper();
       if (last_backj.accept_depth == -2) {
-        last_backj.accept_depth = trie.accept_depth;
+        last_backj.accept_depth = old_depth;
         last_backj.accept_level = trie.accept_level;
         last_backj.accept_place = trie.accept_place;
 
         if (verbosity >= 2) {
-          std::cout << "ACCEPT_DEPTH_BACKJ " << trie.accept_depth
+          std::cout << "ACCEPT_DEPTH_BACKJ " << old_depth
             << " " << trie.accept_place
             << " " << trie.backjumper_count << std::endl;
         }
@@ -1209,7 +1249,7 @@ void GreaterPlace::on_accept(Solver &S) {
     }
     if (verbosity >= 2) {
       std::cout << "SET_ACCEPT_DEPTH "
-        << trie.accept_depth << " "
+        << old_depth << " "
         << depth << " "
         << *this << " "
         << this
@@ -1219,12 +1259,12 @@ void GreaterPlace::on_accept(Solver &S) {
     trie.accept_level = S.decisionLevel();
     trie.accept_place = this;
   } else if (verbosity >= 2) {
-    std::cout << "NOSET " << trie.accept_depth << " " << depth << std::endl;
+    std::cout << "NOSET " << old_depth << " " << depth << std::endl;
   }
 }
 
 
-bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
+Reason* GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
   Trie& trie = S.trie;
   if (trie.backjumper_count) {
     int level = S.decisionLevel();

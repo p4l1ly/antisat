@@ -179,7 +179,7 @@ bool Solver::onSatConflict(const vector<int>& cell) {
 |  Effect:
 |    Will undo part of the trail, upto but not beyond the assumption of the current decision level.
 |________________________________________________________________________________________________@*/
-bool Solver::analyze(Constr* confl, vec<Lit>& out_learnt, int& out_btlevel)
+bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
 {
     vec<char>&  seen = analyze_seen;
     int         pathC    = 0;
@@ -342,7 +342,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
             }
         }
 
-        Constr* confl;
+        Reason* confl;
 
         // Select next clause to look at:
         while (true) {
@@ -461,7 +461,7 @@ resolved:
 |  Output:
 |    TRUE if fact was enqueued without conflict, FALSE otherwise.
 |________________________________________________________________________________________________@*/
-bool Solver::enqueue(Lit p, Constr* from)
+bool Solver::enqueue(Lit p, Reason* from)
 {
    if (value(p) != l_Undef){
         if (value(p) == l_False){
@@ -498,10 +498,10 @@ bool Solver::enqueue(Lit p, Constr* from)
 |    Post-conditions:
 |      * the propagation queue is empty, even if there was a conflict.
 |________________________________________________________________________________________________@*/
-Constr* Solver::propagate(void)
+Reason* Solver::propagate(void)
 {
     if (verbosity >= 2) printf("PROPAGATE %d\n", propQ.size());
-    Constr* confl = NULL;
+    Reason* confl = NULL;
     while (propQ.size() > 0){
         stats.propagations++;
         Lit           p  = propQ.dequeue();        // 'p' is enqueued fact to propagate.
@@ -516,8 +516,9 @@ Constr* Solver::propagate(void)
               printf("PROP_IX %ld\n", i - (Constr**)ws);
               std::cout << std::flush;
             }
-            if (!(*i)->propagate(*this, p, keep_watch))
-                confl = *i,
+            Reason *confl2 = (*i)->propagate(*this, p, keep_watch);
+            if (confl2)
+                confl = confl2,
                 propQ.clear();
             if (keep_watch) {
                 *j++ = *i;
@@ -652,7 +653,7 @@ lbool Solver::search()
             throw Cancelled();
           }
         }
-        Constr* confl = propagate();
+        Reason* confl = propagate();
         if (confl != NULL){
             // CONFLICT
 
@@ -738,7 +739,7 @@ void Solver::claRescaleActivity(void)
 |________________________________________________________________________________________________@*/
 bool Solver::solve(const vec<Lit>& assumps)
 {
-    if (trie.root.elems.size() && !trie.reset(*this)) return false;
+    if (trie.root.elems.size() && trie.reset(*this)) return false;
     simplifyDB();
     if (!ok) return false;
 

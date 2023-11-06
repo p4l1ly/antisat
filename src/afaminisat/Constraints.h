@@ -39,11 +39,16 @@ struct Undoable {
     virtual ~Undoable(void) { };  // (not used, just to keep the compiler happy)
 };
 
+struct Reason {
+    virtual void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) = 0;
+
+    virtual ~Reason(void) { };  // (not used, just to keep the compiler happy)
+};
+
 struct Constr {
     virtual void remove    (Solver& S, bool just_dealloc = false) = 0;
-    virtual bool propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
+    virtual Reason* propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
-    virtual void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) = 0;
     virtual void moveWatch(int i, Lit p) = 0;
 
     virtual ~Constr(void) { };  // (not used, just to keep the compiler happy)
@@ -54,7 +59,7 @@ struct Constr {
 // Clauses:
 
 
-class Clause : public Constr {
+class Clause : public Constr, public Reason {
     unsigned    size_learnt;
     Lit         data[0];
 
@@ -79,7 +84,7 @@ public:
 
     // Constraint interface:
     void remove    (Solver& S, bool just_dealloc = false);
-    bool propagate (Solver& S, Lit p, bool& keep_watch);
+    Reason* propagate (Solver& S, Lit p, bool& keep_watch);
     bool simplify  (Solver& S);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
     void moveWatch(int i, Lit p);
