@@ -82,6 +82,7 @@ public:
     vec<bool>           pures;          // The pure literals (undef === one).
     vec<int>            output_map;    // The mask of output variables.
     vec<Lit>            outputs;        // The output literals.
+    std::unordered_set<unsigned> finals;        // The output literals.
 
     VarOrder            order;          // Keeps track of the decision variable order.
 

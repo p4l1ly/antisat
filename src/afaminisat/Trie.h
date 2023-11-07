@@ -272,7 +272,7 @@ public:
   Place to_cut;
 
   Trie();
-  void init(const vec<Lit>& my_literals);
+  bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits);
 
   bool guess(Solver &S);
 

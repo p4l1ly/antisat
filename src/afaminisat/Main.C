@@ -61,6 +61,7 @@ bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
     *acnt = in.getVariableCount();
     auto outputs = in.getOutputs();
     auto clauses = in.getClauses();
+    auto finals = in.getFinals();
 
     int nVars = *acnt + outputs.size() + clauses.size();
     S.pures.growTo(nVars, false);
@@ -74,6 +75,8 @@ bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
         S.outputs.push(lit);
         i++;
     }
+
+    for (auto final_: finals) S.finals.insert(final_);
 
     while (nVars > S.nVars()) S.newVar();
 
@@ -239,6 +242,7 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     int omitted = 0;
     int reset_count = 0;
     bool short_unsat = false;
+    bool short_sat = false;
 
 public:
     ModelCheckingImpl(cnfafa::Afa::Reader cnfafa, char mode)
@@ -250,11 +254,20 @@ public:
             return;
         }
 
-        cell = new vector<int>(S.outputs.size());
-        for (int i = 0; i < S.outputs.size(); i++) (*cell)[i] = i;
+        cell = new vector<int>(S.outputs.size() - S.finals.size());
+        int j = 0;
+        for (int i = 0; i < S.outputs.size(); i++) {
+          if (!S.finals.contains(i)) {
+            (*cell)[j++] = i;
+          }
+        }
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        S.trie.init(S.outputs);
+        short_sat = !S.trie.init(S.outputs, S.finals);
+        if (short_sat) {
+          return;
+        }
+
         switch (mode) {
           case '0': TRIE_MODE = clauses; break;
           default: TRIE_MODE = branch_always;
@@ -272,6 +285,11 @@ public:
 
         if (short_unsat) {
             result.getMeta().setEmpty(true);
+            result.setTime(0);
+            return kj::READY_NOW;
+        }
+        if (short_sat) {
+            result.getMeta().setEmpty(false);
             result.setTime(0);
             return kj::READY_NOW;
         }
@@ -325,6 +343,9 @@ public:
     bool modelCheck() {
         if (short_unsat) {
             return false;
+        }
+        if (short_sat) {
+            return true;
         }
 
         S.status = Solver_RUNNING;

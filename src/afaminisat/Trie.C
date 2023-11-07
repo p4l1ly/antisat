@@ -200,7 +200,7 @@ Trie::Trie()
 , to_cut{NULL}
 { }
 
-void Trie::init(const vec<Lit> &my_literals_) {
+bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& init_clause_omits) {
   my_literals.reserve(my_literals_.size());
   for (int i = 0; i < my_literals_.size(); i++) {
     my_literals.push_back(my_literals_[i]);
@@ -208,19 +208,31 @@ void Trie::init(const vec<Lit> &my_literals_) {
   back_ptrs.resize(my_literals_.size());
   greater_stack.reserve(my_literals_.size());
 
-  // TODO allow nonempty final configurations
+  VerHead *ver_head = NULL;
   int depth = 0;
-  VerHead &ver_head = root.elems.emplace_back(my_literals[0]);
+  unsigned i = 0;
+  for (; i < my_literals.size(); ++i) {
+    if (!init_clause_omits.contains(i)) {
+      ver_head = &root.elems.emplace_back(my_literals[0]);
+      break;
+    }
+  }
+
+  if (ver_head == NULL) return false;
 
   // Continue down with a vertical branch containing the remaining added_vars.
-  for (unsigned i = 1; i < my_literals.size(); ++i) {
-    ver_head.hors.emplace_back(my_literals[i], 0, ++depth);
+  for (++i; i < my_literals.size(); ++i) {
+    if (!init_clause_omits.contains(i)) {
+      ver_head->hors.emplace_back(my_literals[i], 0, ++depth);
+    }
   }
 
   ChangedGreaterPlace changed_place = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
   GreaterPlace &root_place = root_greater_places.push_back(
     GreaterPlace(changed_place, GREATER_IX_NULL, true)
   );
+
+  return true;
 }
 
 bool Trie::guess(Solver &S) {
