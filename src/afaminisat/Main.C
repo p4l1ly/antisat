@@ -263,7 +263,15 @@ public:
         }
         if (verbosity >= 2) {printf("ncell1"); for(int i: *cell){printf(" %d", i);} printf("\n");}
 
-        short_sat = !S.trie.init(S.outputs, S.finals);
+        vec<Lit> unique_outputs;
+        std::unordered_set<int> unique_outputs_set;
+        for (int i = 0; i < S.outputs.size(); i++) {
+          if (!unique_outputs_set.contains(index(S.outputs[i]))) {
+            unique_outputs_set.insert(index(S.outputs[i]));
+            unique_outputs.push(S.outputs[i]);
+          }
+        }
+        short_sat = !S.trie.init(unique_outputs, S.finals);
         if (short_sat) {
           return;
         }
