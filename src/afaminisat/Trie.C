@@ -12,14 +12,14 @@ int ver_count = 0;
 RemovedWatch REMOVED_WATCH = {};
 Mode TRIE_MODE = branch_always;
 
-void check_duplicate_places(Trie &trie, GreaterPlace &p) {
-  ITER_LOGLIST(trie.root_greater_places, GreaterPlace, x, {
+void check_duplicate_places(Trie &trie, RearGuard &p) {
+  ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
     assert(x.ix == p.ix || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
   })
   unsigned i = 0;
-  for (int j = 0; j < trie.backjumper_count; j++) {
-    GreaterBackjumper& backj = trie.greater_backjumpers[j];
-    ITER_LOGLIST(backj.greater_places, GreaterPlace, x, {
+  for (int j = 0; j < trie.snapshot_count; j++) {
+    Snapshot& snapshot = trie.snapshots[j];
+    ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
       assert(x.ix == p.ix || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
     })
     ++i;
@@ -27,13 +27,13 @@ void check_duplicate_places(Trie &trie, GreaterPlace &p) {
 }
 
 void check_all_duplicate_places(Trie &trie) {
-  ITER_LOGLIST(trie.root_greater_places, GreaterPlace, x, {
+  ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
     check_duplicate_places(trie, x);
   })
   unsigned i = 0;
-  for (int j = 0; j < trie.backjumper_count; j++) {
-    GreaterBackjumper& backj = trie.greater_backjumpers[j];
-    ITER_LOGLIST(backj.greater_places, GreaterPlace, x, {
+  for (int j = 0; j < trie.snapshot_count; j++) {
+    Snapshot& snapshot = trie.snapshots[j];
+    ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
       check_duplicate_places(trie, x);
     })
     ++i;
@@ -192,11 +192,11 @@ WatchedPlace::WatchedPlace(Place place)
 
 Trie::Trie()
 : root{{NULL, 0, 0}, vector<VerHead>()}
-, root_greater_places()
+, root_new_rears()
 , my_literals()
 , back_ptrs()
-, greater_backjumpers()
-, greater_stack()
+, snapshots()
+, rear_stack()
 , to_cut{NULL}
 { }
 
@@ -206,7 +206,7 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     my_literals.push_back(my_literals_[i]);
   }
   back_ptrs.resize(my_literals_.size());
-  greater_stack.reserve(my_literals_.size());
+  rear_stack.reserve(my_literals_.size());
 
   VerHead *ver_head = NULL;
   int depth = 0;
@@ -227,9 +227,9 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     }
   }
 
-  ChangedGreaterPlace changed_place = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
-  GreaterPlace &root_place = root_greater_places.push_back(
-    GreaterPlace(changed_place, GREATER_IX_NULL, true)
+  RearSnapshot rear_snapshot = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
+  RearGuard &root_place = root_new_rears.push_back(
+    RearGuard(rear_snapshot, GREATER_IX_NULL, true)
   );
 
   return true;
@@ -240,17 +240,17 @@ bool Trie::guess(Solver &S) {
   check_all_duplicate_places(*this);
 #endif
 
-  if (last_greater.second != IX32_NULL) {
-    GreaterPlace &gplace = greater_place_at(last_greater);
-    Lit out_lit = gplace.get_tag();
+  if (last_rear.second != IX32_NULL) {
+    RearGuard &rguard = rear_guard_at(last_rear);
+    Lit out_lit = rguard.get_tag();
     if (verbosity >= 2) {
-      std::cout << "GUESS_GREATER " << gplace << " ";
+      std::cout << "GUESS_GREATER " << rguard << " ";
       printf(L_LIT "\n", L_lit(out_lit));
     }
     if (verbosity >= 2) std::cout << "GREATER_PUSH2 " << S.decisionLevel() << (L_lit(out_lit)) << std::endl;
 
-    GreaterBackjumper &backj = new_backjumper();
-    backj.is_acc = false;
+    Snapshot &snapshot = new_snapshot();
+    snapshot.is_acc = false;
 
     S.assume(out_lit);
     S.undos.push_back(this);
@@ -265,8 +265,8 @@ bool Trie::guess(Solver &S) {
       if (S.value(p) == l_Undef) {
         if (verbosity >= 2) printf("GUESS_ACC %d " L_LIT "\n", active_var, L_lit(p));
 
-        GreaterBackjumper &backj = new_backjumper();
-        backj.is_acc = true;
+        Snapshot &snapshot = new_snapshot();
+        snapshot.is_acc = true;
 
         back_ptrs[active_var] = active_var_old;
         active_var++;
@@ -296,15 +296,15 @@ void Trie::onSat(Solver &S) {
 #endif
 }
 
-void GreaterPlace::onSat(Solver &S, int accept_level) {
+void RearGuard::onSat(Solver &S, int accept_level) {
   Trie &trie = S.trie;
 
   if (verbosity >= 2) {
     std::cout << "ON_SAT " << *this << " " << S.root_level << " " << accept_level
-      << " " << this << " " << ix.first << "," << ix.second << " " << trie.root_greater_places.size();
-    for (int i = 0; i < trie.backjumper_count; i++) {
-      GreaterBackjumper &backj = trie.greater_backjumpers[i];
-      std::cout << "," << backj.greater_places.size();
+      << " " << this << " " << ix.first << "," << ix.second << " " << trie.root_new_rears.size();
+    for (int i = 0; i < trie.snapshot_count; i++) {
+      Snapshot &snapshot = trie.snapshots[i];
+      std::cout << "," << snapshot.new_rears.size();
     }
     std::cout << std::endl;
   }
@@ -478,30 +478,29 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
   // immediately before the guessed added var? No because guessed variables are
   // of course not in added_vars, as they are 1-valued.
 
-  GreaterPlace *gplace;
+  RearGuard *rguard;
 
   {
     // Create a greater place at the top of the added branch
 
-    LogList<GreaterPlace> *incomplete_greater_places;
-    unsigned incomplete_backjumper_ix;
+    LogList<RearGuard> *incomplete_rears;
+    unsigned incomplete_snapshot_ix;
 
     if (visit_level <= S.root_level) {
-      incomplete_greater_places = &trie.root_greater_places;
-      incomplete_backjumper_ix = IX_NULL;
+      incomplete_rears = &trie.root_new_rears;
+      incomplete_snapshot_ix = IX_NULL;
     } else {
-      incomplete_backjumper_ix = visit_level - S.root_level - 1;
-      incomplete_greater_places = &trie.greater_backjumpers[incomplete_backjumper_ix].greater_places;
+      incomplete_snapshot_ix = visit_level - S.root_level - 1;
+      incomplete_rears = &trie.snapshots[incomplete_snapshot_ix].new_rears;
     }
 
-    GreaterIx completion_ix(incomplete_backjumper_ix, incomplete_greater_places->size());
-    extended_hor->elems[extended_hor_ix].greater_ix = completion_ix;
+    RearIx completion_ix(incomplete_snapshot_ix, incomplete_rears->size());
     if (verbosity >= 2) printf("WRITE_RIGHT_IX1 %p %d %d %d\n", extended_hor, extended_hor_ix, completion_ix.first, completion_ix.second);
 
     // Put the new greater place into conflict at the end of the added branch
-    gplace = &incomplete_greater_places->push_back(
-      GreaterPlace(
-        ChangedGreaterPlace{
+    rguard = &incomplete_rears->push_back(
+      RearGuard(
+        RearSnapshot{
           {extended_hor, extended_hor_ix, (unsigned)added_vars.size() - 1},
           completion_ix,
           visit_level,
@@ -510,25 +509,25 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
         true
       )
     );
-    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE3 " << gplace << std::endl;
-    trie.last_greater = completion_ix;
+    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE3 " << rguard << std::endl;
+    trie.last_rear = completion_ix;
   }
 
   unsigned i = added_vars.size() - 1;
 
   {
-    GreaterIx ix = gplace->ix;
+    RearIx ix = rguard->ix;
     // if (i) --i;
     int lvl = added_vars[i].first;
     if (verbosity >= 2) printf("LVLLVL %d\n", lvl);
-    if (lvl < S.root_level) goto break_greater;
-    int original_last_change_level = gplace->last_change_level;
-    GreaterBackjumper *next_bjumper = NULL;
+    if (lvl < S.root_level) goto break_rears;
+    int original_last_change_level = rguard->last_change_level;
+    Snapshot *next_bjumper = NULL;
 
     for (int iter = lvl - S.root_level; iter; --lvl) {
       if (lvl <= visit_level) break;
       --iter;
-      GreaterBackjumper &backjumper = trie.greater_backjumpers[iter];
+      Snapshot &snapshot = trie.snapshots[iter];
       if (verbosity >= 0) printf("GLVL2 %d/%d\n", lvl, S.root_level);
 
       for (; i; --i) {
@@ -540,18 +539,18 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
           if (verbosity >= 2) {
             printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
           }
-          backjumper.changed_places.push_back({
+          snapshot.rear_snapshots.push_back({
             {extended_hor, extended_hor_ix, i - 1},
             ix,
             original_last_change_level
           });
           if (next_bjumper) {
-            next_bjumper->changed_places.back().last_change_level = lvl;
+            next_bjumper->rear_snapshots.back().last_change_level = lvl;
           } else {
-            gplace->last_change_level = lvl;
+            rguard->last_change_level = lvl;
           }
-          next_bjumper = &backjumper;
-          goto continue_greater;
+          next_bjumper = &snapshot;
+          goto continue_rears;
         }
       }
 
@@ -560,21 +559,21 @@ void GreaterPlace::onSat(Solver &S, int accept_level) {
       if (verbosity >= 2) {
         printf("GREATER_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
       }
-      backjumper.changed_places.push_back({
+      snapshot.rear_snapshots.push_back({
         {extended_hor, extended_hor_ix, IX_NULL},
         ix,
         original_last_change_level
       });
       if (next_bjumper) {
-        next_bjumper->changed_places.back().last_change_level = lvl;
+        next_bjumper->rear_snapshots.back().last_change_level = lvl;
       } else {
-        gplace->last_change_level = lvl;
+        rguard->last_change_level = lvl;
       }
-      next_bjumper = &backjumper;
-continue_greater: ;
+      next_bjumper = &snapshot;
+continue_rears: ;
     }
   }
-break_greater:
+break_rears:
 
   S.cancelUntil(max_level);
 
@@ -614,7 +613,7 @@ void branch(Solver &S, HorLine *horline, unsigned i) {
     if (verbosity >= 2) {
       std::cout << "ADD_TO_GREATER_STACK " << PlaceAttrs(Place{horline, i, IX_NULL}, S) << "\n";
     }
-    S.trie.greater_stack.emplace_back(horline, i);
+    S.trie.rear_stack.emplace_back(horline, i);
   }
 }
 
@@ -649,21 +648,21 @@ WhatToDo Place::after_vers_change(Solver &S) {
 }
 
 
-GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
+RearGuard &Place::save_as_rear(Solver &S, bool enabled) {
   Trie &trie = S.trie;
 
-  unsigned backj_size = trie.backjumper_count;
-  GreaterIx last_greater = trie.last_greater;
-  if (backj_size == 0) {
-    GreaterIx ix = pair(IX_NULL, trie.root_greater_places.size());
-    ChangedGreaterPlace changed_place = {*this, ix, S.decisionLevel()};
-    GreaterPlace &place = trie.root_greater_places.push_back(GreaterPlace(changed_place, last_greater));
+  unsigned snapshot_size = trie.snapshot_count;
+  RearIx last_rear = trie.last_rear;
+  if (snapshot_size == 0) {
+    RearIx ix = pair(IX_NULL, trie.root_new_rears.size());
+    RearSnapshot rear_snapshot = {*this, ix, S.decisionLevel()};
+    RearGuard &place = trie.root_new_rears.push_back(RearGuard(rear_snapshot, last_rear));
     if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE1 " << &place << std::endl;
     if (enabled) {
-      if (trie.last_greater.second != IX32_NULL) {
-        trie.root_greater_places[last_greater.second].next = ix;
+      if (trie.last_rear.second != IX32_NULL) {
+        trie.root_new_rears[last_rear.second].next = ix;
       }
-      trie.last_greater = ix;
+      trie.last_rear = ix;
       place.set_watch(S);
     } else {
       place.enabled = false;
@@ -673,20 +672,20 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
 #endif
     return place;
   } else {
-    GreaterBackjumper &last_backj = trie.get_last_backjumper();
-    GreaterIx ix = pair(backj_size - 1, last_backj.greater_places.size());
-    ChangedGreaterPlace changed_place = {*this, ix, S.decisionLevel()};
-    GreaterPlace &place = last_backj.greater_places.push_back(GreaterPlace(changed_place, last_greater));
+    Snapshot &last_snapshot = trie.get_last_snapshot();
+    RearIx ix = pair(snapshot_size - 1, last_snapshot.new_rears.size());
+    RearSnapshot rear_snapshot = {*this, ix, S.decisionLevel()};
+    RearGuard &place = last_snapshot.new_rears.push_back(RearGuard(rear_snapshot, last_rear));
     if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE2 " << &place << std::endl;
     if (enabled) {
-      if (last_greater.second != IX32_NULL) {
-        if (last_greater.first == IX_NULL) {
-          trie.root_greater_places[last_greater.second].next = ix;
+      if (last_rear.second != IX32_NULL) {
+        if (last_rear.first == IX_NULL) {
+          trie.root_new_rears[last_rear.second].next = ix;
         } else {
-          trie.greater_backjumpers[last_greater.first].greater_places[last_greater.second].next = ix;
+          trie.snapshots[last_rear.first].new_rears[last_rear.second].next = ix;
         }
       }
-      trie.last_greater = ix;
+      trie.last_rear = ix;
       place.set_watch(S);
     } else {
       place.enabled = false;
@@ -699,31 +698,28 @@ GreaterPlace &Place::save_as_greater(Solver &S, bool enabled) {
 }
 
 
-bool GreaterStackItem::handle(Solver &S) {
+bool RearStackItem::handle(Solver &S) {
   Place place = {hor, hor_ix, IX_NULL};
   if (verbosity >= 2) {
     std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << " " << "\n";
   }
   switch (place.multimove_on_propagate(S, place.after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
-      GreaterPlace &greater = place.save_as_greater(S);
-      hor->elems[hor_ix].greater_ix = greater.ix;
-      if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
+      RearGuard &rguard = place.save_as_rear(S);
+      if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, rguard.ix.first, rguard.ix.second);
 
       return true;
     }
     case MultimoveEnd::E_DONE: {
-      GreaterPlace &greater = place.save_as_greater(S, false);
-      hor->elems[hor_ix].greater_ix = greater.ix;
-      if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
-      greater.on_accept(S);
+      RearGuard &rguard = place.save_as_rear(S, false);
+      if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, rguard.ix.first, rguard.ix.second);
+      rguard.on_accept(S);
       return true;
     }
     case MultimoveEnd::E_PROPAGATE: {
-      GreaterPlace &greater = place.save_as_greater(S);
-      hor->elems[hor_ix].greater_ix = greater.ix;
-      if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, greater.ix.first, greater.ix.second);
-      check(S.enqueue(place.get_tag(), &greater));
+      RearGuard &rguard = place.save_as_rear(S);
+      if (verbosity >= 2) printf("WRITE_RIGHT_IX4 %p %d %d %d\n", hor, hor_ix, rguard.ix.first, rguard.ix.second);
+      check(S.enqueue(place.get_tag(), &rguard));
 
       return true;
     }
@@ -811,7 +807,7 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       break;
     }
     default: {  // MultimoveEnd::E_CONFLICT
-      trie.greater_stack.clear();
+      trie.rear_stack.clear();
 #ifdef MY_DEBUG
   check_all_duplicate_places(trie);
 #endif
@@ -819,11 +815,11 @@ bool WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     }
   }
 
-  while (!trie.greater_stack.empty()) {
-    GreaterStackItem gsi = trie.greater_stack.back();
-    trie.greater_stack.pop_back();
-    if (!gsi.handle(S)) {
-      trie.greater_stack.clear();
+  while (!trie.rear_stack.empty()) {
+    RearStackItem rsi = trie.rear_stack.back();
+    trie.rear_stack.pop_back();
+    if (!rsi.handle(S)) {
+      trie.rear_stack.clear();
 #ifdef MY_DEBUG
   check_all_duplicate_places(trie);
 #endif
@@ -871,7 +867,7 @@ bool WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
 
 
 void Trie::undo(Solver& S) {
-  if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, backjumper_count);
+  if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, snapshot_count);
   if (active_var > my_literals.size()) {
     if (verbosity >= 2) {
       printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(S.outputs[active_var_old]));
@@ -882,8 +878,8 @@ void Trie::undo(Solver& S) {
     return;
   }
 
-  GreaterBackjumper &backj = get_last_backjumper();
-  if (backj.is_acc) {
+  Snapshot &snapshot = get_last_snapshot();
+  if (snapshot.is_acc) {
     active_var--;
     if (verbosity >= 2) {
       printf("ACC_UNDO " L_LIT "\n", L_lit(S.outputs[active_var]));
@@ -894,92 +890,92 @@ void Trie::undo(Solver& S) {
 
   if (verbosity >= 2) {
     std::cout << "GREATER_UNDO "
-        << backj.greater_places.size() << " "
-        << backj.changed_places.size() << "\n"
+        << snapshot.new_rears.size() << " "
+        << snapshot.rear_snapshots.size() << "\n"
         << std::flush;
   }
 
-  ITER_LOGLIST(backj.greater_places, GreaterPlace, gplace, {
-    if (gplace.enabled) {
-      if (!gplace.in_conflict()) {
+  ITER_LOGLIST(snapshot.new_rears, RearGuard, rguard, {
+    if (rguard.enabled) {
+      if (!rguard.in_conflict()) {
         if (verbosity >= 2) {
-          std::cout << "REMOVE_GREATER " << gplace << " ";
-          printf(L_LIT, L_lit(gplace.get_tag()));
-          std::cout << " " << &gplace << std::endl << std::flush;
+          std::cout << "REMOVE_GREATER " << rguard << " ";
+          printf(L_LIT, L_lit(rguard.get_tag()));
+          std::cout << " " << &rguard << std::endl << std::flush;
         }
-        gplace.remove_watch(S, gplace.get_tag());
+        rguard.remove_watch(S, rguard.get_tag());
       } else if (verbosity >= 2) {
-        std::cout << "UNTANGLE_GREATER " << gplace << " " << &gplace << std::endl << std::flush;
+        std::cout << "UNTANGLE_GREATER " << rguard << " " << &rguard << std::endl << std::flush;
       }
 
-      gplace.enabled = false;  // TODO backport the fix
-      if (gplace.previous.second != IX32_NULL) greater_place_at(gplace.previous).next = gplace.next;
-      if (gplace.next.second == IX32_NULL) last_greater = gplace.previous;
-      else greater_place_at(gplace.next).previous = gplace.previous;
+      rguard.enabled = false;  // TODO backport the fix
+      if (rguard.previous.second != IX32_NULL) rear_guard_at(rguard.previous).next = rguard.next;
+      if (rguard.next.second == IX32_NULL) last_rear = rguard.previous;
+      else rear_guard_at(rguard.next).previous = rguard.previous;
     } else if (verbosity >= 2) {
-        std::cout << "SKIP_GREATER " << gplace << " " << &gplace << std::endl << std::flush;
+        std::cout << "SKIP_GREATER " << rguard << " " << &rguard << std::endl << std::flush;
     }
   })
 
-  for (ChangedGreaterPlace changed_place: backj.changed_places) {
-    GreaterPlace &gplace = greater_place_at(changed_place.ix);
+  for (RearSnapshot rear_snapshot: snapshot.rear_snapshots) {
+    RearGuard &rguard = rear_guard_at(rear_snapshot.ix);
 
     if (verbosity >= 2) {
-      std::cout << "CHANGED " << gplace << " " << changed_place.place
-        << " " << changed_place.ix.first << "," << changed_place.ix.second
-        << " " << gplace.enabled << "\n" << std::flush;
+      std::cout << "CHANGED " << rguard << " " << rear_snapshot.place
+        << " " << rear_snapshot.ix.first << "," << rear_snapshot.ix.second
+        << " " << rguard.enabled << "\n" << std::flush;
     }
 
     bool watch_unwatch = false;
-    Lit new_tag = changed_place.place.get_tag();
+    Lit new_tag = rear_snapshot.place.get_tag();
 
-    if (gplace.enabled) {
-      if (!gplace.in_conflict()) {
-        Lit old_tag = gplace.get_tag();
+    if (rguard.enabled) {
+      if (!rguard.in_conflict()) {
+        Lit old_tag = rguard.get_tag();
         if (old_tag == new_tag) {
           watch_unwatch = true;
         } else {
-          gplace.remove_watch(S, gplace.get_tag());
+          rguard.remove_watch(S, rguard.get_tag());
         }
       }
-      (Place &)gplace = changed_place.place;
-      gplace.last_change_level = changed_place.last_change_level;
+      (Place &)rguard = rear_snapshot.place;
+      rguard.last_change_level = rear_snapshot.last_change_level;
     } else {
-      (Place &)gplace = changed_place.place;
-      gplace.enabled = true;
-      gplace.last_change_level = changed_place.last_change_level;
+      (Place &)rguard = rear_snapshot.place;
+      rguard.enabled = true;
+      rguard.last_change_level = rear_snapshot.last_change_level;
 
-      gplace.previous = last_greater;
-      gplace.next = GREATER_IX_NULL;
-      if (last_greater.second != IX32_NULL) greater_place_at(last_greater).next = changed_place.ix;
-      last_greater = changed_place.ix;
+      rguard.previous = last_rear;
+      rguard.next = GREATER_IX_NULL;
+      if (last_rear.second != IX32_NULL) rear_guard_at(last_rear).next = rear_snapshot.ix;
+      last_rear = rear_snapshot.ix;
     }
 
-    if (!watch_unwatch) gplace.set_watch(S);
+    if (!watch_unwatch) rguard.set_watch(S);
   }
 
-  if (backj.accept_depth != -2) {
+  if (snapshot.accept_depth != -2) {
     if (verbosity >= 2) {
       std::cout << "SET_ACCEPT_DEPTH_BACKJ "
         << accept_depth << " "
-        << backj.accept_depth << " ";
-      if (backj.accept_place) {
-        std::cout << *backj.accept_place << " "
-          << backj.accept_place
+        << snapshot.accept_depth << " ";
+      if (snapshot.accept_place) {
+        std::cout << *snapshot.accept_place << " "
+          << snapshot.accept_place
           << std::endl;
       } else {
         std::cout << "N/A "
-          << backj.accept_place
+          << snapshot.accept_place
           << std::endl;
       }
     }
 
-    accept_depth = backj.accept_depth;
-    accept_level = backj.accept_level;
-    accept_place = backj.accept_place;
+    accept_depth = snapshot.accept_depth;
+    accept_level = snapshot.accept_level;
+    accept_place = snapshot.accept_place;
   }
 
-  --backjumper_count;
+  --snapshot_count;
 
 #ifdef MY_DEBUG
   check_all_duplicate_places(*this);
@@ -987,22 +983,22 @@ void Trie::undo(Solver& S) {
 }
 
 
-GreaterBackjumper& Trie::new_backjumper() {
-  unsigned ix = backjumper_count;
-  ++backjumper_count;
+Snapshot& Trie::new_snapshot() {
+  unsigned ix = snapshot_count;
+  ++snapshot_count;
 
-  GreaterBackjumper *backj;
-  if (ix == greater_backjumpers.size()) {
-    backj = &greater_backjumpers.emplace_back();
+  Snapshot *snapshot;
+  if (ix == snapshots.size()) {
+    snapshot = &snapshots.emplace_back();
   } else {
-    backj = &greater_backjumpers[ix];
+    snapshot = &snapshots[ix];
   }
 
-  backj->greater_places.clear_nodestroy();
-  backj->changed_places.clear();
-  backj->accept_depth = -2;
+  snapshot->new_rears.clear_nodestroy();
+  snapshot->rear_snapshots.clear();
+  snapshot->accept_depth = -2;
 
-  return *backj;
+  return *snapshot;
 }
 
 
@@ -1051,34 +1047,34 @@ void WatchedPlace::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   }
 }
 
-GreaterPlace& Trie::greater_place_at(GreaterIx ix) {
+RearGuard& Trie::rear_guard_at(RearIx ix) {
   if (verbosity >= 2) printf("GREATER_PLACE_AT %d %d\n", ix.first, ix.second);
   return ix.first == IX_NULL
-    ? root_greater_places[ix.second]
-    : greater_backjumpers[ix.first].greater_places[ix.second];
+    ? root_new_rears[ix.second]
+    : snapshots[ix.first].new_rears[ix.second];
 }
 
 bool Trie::reset(Solver &S) {
   {
-    GreaterIx greater_ix = last_greater;
+    RearIx rear_ix = last_rear;
     while (true) {
-      if (greater_ix.second == IX32_NULL) break;
-      if (verbosity >= 2) printf("ResettingGreater %d,%d\n", greater_ix.first, greater_ix.second);
-      GreaterPlace &gplace = greater_place_at(greater_ix);
-      if (!gplace.in_conflict()) {
-        gplace.remove_watch(S, gplace.get_tag());
+      if (rear_ix.second == IX32_NULL) break;
+      if (verbosity >= 2) printf("ResettingGreater %d,%d\n", rear_ix.first, rear_ix.second);
+      RearGuard &rguard = rear_guard_at(rear_ix);
+      if (!rguard.in_conflict()) {
+        rguard.remove_watch(S, rguard.get_tag());
       }
-      greater_ix = gplace.previous;
+      rear_ix = rguard.previous;
     }
   }
-  root_greater_places.clear_nodestroy();
+  root_new_rears.clear_nodestroy();
 
-  ChangedGreaterPlace changed_place = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
-  GreaterPlace &root_place = root_greater_places.push_back(
-    GreaterPlace(changed_place, GREATER_IX_NULL, true)
+  RearSnapshot rear_snapshot = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
+  RearGuard &root_place = root_new_rears.push_back(
+    RearGuard(rear_snapshot, GREATER_IX_NULL, true)
   );
 
-  last_greater = GREATER_IX_FIRST;
+  last_rear = GREATER_IX_FIRST;
 
   active_var = 0;
   active_var_old = 0;
@@ -1100,35 +1096,35 @@ bool Trie::reset(Solver &S) {
   return root_place.full_multimove_on_propagate(S, root_place.after_hors_change(S));
 }
 
-GreaterPlace::GreaterPlace(
-  ChangedGreaterPlace changed_place, GreaterIx previous_
+RearGuard::RearGuard(
+  RearSnapshot rear_snapshot, RearIx previous_
 )
-: WatchedPlace(changed_place.place)
-, ix(changed_place.ix)
-, last_change_level(changed_place.last_change_level)
+: WatchedPlace(rear_snapshot.place)
+, ix(rear_snapshot.ix)
+, last_change_level(rear_snapshot.last_change_level)
 , previous(previous_)
 , next(GREATER_IX_NULL)
 { }
 
-GreaterPlace::GreaterPlace(
-  ChangedGreaterPlace changed_place, GreaterIx previous_, bool enabled_
+RearGuard::RearGuard(
+  RearSnapshot rear_snapshot, RearIx previous_, bool enabled_
 )
-: WatchedPlace(changed_place.place)
-, ix(changed_place.ix)
-, last_change_level(changed_place.last_change_level)
+: WatchedPlace(rear_snapshot.place)
+, ix(rear_snapshot.ix)
+, last_change_level(rear_snapshot.last_change_level)
 , previous(previous_)
 , next(GREATER_IX_NULL)
 , enabled(enabled_)
 { }
 
 
-void GreaterPlace::on_accept(Solver &S) {
+void RearGuard::on_accept(Solver &S) {
   enabled = false;
 
   Trie &trie = S.trie;
-  if (previous.second != IX32_NULL) trie.greater_place_at(previous).next = next;
-  if (next.second == IX32_NULL) trie.last_greater = previous;
-  else trie.greater_place_at(next).previous = previous;
+  if (previous.second != IX32_NULL) trie.rear_guard_at(previous).next = next;
+  if (next.second == IX32_NULL) trie.last_rear = previous;
+  else trie.rear_guard_at(next).previous = previous;
 
   int depth;
   if (is_ver()) {
@@ -1141,17 +1137,17 @@ void GreaterPlace::on_accept(Solver &S) {
   }
 
   if (trie.accept_depth < depth) {
-    if (trie.backjumper_count != 0) {
-      GreaterBackjumper &last_backj = trie.get_last_backjumper();
-      if (last_backj.accept_depth == -2) {
-        last_backj.accept_depth = trie.accept_depth;
-        last_backj.accept_level = trie.accept_level;
-        last_backj.accept_place = trie.accept_place;
+    if (trie.snapshot_count != 0) {
+      Snapshot &last_snapshot = trie.get_last_snapshot();
+      if (last_snapshot.accept_depth == -2) {
+        last_snapshot.accept_depth = trie.accept_depth;
+        last_snapshot.accept_level = trie.accept_level;
+        last_snapshot.accept_place = trie.accept_place;
 
         if (verbosity >= 2) {
           std::cout << "ACCEPT_DEPTH_BACKJ " << trie.accept_depth
             << " " << trie.accept_place
-            << " " << trie.backjumper_count << std::endl;
+            << " " << trie.snapshot_count << std::endl;
         }
       }
     }
@@ -1172,9 +1168,9 @@ void GreaterPlace::on_accept(Solver &S) {
 }
 
 
-bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
+bool RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
   Trie& trie = S.trie;
-  if (trie.backjumper_count) {
+  if (trie.snapshot_count) {
     int level = S.decisionLevel();
     if (level != last_change_level) {
       if (verbosity >= 2) {
@@ -1182,7 +1178,7 @@ bool GreaterPlace::propagate(Solver &S, Lit p, bool& keep_watch) {
           << level << " " << last_change_level << " "
           << *this << " " << ix.first << " " << ix.second << std::endl;
       }
-      trie.get_last_backjumper().changed_places.emplace_back(*this, ix, last_change_level);
+      trie.get_last_snapshot().rear_snapshots.emplace_back(*this, ix, last_change_level);
       last_change_level = level;
     }
   }
@@ -1262,13 +1258,13 @@ std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
 }
 
 void Trie::print_places() {
-    ITER_LOGLIST(root_greater_places, GreaterPlace, x, {
+    ITER_LOGLIST(root_new_rears, RearGuard, x, {
       std::cout << "GREATER_PLACE -1 " << (Place &)x << " " << x.enabled << " " << x.in_conflict() << " " << &x << std::endl;
     })
     unsigned i = 0;
-    for (int j = 0; j < backjumper_count; j++) {
-      GreaterBackjumper& backj = greater_backjumpers[j];
-      ITER_LOGLIST(backj.greater_places, GreaterPlace, x, {
+    for (int j = 0; j < snapshot_count; j++) {
+      Snapshot& snapshot = snapshots[j];
+      ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
         std::cout << "GREATER_PLACE " << i << " " << (Place &)x << " " << x.enabled << " " << x.in_conflict() << " " << &x << std::endl;
       })
       ++i;

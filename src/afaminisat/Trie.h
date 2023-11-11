@@ -27,12 +27,12 @@ extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
-typedef pair<unsigned, uint32_t> GreaterIx;
+typedef pair<unsigned, uint32_t> RearIx;
 
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
 const unsigned IX32_NULL = std::numeric_limits<uint32_t>::max();
-const GreaterIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
-const GreaterIx GREATER_IX_FIRST = pair(IX_NULL, 0);
+const RearIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
+const RearIx GREATER_IX_FIRST = pair(IX_NULL, 0);
 
 
 enum WhatToDo {
@@ -51,7 +51,7 @@ enum MultimoveEnd {
 };
 
 
-struct GreaterPlace;
+struct RearGuard;
 
 struct Place {
 public:
@@ -74,7 +74,7 @@ public:
   WhatToDo move_on_propagate(Solver &S, Lit out_lit);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
-  GreaterPlace &save_as_greater(Solver &S, bool enabled = true);
+  RearGuard &save_as_rear(Solver &S, bool enabled = true);
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 };
@@ -98,7 +98,6 @@ public:
   void remove_watch_neg(Solver &S, Lit lit);
 
   virtual void on_accept(Solver &S) = 0;
-  virtual GreaterIx my_greater_ix() = 0;
 
   void accept_notify_horhead(Solver& S);
   bool full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
@@ -111,48 +110,47 @@ public:
 };
 
 
-struct ChangedGreaterPlace {
+struct RearSnapshot {
   Place place;
-  GreaterIx ix;
+  RearIx ix;
   int last_change_level;
 };
 
-struct GreaterPlace : public WatchedPlace {
-  GreaterIx ix;
+struct RearGuard : public WatchedPlace {
+  RearIx ix;
   bool enabled = true;
   int last_change_level;
-  GreaterIx previous, next;
+  RearIx previous, next;
 
-  GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_);
-  GreaterPlace(ChangedGreaterPlace changed_place, GreaterIx previous_, bool enabled_);
+  RearGuard(RearSnapshot changed_place, RearIx previous_);
+  RearGuard(RearSnapshot changed_place, RearIx previous_, bool enabled_);
   bool propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
-  GreaterIx my_greater_ix() { return ix; }
   void onSat(Solver &S, int accept_level);
 };
 
-struct GreaterBackjumper {
+struct Snapshot {
   bool is_acc;
-  LogList<GreaterPlace> greater_places;
-  vector<ChangedGreaterPlace> changed_places;
+  LogList<RearGuard> new_rears;
+  vector<RearSnapshot> rear_snapshots;
 
   int accept_depth = -2;
   int accept_level = -1;
-  GreaterPlace *accept_place = NULL;
+  RearGuard *accept_place = NULL;
 
-  GreaterBackjumper() : greater_places(), changed_places() {}
+  Snapshot() : new_rears(), rear_snapshots() {}
 
-  GreaterBackjumper(GreaterBackjumper&& old) noexcept
-  : greater_places(std::move(old.greater_places))
-  , changed_places(std::move(old.changed_places))
+  Snapshot(Snapshot&& old) noexcept
+  : new_rears(std::move(old.new_rears))
+  , rear_snapshots(std::move(old.rear_snapshots))
   , is_acc(old.is_acc)
   , accept_depth(old.accept_depth)
   , accept_level(old.accept_level)
   , accept_place(old.accept_place)
   {}
 
-  GreaterBackjumper(GreaterBackjumper& old) = delete;
+  Snapshot(Snapshot& old) = delete;
 };
 
 
@@ -195,14 +193,13 @@ public:
 class VerHead {
 public:
   Lit tag;
-  GreaterIx greater_ix;
   vector<HorHead> hors;
 
   VerHead(Lit tag_) : tag(tag_), hors() {
     if (verbosity >= -2) ver_count++;
   }
   VerHead(VerHead&& old) noexcept
-  : tag(old.tag), greater_ix(old.greater_ix), hors(std::move(old.hors)) {
+  : tag(old.tag), hors(std::move(old.hors)) {
     if (verbosity >= -2) ver_count++;
   }
 
@@ -226,7 +223,7 @@ enum Mode { clauses, branch_always };
 extern RemovedWatch REMOVED_WATCH;
 extern Mode TRIE_MODE;
 
-struct GreaterStackItem {
+struct RearStackItem {
   HorLine* hor;
   unsigned hor_ix;
   bool handle(Solver &S);
@@ -237,9 +234,9 @@ public:
   // the underlying automaton
   HorLine root;
 
-  LogList<GreaterPlace> root_greater_places;
-  vector<GreaterStackItem> greater_stack;
-  GreaterIx last_greater = pair(IX_NULL, IX32_NULL);
+  LogList<RearGuard> root_new_rears;
+  vector<RearStackItem> rear_stack;
+  RearIx last_rear = pair(IX_NULL, IX32_NULL);
 
   // constant - the number of states of the analysed AFA
   vector<Lit> my_literals;
@@ -255,18 +252,18 @@ public:
   unsigned active_var = 0;
   unsigned active_var_old = 0;
 
-  unsigned backjumper_count = 0;
-  std::vector<GreaterBackjumper> greater_backjumpers;
+  unsigned snapshot_count = 0;
+  std::vector<Snapshot> snapshots;
 
   int accept_depth = -1;
   int accept_level = -1;
-  GreaterPlace *accept_place = NULL;
+  RearGuard *accept_place = NULL;
 
-  GreaterBackjumper &get_last_backjumper() {
-    return greater_backjumpers[backjumper_count - 1];
+  Snapshot &get_last_snapshot() {
+    return snapshots[snapshot_count - 1];
   }
 
-  GreaterBackjumper& new_backjumper();
+  Snapshot& new_snapshot();
 
   Place to_cut;
 
@@ -281,7 +278,7 @@ public:
 
   void undo(Solver& S);
 
-  GreaterPlace& greater_place_at(GreaterIx ix);
+  RearGuard& rear_guard_at(RearIx ix);
 
   // debugging
   void to_dot(Solver& S, const char *filename);
