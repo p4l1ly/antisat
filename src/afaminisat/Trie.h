@@ -27,12 +27,12 @@ extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
-typedef pair<unsigned, uint32_t> RearIx;
+typedef pair<unsigned, uint32_t> GuardIx;
 
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
 const unsigned IX32_NULL = std::numeric_limits<uint32_t>::max();
-const RearIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
-const RearIx GREATER_IX_FIRST = pair(IX_NULL, 0);
+const GuardIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
+const GuardIx GREATER_IX_FIRST = pair(IX_NULL, 0);
 
 
 enum WhatToDo {
@@ -66,7 +66,6 @@ public:
   HorHead &deref_ver() const;
   VerHead &deref_hor() const;
   Lit get_tag() const;
-  bool hor_is_out() const;
   bool ver_is_last() const;
   bool ver_is_singleton() const;
   bool is_ver() const;
@@ -114,21 +113,30 @@ public:
   void moveWatch(int i, Lit p);
 };
 
+struct VanGuard : public WatchedPlace {
+  RearGuard *rearguard;
+  uint32_t ix;
+  bool enabled = true;
+  int last_change_level;
+  GuardIx previous, next;
+};
 
 struct RearSnapshot {
   Place place;
-  RearIx ix;
+  GuardIx ix;
   int last_change_level;
+  uint32_t vanguard_count;
 };
 
 struct RearGuard : public WatchedPlace {
-  RearIx ix;
+  GuardIx ix;
   bool enabled = true;
   int last_change_level;
-  RearIx previous, next;
+  GuardIx previous, next;
+  // GuardIx last_van, first_van;
 
-  RearGuard(RearSnapshot changed_place, RearIx previous_);
-  RearGuard(RearSnapshot changed_place, RearIx previous_, bool enabled_);
+  RearGuard(RearSnapshot changed_place, GuardIx previous_);
+  RearGuard(RearSnapshot changed_place, GuardIx previous_, bool enabled_);
   Reason* propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
@@ -243,7 +251,7 @@ public:
   LogList<RearGuard> root_new_rears;
   LogList<Place> root_reasons;
   vector<RearStackItem> rear_stack;
-  RearIx last_rear = pair(IX_NULL, IX32_NULL);
+  GuardIx last_rear = pair(IX_NULL, IX32_NULL);
 
   // constant - the number of states of the analysed AFA
   vector<Lit> my_literals;
@@ -285,7 +293,7 @@ public:
 
   void undo(Solver& S);
 
-  RearGuard& rear_guard_at(RearIx ix);
+  RearGuard& rear_guard_at(GuardIx ix);
 
   // debugging
   void to_dot(Solver& S, const char *filename);

@@ -54,7 +54,7 @@ namespace mcs = automata_safa_capnp::rpc::model_checkers;
 int verbosity = -4;
 const int VERBOSE_FROM = -1;
 #endif
-const bool write_debug_dots = true;
+const bool write_debug_dots = false;
 int port = 4002;
 
 bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {

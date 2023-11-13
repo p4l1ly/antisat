@@ -15,9 +15,9 @@ pair<uint32_t, uint32_t> _LogList_stage_ix(uint32_t ix);
   if ((self)._size != 0) { \
     pair<uint32_t, uint32_t> stageix = _LogList_stage_ix((self)._size); \
     if (stageix.first != 0) { \
-      for (unsigned i = 0; i < stageix.first; ++i) { \
-        T* stage = (self)._stages[i]; \
-        for (unsigned j = 0; j < (1 << i); ++j) { \
+      for (unsigned __i = 0; __i < stageix.first; ++__i) { \
+        T* stage = (self)._stages[__i]; \
+        for (unsigned j = 0; j < (1 << __i); ++j) { \
           T& x = stage[j]; \
           fn \
         } \
