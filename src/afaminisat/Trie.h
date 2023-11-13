@@ -31,8 +31,8 @@ typedef pair<unsigned, uint32_t> GuardIx;
 
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
 const unsigned IX32_NULL = std::numeric_limits<uint32_t>::max();
-const GuardIx GREATER_IX_NULL = pair(IX_NULL, IX32_NULL);
-const GuardIx GREATER_IX_FIRST = pair(IX_NULL, 0);
+const GuardIx GUARD_IX_NULL = pair(IX_NULL, IX32_NULL);
+const GuardIx GUARD_IX_FIRST = pair(IX_NULL, 0);
 
 
 enum WhatToDo {

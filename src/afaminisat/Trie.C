@@ -243,9 +243,9 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     }
   }
 
-  RearSnapshot rear_snapshot = {Place(&root, 0, IX_NULL), GREATER_IX_FIRST, 0};
+  RearSnapshot rear_snapshot = {Place(&root, 0, IX_NULL), GUARD_IX_FIRST, 0};
   RearGuard &root_place = root_new_rears.push_back(
-    RearGuard(rear_snapshot, GREATER_IX_NULL, true)
+    RearGuard(rear_snapshot, GUARD_IX_NULL, true)
   );
 
   return true;
@@ -502,7 +502,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
     hor_ix = extended_hor_ix;
     ver_ix = (unsigned)added_vars.size() - 1;
     trie.last_rear = ix;
-    next = previous = GREATER_IX_NULL;
+    next = previous = GUARD_IX_NULL;
     if (verbosity >= 2) {
       std::cout << "REUSING_GREATER_PLACE " << (Place &)*this
         << " " << ix.first << "," << ix.second << " " << last_change_level << std::endl;
@@ -531,7 +531,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
           completion_ix,
           visit_level,
         },
-        GREATER_IX_NULL,
+        GUARD_IX_NULL,
         true
       )
     );
@@ -1015,7 +1015,7 @@ void Trie::undo(Solver& S) {
       rguard.last_change_level = rear_snapshot.last_change_level;
 
       rguard.previous = last_rear;
-      rguard.next = GREATER_IX_NULL;
+      rguard.next = GUARD_IX_NULL;
       if (last_rear.second != IX32_NULL) rear_guard_at(last_rear).next = rear_snapshot.ix;
       last_rear = rear_snapshot.ix;
     }
@@ -1139,12 +1139,12 @@ Reason* Trie::reset(Solver &S) {
   root_new_rears.clear_nodestroy();
   root_reasons.clear_nodestroy();
 
-  RearSnapshot rear_snapshot = {Place{&root, 0, IX_NULL}, GREATER_IX_FIRST, 0};
+  RearSnapshot rear_snapshot = {Place{&root, 0, IX_NULL}, GUARD_IX_FIRST, 0};
   RearGuard &root_place = root_new_rears.push_back(
-    RearGuard(rear_snapshot, GREATER_IX_NULL, true)
+    RearGuard(rear_snapshot, GUARD_IX_NULL, true)
   );
 
-  last_rear = GREATER_IX_FIRST;
+  last_rear = GUARD_IX_FIRST;
 
   active_var = 0;
   active_var_old = 0;
@@ -1170,7 +1170,7 @@ RearGuard::RearGuard(
 , ix(rear_snapshot.ix)
 , last_change_level(rear_snapshot.last_change_level)
 , previous(previous_)
-, next(GREATER_IX_NULL)
+, next(GUARD_IX_NULL)
 { }
 
 RearGuard::RearGuard(
@@ -1180,7 +1180,7 @@ RearGuard::RearGuard(
 , ix(rear_snapshot.ix)
 , last_change_level(rear_snapshot.last_change_level)
 , previous(previous_)
-, next(GREATER_IX_NULL)
+, next(GUARD_IX_NULL)
 , enabled(enabled_)
 { }
 
