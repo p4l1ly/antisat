@@ -14,13 +14,13 @@ Mode TRIE_MODE = branch_always;
 
 void check_duplicate_places(Trie &trie, RearGuard &p) {
   ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
-    assert(x.ix == p.ix || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+    assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
   })
   unsigned i = 0;
   for (int j = 0; j < trie.snapshot_count; ++j) {
     Snapshot& snapshot = trie.snapshots[j];
     ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
-      assert(x.ix == p.ix || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+      assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
     })
     ++i;
   }
@@ -40,7 +40,7 @@ void check_all_duplicate_places(Trie &trie) {
   }
 }
 
-void check_unique_rear_snapshot(Snapshot &snapshot, GuardIx ix) {
+void check_unique_rear_snapshot(Snapshot &snapshot, RearGuard *ix) {
   std::cout << std::flush;
   for (RearSnapshot &rear_snapshot: snapshot.rear_snapshots) {
     assert(rear_snapshot.ix != ix);
@@ -243,9 +243,8 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     }
   }
 
-  RearSnapshot rear_snapshot = {Place(&root, 0, IX_NULL), GUARD_IX_FIRST, 0};
   RearGuard &root_place = root_new_rears.push_back(
-    RearGuard(rear_snapshot, GUARD_IX_NULL, true)
+    RearGuard(Place(&root, 0, IX_NULL), 0, NULL, true)
   );
 
   return true;
@@ -254,8 +253,8 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
 bool Trie::guess(Solver &S) {
   CHECK_ALL_DUPLICATE_PLACES(*this);
 
-  if (last_rear.second != IX32_NULL) {
-    RearGuard &rguard = rear_guard_at(last_rear);
+  if (last_rear != NULL) {
+    RearGuard &rguard = *last_rear;
     Lit out_lit = rguard.get_tag();
     if (verbosity >= 2) {
       std::cout << "GUESS_GREATER " << rguard << " " << &rguard << " ";
@@ -315,7 +314,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
 
   if (verbosity >= 2) {
     std::cout << "ON_SAT " << *this << " " << S.root_level << " " << accept_level
-      << " " << this << " " << ix.first << "," << ix.second << " " << trie.root_new_rears.size();
+      << " " << this << " " << trie.root_new_rears.size();
     for (int i = 0; i < trie.snapshot_count; ++i) {
       Snapshot &snapshot = trie.snapshots[i];
       std::cout << "," << snapshot.new_rears.size();
@@ -501,48 +500,38 @@ void RearGuard::onSat(Solver &S, int accept_level) {
     hor = extended_hor;
     hor_ix = extended_hor_ix;
     ver_ix = (unsigned)added_vars.size() - 1;
-    trie.last_rear = ix;
-    next = previous = GUARD_IX_NULL;
+    trie.last_rear = this;
+    next = previous = NULL;
     if (verbosity >= 2) {
       std::cout << "REUSING_GREATER_PLACE " << (Place &)*this
-        << " " << ix.first << "," << ix.second << " " << last_change_level << std::endl;
+        << " " << this << " " << last_change_level << std::endl;
     }
   } else {
     // Create a rear guard at the top of the added branch
     LogList<RearGuard> *incomplete_rguards;
-    unsigned incomplete_snapshot_ix;
 
     if (visit_level <= S.root_level) {
       incomplete_rguards = &trie.root_new_rears;
-      incomplete_snapshot_ix = IX_NULL;
     } else {
-      incomplete_snapshot_ix = visit_level - S.root_level - 1;
-      incomplete_rguards = &trie.snapshots[incomplete_snapshot_ix].new_rears;
+      incomplete_rguards = &trie.snapshots[visit_level - S.root_level - 1].new_rears;
     }
-
-    GuardIx completion_ix(incomplete_snapshot_ix, incomplete_rguards->size());
-    if (verbosity >= 2) printf("WRITE_RIGHT_IX1 %p %d %d %d\n", extended_hor, extended_hor_ix, completion_ix.first, completion_ix.second);
 
     // Put the new rear guard into conflict at the end of the added branch
     rguard = &incomplete_rguards->push_back(
       RearGuard(
-        RearSnapshot{
-          {extended_hor, extended_hor_ix, (unsigned)added_vars.size() - 1},
-          completion_ix,
-          visit_level,
-        },
-        GUARD_IX_NULL,
+        Place{extended_hor, extended_hor_ix, (unsigned)added_vars.size() - 1},
+        visit_level,
+        NULL,
         true
       )
     );
-    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE3 " << rguard << std::endl;
-    trie.last_rear = completion_ix;
+    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE3 " << rguard << " " << extended_hor << " " << extended_hor_ix << std::endl;
+    trie.last_rear = rguard;
   }
 
   unsigned i = added_vars.size() - 1;
 
   {
-    GuardIx gplace_ix = rguard->ix;
     // if (i) --i;
     int lvl = added_vars[i].first;
     if (verbosity >= 2) printf("LVLLVL %d\n", lvl);
@@ -565,10 +554,10 @@ void RearGuard::onSat(Solver &S, int accept_level) {
           if (verbosity >= 2) {
             printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
           }
-          CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, gplace_ix);
+          CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, rguard);
           snapshot.rear_snapshots.push_back({
             {extended_hor, extended_hor_ix, i - 1},
-            gplace_ix,
+            rguard,
             original_last_change_level
           });
           if (next_bjumper) {
@@ -586,10 +575,10 @@ void RearGuard::onSat(Solver &S, int accept_level) {
       if (verbosity >= 2) {
         printf("GREATER_BACKJUMPER_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, IX_NULL);
       }
-      CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, gplace_ix);
+      CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, rguard);
       snapshot.rear_snapshots.push_back({
         {extended_hor, extended_hor_ix, IX_NULL},
-        gplace_ix,
+        rguard,
         original_last_change_level
       });
       if (next_bjumper) {
@@ -656,46 +645,21 @@ WhatToDo Place::after_vers_change(Solver &S) {
 RearGuard &Place::save_as_rear(Solver &S, bool enabled) {
   Trie &trie = S.trie;
 
-  unsigned snapshot_size = trie.snapshot_count;
-  GuardIx last_rear = trie.last_rear;
-  if (snapshot_size == 0) {
-    GuardIx ix = pair(IX_NULL, trie.root_new_rears.size());
-    RearSnapshot rear_snapshot = {*this, ix, S.decisionLevel()};
-    RearGuard &place = trie.root_new_rears.push_back(RearGuard(rear_snapshot, last_rear));
-    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE1 " << &place << std::endl;
-    if (enabled) {
-      if (trie.last_rear.second != IX32_NULL) {
-        trie.root_new_rears[last_rear.second].next = ix;
-      }
-      trie.last_rear = ix;
-      place.set_watch(S);
-    } else {
-      place.enabled = false;
-    }
-    CHECK_ALL_DUPLICATE_PLACES(trie);
-    return place;
+  RearGuard *last_rear = trie.last_rear;
+  RearGuard *rguard;
+  if (trie.snapshot_count == 0) {
+    rguard = &trie.root_new_rears.push_back(RearGuard(*this, S.decisionLevel(), last_rear, enabled));
   } else {
-    Snapshot &last_snapshot = trie.get_last_snapshot();
-    GuardIx ix = pair(snapshot_size - 1, last_snapshot.new_rears.size());
-    RearSnapshot rear_snapshot = {*this, ix, S.decisionLevel()};
-    RearGuard &place = last_snapshot.new_rears.push_back(RearGuard(rear_snapshot, last_rear));
-    if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE2 " << &place << std::endl;
-    if (enabled) {
-      if (last_rear.second != IX32_NULL) {
-        if (last_rear.first == IX_NULL) {
-          trie.root_new_rears[last_rear.second].next = ix;
-        } else {
-          trie.snapshots[last_rear.first].new_rears[last_rear.second].next = ix;
-        }
-      }
-      trie.last_rear = ix;
-      place.set_watch(S);
-    } else {
-      place.enabled = false;
-    }
-    CHECK_ALL_DUPLICATE_PLACES(trie);
-    return place;
+    rguard = &trie.get_last_snapshot().new_rears.push_back(RearGuard(*this, S.decisionLevel(), last_rear, enabled));
   }
+  if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE1 " << &rguard << std::endl;
+  if (enabled) {
+    if (last_rear != NULL) last_rear->next = rguard;
+    trie.last_rear = rguard;
+    rguard->set_watch(S);
+  }
+  CHECK_ALL_DUPLICATE_PLACES(trie);
+  return *rguard;
 }
 
 
@@ -726,7 +690,7 @@ bool RearStackItem::handle(Solver &S) {
   switch (place.multimove_on_propagate(S, place.after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
       RearGuard &rguard = place.save_as_rear(S);
-      if (verbosity >= 2) printf("WRITE_RIGHT_IX2 %p %d %d %d\n", hor, hor_ix, rguard.ix.first, rguard.ix.second);
+      if (verbosity >= 2) printf("SAVE_AS_REAR_WATCH %p %d %p\n", hor, hor_ix, &rguard);
 
       if (place.is_ver()) {
         HorLine *hor2 = place.deref_ver().hor;
@@ -741,7 +705,7 @@ bool RearStackItem::handle(Solver &S) {
     }
     case MultimoveEnd::E_DONE: {
       RearGuard &rguard = place.save_as_rear(S, false);
-      if (verbosity >= 2) printf("WRITE_RIGHT_IX3 %p %d %d %d\n", hor, hor_ix, rguard.ix.first, rguard.ix.second);
+      if (verbosity >= 2) printf("SAVE_AS_REAR_DONE %p %d %p\n", hor, hor_ix, &rguard);
       rguard.on_accept(S);
       return true;
     }
@@ -976,20 +940,20 @@ void Trie::undo(Solver& S) {
       }
 
       rguard.enabled = false;  // TODO backport the fix
-      if (rguard.previous.second != IX32_NULL) rear_guard_at(rguard.previous).next = rguard.next;
-      if (rguard.next.second == IX32_NULL) last_rear = rguard.previous;
-      else rear_guard_at(rguard.next).previous = rguard.previous;
+      if (rguard.previous != NULL) rguard.previous->next = rguard.next;
+      if (rguard.next == NULL) last_rear = rguard.previous;
+      else rguard.next->previous = rguard.previous;
     } else if (verbosity >= 2) {
         std::cout << "SKIP_GREATER " << rguard << " " << &rguard << std::endl << std::flush;
     }
   })
 
   for (RearSnapshot rear_snapshot: snapshot.rear_snapshots) {
-    RearGuard &rguard = rear_guard_at(rear_snapshot.ix);
+    RearGuard &rguard = *rear_snapshot.ix;
 
     if (verbosity >= 2) {
       std::cout << "CHANGED " << &rguard << " " << rguard << " " << rear_snapshot.place
-        << " " << rear_snapshot.ix.first << "," << rear_snapshot.ix.second
+        << " " << rear_snapshot.ix
         << " " << rguard.enabled << " LCLVL "
         << rguard.last_change_level << "->" << rear_snapshot.last_change_level
         << "\n" << std::flush;
@@ -1015,8 +979,8 @@ void Trie::undo(Solver& S) {
       rguard.last_change_level = rear_snapshot.last_change_level;
 
       rguard.previous = last_rear;
-      rguard.next = GUARD_IX_NULL;
-      if (last_rear.second != IX32_NULL) rear_guard_at(last_rear).next = rear_snapshot.ix;
+      rguard.next = NULL;
+      if (last_rear != NULL) last_rear->next = rear_snapshot.ix;
       last_rear = rear_snapshot.ix;
     }
 
@@ -1116,35 +1080,25 @@ void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   }
 }
 
-RearGuard& Trie::rear_guard_at(GuardIx ix) {
-  if (verbosity >= 2) printf("GREATER_PLACE_AT %d %d\n", ix.first, ix.second);
-  return ix.first == IX_NULL
-    ? root_new_rears[ix.second]
-    : snapshots[ix.first].new_rears[ix.second];
-}
-
 Reason* Trie::reset(Solver &S) {
   {
-    GuardIx ix = last_rear;
+    RearGuard *rguard = last_rear;
     while (true) {
-      if (ix.second == IX32_NULL) break;
-      if (verbosity >= 2) printf("ResettingGreater %d,%d\n", ix.first, ix.second);
-      RearGuard &rguard = rear_guard_at(ix);
-      if (!rguard.in_conflict()) {
-        rguard.remove_watch(S, rguard.get_tag());
+      if (rguard == NULL) break;
+      if (verbosity >= 2) printf("ResettingGreater %p\n", rguard);
+      if (!rguard->in_conflict()) {
+        rguard->remove_watch(S, rguard->get_tag());
       }
-      ix = rguard.previous;
+      rguard = rguard->previous;
     }
   }
   root_new_rears.clear_nodestroy();
   root_reasons.clear_nodestroy();
 
-  RearSnapshot rear_snapshot = {Place{&root, 0, IX_NULL}, GUARD_IX_FIRST, 0};
   RearGuard &root_place = root_new_rears.push_back(
-    RearGuard(rear_snapshot, GUARD_IX_NULL, true)
+    RearGuard(Place{&root, 0, IX_NULL}, 0, NULL, true)
   );
-
-  last_rear = GUARD_IX_FIRST;
+  last_rear = &root_place;
 
   active_var = 0;
   active_var_old = 0;
@@ -1164,23 +1118,12 @@ Reason* Trie::reset(Solver &S) {
 }
 
 RearGuard::RearGuard(
-  RearSnapshot rear_snapshot, GuardIx previous_
+  Place place, int last_change_level_, RearGuard *previous_, bool enabled_
 )
-: WatchedPlace(rear_snapshot.place)
-, ix(rear_snapshot.ix)
-, last_change_level(rear_snapshot.last_change_level)
+: WatchedPlace(place)
+, last_change_level(last_change_level_)
 , previous(previous_)
-, next(GUARD_IX_NULL)
-{ }
-
-RearGuard::RearGuard(
-  RearSnapshot rear_snapshot, GuardIx previous_, bool enabled_
-)
-: WatchedPlace(rear_snapshot.place)
-, ix(rear_snapshot.ix)
-, last_change_level(rear_snapshot.last_change_level)
-, previous(previous_)
-, next(GUARD_IX_NULL)
+, next(NULL)
 , enabled(enabled_)
 { }
 
@@ -1189,9 +1132,9 @@ void RearGuard::on_accept(Solver &S) {
   enabled = false;
 
   Trie &trie = S.trie;
-  if (previous.second != IX32_NULL) trie.rear_guard_at(previous).next = next;
-  if (next.second == IX32_NULL) trie.last_rear = previous;
-  else trie.rear_guard_at(next).previous = previous;
+  if (previous != NULL) previous->next = next;
+  if (next == NULL) trie.last_rear = previous;
+  else next->previous = previous;
 
   int depth;
   int old_depth = trie.accept_depth;
@@ -1265,10 +1208,10 @@ Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
       if (verbosity >= 2) {
         std::cout << "GREATER_BACKJUMPER_ENABLE3 "
           << level << " " << last_change_level << " "
-          << *this << " " << ix.first << " " << ix.second << std::endl;
+          << *this << " " << this << std::endl;
       }
-      CHECK_UNIQUE_REAR_SNAPSHOT(trie.get_last_snapshot(), ix);
-      trie.get_last_snapshot().rear_snapshots.emplace_back(*this, ix, last_change_level);
+      CHECK_UNIQUE_REAR_SNAPSHOT(trie.get_last_snapshot(), this);
+      trie.get_last_snapshot().rear_snapshots.emplace_back(*this, this, last_change_level);
       last_change_level = level;
     }
   }

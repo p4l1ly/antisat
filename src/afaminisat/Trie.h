@@ -27,12 +27,7 @@ extern int hor_head_count;
 extern int hor_count;
 extern int ver_count;
 
-typedef pair<unsigned, uint32_t> GuardIx;
-
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
-const unsigned IX32_NULL = std::numeric_limits<uint32_t>::max();
-const GuardIx GUARD_IX_NULL = pair(IX_NULL, IX32_NULL);
-const GuardIx GUARD_IX_FIRST = pair(IX_NULL, 0);
 
 
 enum WhatToDo {
@@ -113,30 +108,27 @@ public:
   void moveWatch(int i, Lit p);
 };
 
-struct VanGuard : public WatchedPlace {
-  RearGuard *rearguard;
-  uint32_t ix;
-  bool enabled = true;
-  int last_change_level;
-  GuardIx previous, next;
-};
+// struct VanGuard : public WatchedPlace {
+//   RearGuard *rearguard;
+//   uint32_t ix;
+//   bool enabled = true;
+//   int last_change_level;
+//   Guard *previous, *next;
+// };
 
 struct RearSnapshot {
   Place place;
-  GuardIx ix;
+  RearGuard *ix;
   int last_change_level;
-  uint32_t vanguard_count;
 };
 
 struct RearGuard : public WatchedPlace {
-  GuardIx ix;
-  bool enabled = true;
+  bool enabled;
   int last_change_level;
-  GuardIx previous, next;
-  // GuardIx last_van, first_van;
+  RearGuard *previous, *next;
+  // Guard *last_van, *first_van;
 
-  RearGuard(RearSnapshot changed_place, GuardIx previous_);
-  RearGuard(RearSnapshot changed_place, GuardIx previous_, bool enabled_);
+  RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_);
   Reason* propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
@@ -227,7 +219,7 @@ public:
 struct RemovedWatch : public Constr {
   void remove    (Solver& S, bool just_dealloc = false) { };
   Reason* propagate (Solver& S, Lit p, bool& keep_watch) { return NULL; };
-  bool simplify  (Solver& S) { return false; };
+  bool simplify(Solver& S) { return false; };
   void moveWatch(int i, Lit p) {};
 };
 
@@ -251,7 +243,7 @@ public:
   LogList<RearGuard> root_new_rears;
   LogList<Place> root_reasons;
   vector<RearStackItem> rear_stack;
-  GuardIx last_rear = pair(IX_NULL, IX32_NULL);
+  RearGuard *last_rear = NULL;
 
   // constant - the number of states of the analysed AFA
   vector<Lit> my_literals;
@@ -274,10 +266,7 @@ public:
   int accept_level = -1;
   RearGuard *accept_place = NULL;
 
-  Snapshot &get_last_snapshot() {
-    return snapshots[snapshot_count - 1];
-  }
-
+  Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
 
   Place to_cut;
@@ -292,8 +281,6 @@ public:
   Reason* reset(Solver &S);
 
   void undo(Solver& S);
-
-  RearGuard& rear_guard_at(GuardIx ix);
 
   // debugging
   void to_dot(Solver& S, const char *filename);
