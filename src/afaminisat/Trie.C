@@ -825,7 +825,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   }
 }
 
-Reason* WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
+Reason* RearGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   MultimoveEnd end = multimove_on_propagate(S, what_to_do);
 
   Trie &trie = S.trie;
@@ -866,34 +866,6 @@ Reason* WatchedPlace::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do
 
   CHECK_ALL_DUPLICATE_PLACES(trie);
   return NULL;
-}
-
-Reason* WatchedPlace::propagate(Solver& S, Lit p, bool& keep_watch) {
-  if (verbosity >= 2) {
-    printf("PROP " L_LIT " ", L_lit(p));
-    std::cout << *this << " " << this << std::endl;
-  }
-  if (sign(p)) {
-    remove_watch_pos(S, ~p);
-  } else {
-    remove_watch_neg(S, ~p);
-  }
-
-  Lit out_lit = get_tag();
-  Trie& trie = S.trie;
-
-  lbool value = S.value(out_lit);
-
-  if (value == l_True) {
-    if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
-    on_accept(S);
-    CHECK_ALL_DUPLICATE_PLACES(trie);
-    return NULL;
-  }
-
-  if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
-  CHECK_ALL_DUPLICATE_PLACES(trie);
-  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
 }
 
 
@@ -1215,7 +1187,31 @@ Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
       last_change_level = level;
     }
   }
-  return WatchedPlace::propagate(S, p, keep_watch);
+
+  if (verbosity >= 2) {
+    printf("PROP " L_LIT " ", L_lit(p));
+    std::cout << *this << " " << this << std::endl;
+  }
+  if (sign(p)) {
+    remove_watch_pos(S, ~p);
+  } else {
+    remove_watch_neg(S, ~p);
+  }
+
+  Lit out_lit = get_tag();
+
+  lbool value = S.value(out_lit);
+
+  if (value == l_True) {
+    if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
+    on_accept(S);
+    CHECK_ALL_DUPLICATE_PLACES(trie);
+    return NULL;
+  }
+
+  if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
+  CHECK_ALL_DUPLICATE_PLACES(trie);
+  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
 }
 
 

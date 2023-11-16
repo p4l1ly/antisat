@@ -97,24 +97,18 @@ public:
   void remove_watch_pos(Solver &S, Lit lit);
   void remove_watch_neg(Solver &S, Lit lit);
 
-  virtual void on_accept(Solver &S) = 0;
-
-  void accept_notify_horhead(Solver& S);
-  Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-
-  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
   void moveWatch(int i, Lit p);
 };
 
-// struct VanGuard : public WatchedPlace {
-//   RearGuard *rearguard;
-//   uint32_t ix;
-//   bool enabled = true;
-//   int last_change_level;
-//   Guard *previous, *next;
-// };
+struct VanGuard : public WatchedPlace {
+  RearGuard *rearguard;
+  uint32_t ix;
+  bool enabled;
+  int last_change_level;
+  VanGuard *previous, *next;
+};
 
 struct RearSnapshot {
   Place place;
@@ -122,17 +116,27 @@ struct RearSnapshot {
   int last_change_level;
 };
 
+struct VanSnapshot {
+  Place place;
+  VanGuard *ix;
+  int last_change_level;
+};
+
 struct RearGuard : public WatchedPlace {
   bool enabled;
   int last_change_level;
   RearGuard *previous, *next;
-  // Guard *last_van, *first_van;
+  // VanGuard *last_van, *first_van;
 
   RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_);
-  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
 
   void on_accept(Solver &S);
   void onSat(Solver &S, int accept_level);
+
+  void accept_notify_horhead(Solver& S);
+  Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
+
+  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
 };
 
 struct Snapshot {
