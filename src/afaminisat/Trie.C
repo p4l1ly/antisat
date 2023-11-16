@@ -1077,16 +1077,6 @@ Reason* Trie::reset(Solver &S) {
   return root_place.full_multimove_on_propagate(S, root_place.after_hors_change(S));
 }
 
-RearGuard::RearGuard(
-  Place place, int last_change_level_, RearGuard *previous_, bool enabled_
-)
-: WatchedPlace(place)
-, last_change_level(last_change_level_)
-, previous(previous_)
-, next(NULL)
-, enabled(enabled_)
-{ }
-
 
 void RearGuard::on_accept(Solver &S) {
   enabled = false;

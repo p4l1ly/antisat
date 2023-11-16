@@ -102,13 +102,7 @@ public:
   void moveWatch(int i, Lit p);
 };
 
-struct VanGuard : public WatchedPlace {
-  RearGuard *rearguard;
-  uint32_t ix;
-  bool enabled;
-  int last_change_level;
-  VanGuard *previous, *next;
-};
+struct VanGuard;
 
 struct RearSnapshot {
   Place place;
@@ -126,22 +120,62 @@ struct RearGuard : public WatchedPlace {
   bool enabled;
   int last_change_level;
   RearGuard *previous, *next;
-  // VanGuard *last_van, *first_van;
+  VanGuard *last_disabled_van, *last_enabled_van;
 
-  RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_);
+  RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_)
+  : WatchedPlace(place)
+  , last_change_level(last_change_level_)
+  , previous(previous_)
+  , next(NULL)
+  , enabled(enabled_)
+  , last_disabled_van(NULL)
+  , last_enabled_van(NULL)
+  { }
 
   void on_accept(Solver &S);
   void onSat(Solver &S, int accept_level);
 
   Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
+  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
+};
 
+struct VanGuard : public WatchedPlace {
+  RearGuard *rear_guard;
+  bool enabled;
+  int last_change_level;
+  VanGuard *previous, *next;
+
+  VanGuard(Place place, RearGuard* rear_guard_, int last_change_level_, bool enabled_)
+  : WatchedPlace(place)
+  , rear_guard(rear_guard_)
+  , last_change_level(last_change_level_)
+  , enabled(enabled_)
+  , next(NULL)
+  {
+    if (enabled_) {
+      VanGuard *pre = rear_guard->last_enabled_van;
+      if (pre) pre->next = this;
+      previous = pre;
+      rear_guard->last_enabled_van = this;
+    }
+    else {
+      VanGuard *pre = rear_guard->last_disabled_van;
+      if (pre) pre->next = this;
+      previous = pre;
+      rear_guard->last_disabled_van = this;
+    }
+  }
+
+  Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   Reason* propagate (Solver& S, Lit p, bool& keep_watch);
 };
 
 struct Snapshot {
   bool is_acc;
   LogList<RearGuard> new_rears;
+  LogList<VanGuard> new_vans;
   vector<RearSnapshot> rear_snapshots;
+  vector<VanSnapshot> van_snapshots;
   LogList<Place> reasons;
 
   int accept_depth = -2;
@@ -244,6 +278,7 @@ public:
   HorLine root;
 
   LogList<RearGuard> root_new_rears;
+  LogList<VanGuard> root_new_vans;
   LogList<Place> root_reasons;
   vector<RearStackItem> rear_stack;
   RearGuard *last_rear = NULL;
