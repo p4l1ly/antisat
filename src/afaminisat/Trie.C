@@ -243,10 +243,6 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     }
   }
 
-  RearGuard &root_place = root_new_rears.push_back(
-    RearGuard(Place(&root, 0, IX_NULL), 0, NULL, true)
-  );
-
   return true;
 }
 
@@ -1055,10 +1051,10 @@ Reason* Trie::reset(Solver &S) {
   root_new_rears.clear_nodestroy();
   root_reasons.clear_nodestroy();
 
-  RearGuard &root_place = root_new_rears.push_back(
+  RearGuard &root_rguard = root_new_rears.push_back(
     RearGuard(Place{&root, 0, IX_NULL}, 0, NULL, true)
   );
-  last_rear = &root_place;
+  last_rear = &root_rguard;
 
   active_var = 0;
   active_var_old = 0;
@@ -1074,7 +1070,7 @@ Reason* Trie::reset(Solver &S) {
 
   CHECK_ALL_DUPLICATE_PLACES(*this);
 
-  return root_place.full_multimove_on_propagate(S, root_place.after_hors_change(S));
+  return root_rguard.full_multimove_on_propagate(S, root_rguard.after_hors_change(S));
 }
 
 
