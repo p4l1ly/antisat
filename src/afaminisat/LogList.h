@@ -55,23 +55,30 @@ public:
     return _stages[stageix.first][stageix.second];
   }
 
-  T& push_back(T&& elem) {
+  void clear() {
+    ITER_LOGLIST(*this, T, x, x.~T(););
+    _size = 0;
+  }
+
+  template <typename... Args>
+  T& emplace_back(Args&&... args) {
     pair<uint32_t, uint32_t> stageix = _LogList_stage_ix(_size);
     if (_stages.size() == stageix.first) {
       _stages.push_back(static_cast<T*>(::operator new(sizeof(T) * (1 << stageix.first))));
     }
     T& ref = _stages[stageix.first][stageix.second];
-    new (&ref) T(elem);
     ++_size;
+    new (&ref) T(std::forward<Args>(args)...);
     return ref;
   }
-  void clear() {
-    ITER_LOGLIST(*this, T, x, x.~T(););
-    _size = 0;
-  }
+
+  T& push_back(const T & t) { return emplace_back(t); }
+  T& push_back(T && t) { return emplace_back(std::move(t)); }
+
   inline void clear_nodestroy() {
     _size = 0;
   }
+
   uint32_t size() { return _size; }
 
   ~LogList() {

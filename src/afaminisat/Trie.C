@@ -513,13 +513,11 @@ void RearGuard::onSat(Solver &S, int accept_level) {
     }
 
     // Put the new rear guard into conflict at the end of the added branch
-    rguard = &incomplete_rguards->push_back(
-      RearGuard(
-        Place{extended_hor, extended_hor_ix, (unsigned)added_vars.size() - 1},
-        visit_level,
-        NULL,
-        true
-      )
+    rguard = &incomplete_rguards->emplace_back(
+      Place{extended_hor, extended_hor_ix, (unsigned)added_vars.size() - 1},
+      visit_level,
+      (RearGuard *)NULL,
+      true
     );
     if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE3 " << rguard << " " << extended_hor << " " << extended_hor_ix << std::endl;
     trie.last_rear = rguard;
@@ -644,9 +642,9 @@ RearGuard &Place::save_as_rear(Solver &S, bool enabled) {
   RearGuard *last_rear = trie.last_rear;
   RearGuard *rguard;
   if (trie.snapshot_count == 0) {
-    rguard = &trie.root_new_rears.push_back(RearGuard(*this, S.decisionLevel(), last_rear, enabled));
+    rguard = &trie.root_new_rears.emplace_back(*this, S.decisionLevel(), last_rear, enabled);
   } else {
-    rguard = &trie.get_last_snapshot().new_rears.push_back(RearGuard(*this, S.decisionLevel(), last_rear, enabled));
+    rguard = &trie.get_last_snapshot().new_rears.emplace_back(*this, S.decisionLevel(), last_rear, enabled);
   }
   if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE1 " << &rguard << std::endl;
   if (enabled) {
@@ -783,10 +781,10 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
         Trie &trie = S.trie;
         if (!trie.snapshot_count) {
-          check(S.enqueue(get_tag(), &trie.root_reasons.push_back(Place(hor, hor_ix, ver_ix))));
+          check(S.enqueue(get_tag(), &trie.root_reasons.emplace_back(hor, hor_ix, ver_ix)));
         } else {
           Snapshot &snapshot = trie.get_last_snapshot();
-          check(S.enqueue(get_tag(), &snapshot.reasons.push_back(Place(hor, hor_ix, ver_ix))));
+          check(S.enqueue(get_tag(), &snapshot.reasons.emplace_back(hor, hor_ix, ver_ix)));
         }
 
         if (is_ver()) {
@@ -1051,9 +1049,12 @@ Reason* Trie::reset(Solver &S) {
   root_new_rears.clear_nodestroy();
   root_reasons.clear_nodestroy();
 
-  RearGuard &root_rguard = root_new_rears.push_back(
-    RearGuard(Place{&root, 0, IX_NULL}, 0, NULL, true)
+  RearGuard &root_rguard = root_new_rears.emplace_back(
+    Place{&root, 0, IX_NULL}, 0, (RearGuard *)NULL, true
   );
+  // VanGuard &root_vguard = root_new_vans.emplace_back(
+  //   Place{&root, 0, IX_NULL}, &root_rguard, 0, true
+  // );
   last_rear = &root_rguard;
 
   active_var = 0;
