@@ -133,7 +133,6 @@ struct RearGuard : public WatchedPlace {
   void on_accept(Solver &S);
   void onSat(Solver &S, int accept_level);
 
-  void accept_notify_horhead(Solver& S);
   Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
   Reason* propagate (Solver& S, Lit p, bool& keep_watch);
