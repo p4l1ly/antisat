@@ -1025,26 +1025,14 @@ void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     S.cancelUntil(max_level);
   }
   else {
-    Place place(*this);
-    if (in_conflict()) place.ver_ix--;
-    while (place.get_tag() != p) {
-      if (place.is_ver()) {
-        place.ver_ix = IX_NULL;
-      }
-      if (place.hor_ix) {
-        place.hor_ix--;
-      } else {
-        place = place.hor->back_ptr;
-      }
-    }
-    ITER_MY_ZEROES(place, x,
+    ITER_MY_ZEROES(*this, x,
       out_reason.push(~x);
     )
 
     if (verbosity >= 2) {
       printf("CALC_REASON_PLACE " L_LIT " ", L_lit(p));
-      std::cout << place << " " << *this;
-      ITER_MY_ZEROES(place, x,
+      std::cout << *this;
+      ITER_MY_ZEROES(*this, x,
           printf(" " L_LIT, L_lit(x));
       )
       printf("\n");
