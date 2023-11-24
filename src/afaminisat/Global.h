@@ -20,6 +20,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #ifndef Global_h
 #define Global_h
 
+#include <fstream>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -258,6 +259,10 @@ public:
     friend bool operator == (Lit p, Lit q) { return index(p) == index(q); }
     friend bool operator <  (Lit p, Lit q) { return index(p)  < index(q); }  // '<' guarantees that p, ~p are adjacent in the ordering.
 };
+
+inline std::ostream& operator<<(std::ostream& os, Lit const &p) {
+  return os << (sign(p) ? "~" : "") << "x" << var(p);
+}
 
 const Lit lit_Undef(var_Undef, false);  // }- Useful special constants.
 const Lit lit_Error(var_Undef, true );  // }

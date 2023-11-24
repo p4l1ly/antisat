@@ -34,14 +34,13 @@ enum WhatToDo {
   WATCH = -3,
   DONE = -2,
   AGAIN = -1,
-  CONFLICT = 0,
-  PROPAGATE = 1,
+  EXHAUST = 0,
 };
 
 enum MultimoveEnd {
   E_WATCH = -3,
   E_DONE = -2,
-  E_CONFLICT = 0,
+  E_EXHAUST = 0,
 };
 
 
@@ -65,7 +64,7 @@ public:
   bool ver_is_last() const;
   bool ver_is_singleton() const;
   bool is_ver() const;
-  bool in_conflict() const;
+  bool in_exhaust() const;
 
   void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
@@ -128,6 +127,7 @@ struct RearGuard : public WatchedPlace {
   , next(NULL)
   , enabled(enabled_)
   , last_van(NULL)
+  , deepest_accepting_van(NULL)
   { }
 
   void on_accept_rear(Solver &S);
