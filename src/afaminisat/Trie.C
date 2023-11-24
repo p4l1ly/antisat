@@ -38,6 +38,8 @@ void check_all_duplicate_places(Trie &trie) {
     })
     ++i;
   }
+
+  printf("TODO check_all_duplicate_places: vans\n");
 }
 
 void check_unique_rear_snapshot(Snapshot &snapshot, RearGuard *ix) {
@@ -58,8 +60,6 @@ void check_unique_rear_snapshot(Snapshot &snapshot, RearGuard *ix) {
 #else
 #define CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, ix)
 #endif
-
-inline void check(bool expr) { assert(expr); }
 
 inline HorHead &Place::deref_ver() const {
   return hor->elems[hor_ix].hors[ver_ix];
@@ -212,7 +212,7 @@ Trie::Trie()
 , my_literals()
 , back_ptrs()
 , snapshots()
-, rear_stack()
+, stack()
 , to_cut(NULL, 0, 0)
 { }
 
@@ -222,7 +222,7 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
     my_literals.push_back(my_literals_[i]);
   }
   back_ptrs.resize(my_literals_.size());
-  rear_stack.reserve(my_literals_.size());
+  stack.reserve(my_literals_.size());
 
   VerHead *ver_head = NULL;
   int depth = 0;
@@ -298,6 +298,8 @@ bool Trie::guess(Solver &S) {
 }
 
 void Trie::onSat(Solver &S) {
+  assert(false); // TODO
+
   CHECK_ALL_DUPLICATE_PLACES(*this);
 
   accept_place->onSat(S, accept_level);
@@ -306,6 +308,8 @@ void Trie::onSat(Solver &S) {
 }
 
 void RearGuard::onSat(Solver &S, int accept_level) {
+  assert(false); // TODO
+
   Trie &trie = S.trie;
 
   if (verbosity >= 2) {
@@ -634,24 +638,21 @@ WhatToDo Place::after_vers_change(Solver &S) {
 }
 
 
-RearGuard &Place::save_as_rear(Solver &S, bool enabled) {
+VanGuard &Place::save_as_van(Solver &S, RearGuard &rear, bool enabled) {
   Trie &trie = S.trie;
 
-  RearGuard *last_rear = trie.last_rear;
-  RearGuard *rguard;
-  if (trie.snapshot_count == 0) {
-    rguard = &trie.root_new_rears.emplace_back(*this, S.decisionLevel(), last_rear, enabled);
-  } else {
-    rguard = &trie.get_last_snapshot().new_rears.emplace_back(*this, S.decisionLevel(), last_rear, enabled);
-  }
-  if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE1 " << &rguard << std::endl;
+  LogList<VanGuard> &new_vans =
+    trie.snapshot_count == 0 ? trie.root_new_vans : trie.get_last_snapshot().new_vans;
+  VanGuard &vguard = new_vans.emplace_back(*this, rear, S.decisionLevel(), enabled);
+  if (verbosity >= 2) std::cout << "NEW_VAN1 " << &vguard << std::endl;
   if (enabled) {
-    if (last_rear != NULL) last_rear->next = rguard;
-    trie.last_rear = rguard;
-    rguard->set_watch(S);
+    VanGuard *last_van = rear.last_van;
+    if (last_van != NULL) last_van->next = &vguard;
+    rear.last_van = &vguard;
+    vguard.set_watch(S);
   }
   CHECK_ALL_DUPLICATE_PLACES(trie);
-  return *rguard;
+  return vguard;
 }
 
 
@@ -663,42 +664,42 @@ void Place::branch(Solver &S) {
     if (verbosity >= 2) {
       std::cout << "ADD_TO_GREATER_STACK " << PlaceAttrs(Place{hor2, 0, IX_NULL}, S) << "\n";
     }
-    S.trie.rear_stack.emplace_back(hor2, 0);
+    S.trie.stack.emplace_back(hor2, 0);
   } else {
     if (hor_ix + 1 == hor->elems.size()) return;
     if (verbosity >= 2) {
       std::cout << "ADD_TO_GREATER_STACK2 " << PlaceAttrs(Place{hor, hor_ix + 1, IX_NULL}, S) << "\n";
     }
-    S.trie.rear_stack.emplace_back(hor, hor_ix + 1);
+    S.trie.stack.emplace_back(hor, hor_ix + 1);
   }
 }
 
 
-Reason *RearStackItem::handle(Solver &S) {
+Reason *StackItem::handle(Solver &S, RearGuard &rear) {
   Place place = {hor, hor_ix, IX_NULL};
   if (verbosity >= 2) {
     std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << " " << "\n";
   }
   switch (place.multimove_on_propagate(S, place.after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
-      RearGuard &rguard = place.save_as_rear(S);
-      if (verbosity >= 2) printf("SAVE_AS_REAR_WATCH %p %d %p\n", hor, hor_ix, &rguard);
+      VanGuard &vguard = place.save_as_van(S, rear);
+      if (verbosity >= 2) printf("SAVE_AS_REAR_WATCH %p %d %p\n", hor, hor_ix, &vguard);
 
       if (place.is_ver()) {
         HorLine *hor2 = place.deref_ver().hor;
         if (hor2 == NULL) return NULL;
-        S.trie.rear_stack.emplace_back(hor2, 0);
+        S.trie.stack.emplace_back(hor2, 0);
       } else {
         if (place.hor_ix + 1 == place.hor->elems.size()) return NULL;
-        S.trie.rear_stack.emplace_back(place.hor, place.hor_ix + 1);
+        S.trie.stack.emplace_back(place.hor, place.hor_ix + 1);
       }
 
       return NULL;
     }
     case MultimoveEnd::E_DONE: {
-      RearGuard &rguard = place.save_as_rear(S, false);
-      if (verbosity >= 2) printf("SAVE_AS_REAR_DONE %p %d %p\n", hor, hor_ix, &rguard);
-      rguard.on_accept(S);
+      VanGuard &vguard = place.save_as_van(S, rear, false);
+      if (verbosity >= 2) printf("SAVE_AS_REAR_DONE %p %d %p\n", hor, hor_ix, &vguard);
+      vguard.on_accept();
       return NULL;
     }
     default: { // case MultimoveEnd::E_CONFLICT:
@@ -781,10 +782,10 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
         Trie &trie = S.trie;
         if (!trie.snapshot_count) {
-          check(S.enqueue(get_tag(), &trie.root_reasons.emplace_back(hor, hor_ix, ver_ix)));
+          S.enqueue(get_tag(), &trie.root_reasons.emplace_back(hor, hor_ix, ver_ix));
         } else {
           Snapshot &snapshot = trie.get_last_snapshot();
-          check(S.enqueue(get_tag(), &snapshot.reasons.emplace_back(hor, hor_ix, ver_ix)));
+          S.enqueue(get_tag(), &snapshot.reasons.emplace_back(hor, hor_ix, ver_ix));
         }
 
         if (is_ver()) {
@@ -819,52 +820,56 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   }
 }
 
-Reason* RearGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
-  MultimoveEnd end = multimove_on_propagate(S, what_to_do);
-
+Reason* RearGuard::jump(Solver &S) {
   Trie &trie = S.trie;
 
-  switch (end) {
-    case MultimoveEnd::E_WATCH: {
-      set_watch(S);
-      if (is_ver()) {
-        HorLine *hor2 = deref_ver().hor;
-        if (hor2 == NULL) break;
-        trie.rear_stack.emplace_back(hor2, 0);
+  while (last_van) {
+    VanGuard &van = *last_van;
+    Lit lit = van.get_tag();
+    lbool value = S.value(lit);
+
+    if (value == l_True) {
+      last_van = van.previous;
+      van.enabled = false;
+      van.on_accept();
+    } else {
+      VanGuard *old_previous = van.previous;
+      RearGuard *rguard = this;
+
+      if (old_previous) {
+        LogList<RearGuard> &new_rears =
+          trie.snapshot_count == 0 ? trie.root_new_rears : trie.get_last_snapshot().new_rears;
+        rguard = van.rear = &new_rears.emplace_back(van, S.decisionLevel(), trie.last_rear, enabled);
+        van.previous = NULL;
+        rguard->last_van = &van;
+        last_van = old_previous;
       } else {
-        if (hor_ix + 1 == hor->elems.size()) break;
-        trie.rear_stack.emplace_back(hor, hor_ix + 1);
+        (Place &)*this = van;
       }
-      break;
-    }
-    case MultimoveEnd::E_DONE: {
-      on_accept(S);
-      break;
-    }
-    default: {  // MultimoveEnd::E_CONFLICT
-      trie.rear_stack.clear();
-      CHECK_ALL_DUPLICATE_PLACES(trie);
-      return this;
+
+      ++van.ver_ix;
+      Reason* conflict = van.full_multimove_on_propagate(S, van.after_vers_change(S));
+      if (value == l_False) {
+        if (conflict == NULL) {
+          // each branch of the pushed van will stop at a l_True or l_Undef => we recur at most once.
+          conflict = rguard->jump(S);
+          if (conflict != NULL) return conflict;
+        } else return conflict;
+      } else assert(conflict == NULL);
+
+      if (!old_previous) return NULL;
     }
   }
 
-  while (!trie.rear_stack.empty()) {
-    RearStackItem rsi = trie.rear_stack.back();
-    trie.rear_stack.pop_back();
-    Reason *reason = rsi.handle(S);
-    if (reason != NULL) {
-      trie.rear_stack.clear();
-      CHECK_ALL_DUPLICATE_PLACES(trie);
-      return reason;
-    }
-  }
-
-  CHECK_ALL_DUPLICATE_PLACES(trie);
+  on_accept_van(S);
   return NULL;
 }
 
 
 void Trie::undo(Solver& S) {
+  printf("TODO undo\n");
+  assert(false);
+
   if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, snapshot_count);
   if (active_var > my_literals.size()) {
     if (verbosity >= 2) {
@@ -995,8 +1000,10 @@ Snapshot& Trie::new_snapshot() {
   }
 
   snapshot->new_rears.clear_nodestroy();
+  snapshot->new_vans.clear_nodestroy();
   snapshot->reasons.clear_nodestroy();
   snapshot->rear_snapshots.clear();
+  snapshot->van_snapshots.clear();
   snapshot->accept_depth = -2;
 
   return *snapshot;
@@ -1040,22 +1047,29 @@ Reason* Trie::reset(Solver &S) {
     RearGuard *rguard = last_rear;
     while (true) {
       if (rguard == NULL) break;
-      if (verbosity >= 2) printf("ResettingGreater %p\n", rguard);
+      if (verbosity >= 2) printf("ResettingRear %p\n", rguard);
       if (!rguard->in_conflict()) {
         rguard->remove_watch(S, rguard->get_tag());
       }
       rguard = rguard->previous;
     }
   }
+
+  ITER_LOGLIST(root_new_vans, VanGuard, vguard, {
+    if (vguard.enabled && !vguard.in_conflict()) vguard.remove_watch(S, vguard.get_tag());
+    if (verbosity >= 2) printf("ResettingVan %p\n", &vguard);
+  });
+
   root_new_rears.clear_nodestroy();
+  root_new_vans.clear_nodestroy();
   root_reasons.clear_nodestroy();
 
   RearGuard &root_rguard = root_new_rears.emplace_back(
     Place{&root, 0, IX_NULL}, 0, (RearGuard *)NULL, true
   );
-  // VanGuard &root_vguard = root_new_vans.emplace_back(
-  //   Place{&root, 0, IX_NULL}, &root_rguard, 0, true
-  // );
+  VanGuard &root_vguard = root_new_vans.emplace_back(
+    Place{&root, 0, IX_NULL}, &root_rguard, 0, true
+  );
   last_rear = &root_rguard;
 
   active_var = 0;
@@ -1070,19 +1084,142 @@ Reason* Trie::reset(Solver &S) {
 
   accept_depth = -1;
 
-  CHECK_ALL_DUPLICATE_PLACES(*this);
+  return root_rguard.jump(S);
+}
 
-  return root_rguard.full_multimove_on_propagate(S, root_rguard.after_hors_change(S));
+// TODO
+Reason* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
+  MultimoveEnd end = multimove_on_propagate(S, what_to_do);
+
+  Trie &trie = S.trie;
+
+  switch (end) {
+    case MultimoveEnd::E_WATCH: {
+      set_watch(S);
+      if (is_ver()) {
+        HorLine *hor2 = deref_ver().hor;
+        if (hor2 == NULL) break;
+        trie.stack.emplace_back(hor2, 0);
+      } else {
+        if (hor_ix + 1 == hor->elems.size()) break;
+        trie.stack.emplace_back(hor, hor_ix + 1);
+      }
+      break;
+    }
+    case MultimoveEnd::E_DONE: {
+      on_accept();
+      break;
+    }
+    default: {  // MultimoveEnd::E_CONFLICT
+      trie.stack.clear();
+      CHECK_ALL_DUPLICATE_PLACES(trie);
+      return on_exhaust(S);
+    }
+  }
+
+  RearGuard &rear_ = *rear;
+  while (!trie.stack.empty()) {
+    StackItem rsi = trie.stack.back();
+    trie.stack.pop_back();
+    Reason *reason = rsi.handle(S, rear_);
+    if (reason != NULL) {
+      trie.stack.clear();
+      CHECK_ALL_DUPLICATE_PLACES(trie);
+      return reason;
+    }
+  }
+
+  CHECK_ALL_DUPLICATE_PLACES(trie);
+  return NULL;
 }
 
 
-void RearGuard::on_accept(Solver &S) {
+void VanGuard::on_accept() {
+  if (rear->deepest_accepting_van == NULL) {
+    rear->deepest_accepting_van = this;
+  } else {
+    printf("TODO VanGuard::on_accept\n");
+  }
+}
+
+Reason* VanGuard::on_exhaust(Solver &S) {
+  if (S.enqueue(rear->get_tag(), this)) {
+    rear->on_accept_rear(S);
+    return NULL;
+  } else {
+    return this;
+  }
+}
+
+
+Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
+  Trie& trie = S.trie;
+  printf("TODO VanGuard::propagate\n");
+  // TODO snapshots
+  // if (trie.snapshot_count) {
+  //   int level = S.decisionLevel();
+  //   if (level != last_change_level) {
+  //     if (verbosity >= 2) {
+  //       std::cout << "GREATER_BACKJUMPER_ENABLE3 "
+  //         << level << " " << last_change_level << " "
+  //         << *this << " " << this << std::endl;
+  //     }
+  //     CHECK_UNIQUE_REAR_SNAPSHOT(trie.get_last_snapshot(), this);
+  //     trie.get_last_snapshot().rear_snapshots.emplace_back(*this, this, last_change_level);
+  //     last_change_level = level;
+  //   }
+  // }
+
+  if (verbosity >= 2) {
+    printf("PROP " L_LIT " ", L_lit(p));
+    std::cout << *this << " " << this << std::endl;
+  }
+  if (sign(p)) {
+    remove_watch_pos(S, ~p);
+  } else {
+    remove_watch_neg(S, ~p);
+  }
+
+  Lit out_lit = get_tag();
+
+  lbool value = S.value(out_lit);
+
+  if (value == l_True) {
+    if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
+    on_accept();
+    CHECK_ALL_DUPLICATE_PLACES(trie);
+    return NULL;
+  }
+
+  if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
+  CHECK_ALL_DUPLICATE_PLACES(trie);
+  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
+}
+
+
+void RearGuard::on_accept_van(Solver &S) {
   enabled = false;
 
   Trie &trie = S.trie;
   if (previous != NULL) previous->next = next;
   if (next == NULL) trie.last_rear = previous;
   else next->previous = previous;
+
+  printf("TODO on_accept_van\n");
+  return;
+}
+
+
+void RearGuard::on_accept_rear(Solver &S) {
+  enabled = false;
+
+  Trie &trie = S.trie;
+  if (previous != NULL) previous->next = next;
+  if (next == NULL) trie.last_rear = previous;
+  else next->previous = previous;
+
+  printf("TODO on_accept_rear\n");
+  return;
 
   int depth;
   int old_depth = trie.accept_depth;
@@ -1149,45 +1286,13 @@ void RearGuard::on_accept(Solver &S) {
 
 
 Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
-  Trie& trie = S.trie;
-  if (trie.snapshot_count) {
-    int level = S.decisionLevel();
-    if (level != last_change_level) {
-      if (verbosity >= 2) {
-        std::cout << "GREATER_BACKJUMPER_ENABLE3 "
-          << level << " " << last_change_level << " "
-          << *this << " " << this << std::endl;
-      }
-      CHECK_UNIQUE_REAR_SNAPSHOT(trie.get_last_snapshot(), this);
-      trie.get_last_snapshot().rear_snapshots.emplace_back(*this, this, last_change_level);
-      last_change_level = level;
-    }
-  }
-
-  if (verbosity >= 2) {
-    printf("PROP " L_LIT " ", L_lit(p));
-    std::cout << *this << " " << this << std::endl;
-  }
+  assert(false);
   if (sign(p)) {
     remove_watch_pos(S, ~p);
   } else {
     remove_watch_neg(S, ~p);
   }
-
-  Lit out_lit = get_tag();
-
-  lbool value = S.value(out_lit);
-
-  if (value == l_True) {
-    if (verbosity >= 2) std::cout << "RIGHT_ACCEPT" << std::endl;
-    on_accept(S);
-    CHECK_ALL_DUPLICATE_PLACES(trie);
-    return NULL;
-  }
-
-  if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
-  CHECK_ALL_DUPLICATE_PLACES(trie);
-  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
+  return NULL;
 }
 
 

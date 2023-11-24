@@ -46,6 +46,7 @@ enum MultimoveEnd {
 
 
 struct RearGuard;
+struct VanGuard;
 
 struct Place : public Reason {
 public:
@@ -72,7 +73,7 @@ public:
   WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 
-  RearGuard &save_as_rear(Solver &S, bool enabled = true);
+  VanGuard &save_as_van(Solver &S, RearGuard &rear, bool enabled = true);
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 
@@ -102,8 +103,6 @@ public:
   void moveWatch(int i, Lit p);
 };
 
-struct VanGuard;
-
 struct RearSnapshot {
   Place place;
   RearGuard *ix;
@@ -120,7 +119,7 @@ struct RearGuard : public WatchedPlace {
   bool enabled;
   int last_change_level;
   RearGuard *previous, *next;
-  VanGuard *last_disabled_van, *last_enabled_van;
+  VanGuard *last_van, *deepest_accepting_van;
 
   RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_)
   : WatchedPlace(place)
@@ -128,46 +127,46 @@ struct RearGuard : public WatchedPlace {
   , previous(previous_)
   , next(NULL)
   , enabled(enabled_)
-  , last_disabled_van(NULL)
-  , last_enabled_van(NULL)
+  , last_van(NULL)
   { }
 
-  void on_accept(Solver &S);
+  void on_accept_rear(Solver &S);
+  void on_accept_van(Solver &S);
   void onSat(Solver &S, int accept_level);
 
-  Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
+  Reason* jump(Solver &S);
+  Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 };
 
 struct VanGuard : public WatchedPlace {
-  RearGuard *rear_guard;
+  RearGuard *rear;
   bool enabled;
   int last_change_level;
   VanGuard *previous, *next;
 
   VanGuard(Place place, RearGuard* rear_guard_, int last_change_level_, bool enabled_)
   : WatchedPlace(place)
-  , rear_guard(rear_guard_)
+  , rear(rear_guard_)
   , last_change_level(last_change_level_)
   , enabled(enabled_)
+  , previous(NULL)
   , next(NULL)
   {
     if (enabled_) {
-      VanGuard *pre = rear_guard->last_enabled_van;
+      VanGuard *pre = rear->last_van;
       if (pre) pre->next = this;
       previous = pre;
-      rear_guard->last_enabled_van = this;
+      rear->last_van = this;
     }
     else {
-      VanGuard *pre = rear_guard->last_disabled_van;
-      if (pre) pre->next = this;
-      previous = pre;
-      rear_guard->last_disabled_van = this;
+      on_accept();
     }
   }
 
+  void on_accept();
+  Reason* on_exhaust(Solver &S);
   Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-  Reason* propagate (Solver& S, Lit p, bool& keep_watch);
+  Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 };
 
 struct Snapshot {
@@ -186,7 +185,9 @@ struct Snapshot {
 
   Snapshot(Snapshot&& old) noexcept
   : new_rears(std::move(old.new_rears))
+  // , new_vans(std::move(old.new_vans))
   , rear_snapshots(std::move(old.rear_snapshots))
+  // , van_snapshots(std::move(old.van_snapshots))
   , is_acc(old.is_acc)
   , accept_depth(old.accept_depth)
   , accept_level(old.accept_level)
@@ -266,10 +267,10 @@ enum Mode { clauses, branch_always };
 extern RemovedWatch REMOVED_WATCH;
 extern Mode TRIE_MODE;
 
-struct RearStackItem {
+struct StackItem {
   HorLine* hor;
   unsigned hor_ix;
-  Reason *handle(Solver &S);
+  Reason *handle(Solver &S, RearGuard &rear);
 };
 
 class Trie : public Undoable {
@@ -280,7 +281,7 @@ public:
   LogList<RearGuard> root_new_rears;
   LogList<VanGuard> root_new_vans;
   LogList<Place> root_reasons;
-  vector<RearStackItem> rear_stack;
+  vector<StackItem> stack;
   RearGuard *last_rear = NULL;
 
   // constant - the number of states of the analysed AFA
