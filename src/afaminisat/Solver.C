@@ -70,18 +70,6 @@ bool Solver::assume(Lit p) {
     return enqueue(p); }
 
 
-// Revert one variable binding on the trail.
-//
-inline void Solver::undoOne(void)
-{
-    if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND "unbind(" L_LIT ")\n", L_ind, L_lit(p)); }
-    Var     x  = var(trail.last()); trail.pop();
-    assigns[x] = toInt(l_Undef);
-    reason [x] = NULL;
-    order.undo(x);
-}
-
-
 inline void Solver::undoOneLevel() {
     auto start_u = undos.begin() + trail_lim.last().second;
     auto stop_u = undos.end();
