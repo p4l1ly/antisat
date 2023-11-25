@@ -269,7 +269,7 @@ extern Mode TRIE_MODE;
 struct RearStackItem {
   HorLine* hor;
   unsigned hor_ix;
-  bool handle(Solver &S);
+  Reason *handle(Solver &S);
 };
 
 class Trie : public Undoable {

@@ -676,7 +676,7 @@ void Place::branch(Solver &S) {
 }
 
 
-bool RearStackItem::handle(Solver &S) {
+Reason *RearStackItem::handle(Solver &S) {
   Place place = {hor, hor_ix, IX_NULL};
   if (verbosity >= 2) {
     std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << " " << "\n";
@@ -688,23 +688,25 @@ bool RearStackItem::handle(Solver &S) {
 
       if (place.is_ver()) {
         HorLine *hor2 = place.deref_ver().hor;
-        if (hor2 == NULL) return true;
+        if (hor2 == NULL) return NULL;
         S.trie.rear_stack.emplace_back(hor2, 0);
       } else {
-        if (place.hor_ix + 1 == place.hor->elems.size()) return true;
+        if (place.hor_ix + 1 == place.hor->elems.size()) return NULL;
         S.trie.rear_stack.emplace_back(place.hor, place.hor_ix + 1);
       }
 
-      return true;
+      return NULL;
     }
     case MultimoveEnd::E_DONE: {
       RearGuard &rguard = place.save_as_rear(S, false);
       if (verbosity >= 2) printf("SAVE_AS_REAR_DONE %p %d %p\n", hor, hor_ix, &rguard);
       rguard.on_accept(S);
-      return true;
+      return NULL;
     }
     default: { // case MultimoveEnd::E_CONFLICT:
-      return false;
+      return S.trie.snapshot_count == 0
+        ? &S.trie.root_reasons.emplace_back(place)
+        : &S.trie.get_last_snapshot().reasons.emplace_back(place);
     }
   }
 }
@@ -851,10 +853,11 @@ Reason* RearGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   while (!trie.rear_stack.empty()) {
     RearStackItem rsi = trie.rear_stack.back();
     trie.rear_stack.pop_back();
-    if (!rsi.handle(S)) {
+    Reason *reason = rsi.handle(S);
+    if (reason != NULL) {
       trie.rear_stack.clear();
       CHECK_ALL_DUPLICATE_PLACES(trie);
-      return this;
+      return reason;
     }
   }
 
