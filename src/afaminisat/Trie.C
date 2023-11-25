@@ -12,7 +12,7 @@ int ver_count = 0;
 RemovedWatch REMOVED_WATCH = {};
 Mode TRIE_MODE = branch_always;
 
-void check_duplicate_places(Trie &trie, RearGuard &p) {
+void check_duplicate_rears(Trie &trie, RearGuard &p) {
   ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
     assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
   })
@@ -26,20 +26,56 @@ void check_duplicate_places(Trie &trie, RearGuard &p) {
   }
 }
 
-void check_all_duplicate_places(Trie &trie) {
-  ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
-    check_duplicate_places(trie, x);
+void check_duplicate_vans(Trie &trie, VanGuard &p) {
+  ITER_LOGLIST(trie.root_new_vans, VanGuard, x, {
+    assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
   })
   unsigned i = 0;
   for (int j = 0; j < trie.snapshot_count; ++j) {
     Snapshot& snapshot = trie.snapshots[j];
-    ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
-      check_duplicate_places(trie, x);
+    ITER_LOGLIST(snapshot.new_vans, VanGuard, x, {
+      assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
     })
     ++i;
   }
+}
 
-  printf("TODO check_all_duplicate_places: vans\n");
+void check_duplicate_rears_vans(Trie &trie, RearGuard &p) {
+  ITER_LOGLIST(trie.root_new_vans, VanGuard, x, {
+    assert(x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+  })
+  unsigned i = 0;
+  for (int j = 0; j < trie.snapshot_count; ++j) {
+    Snapshot& snapshot = trie.snapshots[j];
+    ITER_LOGLIST(snapshot.new_vans, VanGuard, x, {
+      assert(x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+    })
+    ++i;
+  }
+}
+
+void check_all_duplicate_places(Trie &trie) {
+  ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
+    check_duplicate_rears(trie, x);
+    check_duplicate_rears_vans(trie, x);
+  })
+  for (int j = 0; j < trie.snapshot_count; ++j) {
+    Snapshot& snapshot = trie.snapshots[j];
+    ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
+      check_duplicate_rears(trie, x);
+      check_duplicate_rears_vans(trie, x);
+    })
+  }
+
+  ITER_LOGLIST(trie.root_new_vans, VanGuard, x, {
+    check_duplicate_vans(trie, x);
+  })
+  for (int j = 0; j < trie.snapshot_count; ++j) {
+    Snapshot& snapshot = trie.snapshots[j];
+    ITER_LOGLIST(snapshot.new_vans, VanGuard, x, {
+      check_duplicate_vans(trie, x);
+    })
+  }
 }
 
 void check_unique_rear_snapshot(Snapshot &snapshot, RearGuard *ix) {
@@ -685,7 +721,7 @@ Reason *StackItem::handle(Solver &S, RearGuard &rear) {
   switch (place.multimove_on_propagate(S, place.after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
       VanGuard &vguard = place.save_as_van(S, rear);
-      if (verbosity >= 2) printf("SAVE_AS_REAR_WATCH %p %d %p\n", hor, hor_ix, &vguard);
+      if (verbosity >= 2) printf("SAVE_AS_VAN_WATCH %p %d %p\n", hor, hor_ix, &vguard);
 
       if (place.is_ver()) {
         HorLine *hor2 = place.deref_ver().hor;
@@ -700,14 +736,22 @@ Reason *StackItem::handle(Solver &S, RearGuard &rear) {
     }
     case MultimoveEnd::E_DONE: {
       VanGuard &vguard = place.save_as_van(S, rear, false);
-      if (verbosity >= 2) printf("SAVE_AS_REAR_DONE %p %d %p\n", hor, hor_ix, &vguard);
+      if (verbosity >= 2) printf("SAVE_AS_VAN_DONE %p %d %p\n", hor, hor_ix, &vguard);
       vguard.on_accept();
       return NULL;
     }
     default: { // case MultimoveEnd::E_EXHAUST:
-      return S.trie.snapshot_count == 0
+      Reason *reason = S.trie.snapshot_count == 0
         ? &S.trie.root_reasons.emplace_back(place)
         : &S.trie.get_last_snapshot().reasons.emplace_back(place);
+      if (rear.last_change_level == -1) { // this means that rear is an uninitialized root rear
+        return reason;
+      }
+      if (S.enqueue(rear.get_tag(), reason)) {
+        return NULL;
+      } else {
+        return reason;
+      }
     }
   }
 }
@@ -998,7 +1042,7 @@ void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     )
 
     if (verbosity >= 2) {
-      printf("CALC_REASON_EXHAUST");
+      std::cout << "CALC_REASON_EXHAUST " << *this;
       ITER_MY_ZEROES(*this, x, printf(" " L_LIT, L_lit(x));)
       printf("\n");
     }
@@ -1048,13 +1092,11 @@ Reason* Trie::reset(Solver &S) {
   root_reasons.clear_nodestroy();
 
   RearGuard &root_rguard = root_new_rears.emplace_back(
-    Place{&root, 0, IX_NULL}, -1, (RearGuard *)NULL, true
+    Place{&root, IX_NULL, IX_NULL}, -1, (RearGuard *)NULL, true
   );
   VanGuard &root_vguard = root_new_vans.emplace_back(
     Place{&root, 0, IX_NULL}, &root_rguard, 0, true
   );
-  root_rguard.last_change_level = 0;
-  last_rear = &root_rguard;
 
   active_var = 0;
   active_var_old = 0;
@@ -1069,7 +1111,12 @@ Reason* Trie::reset(Solver &S) {
   accept_depth = -1;
 
   Reason *conflict = root_vguard.full_multimove_on_propagate(S, root_vguard.after_hors_change(S));
-  if (conflict) return conflict;
+  if (conflict) {
+    last_rear = NULL;
+    return conflict;
+  }
+  root_rguard.last_change_level = 0;
+  last_rear = &root_rguard;
   return root_rguard.jump(S);
 }
 
@@ -1145,10 +1192,6 @@ Reason* VanGuard::on_exhaust(Solver &S) {
 
 
 Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
-  if (!rear->enabled) return NULL;
-
-  Trie& trie = S.trie;
-  printf("TODO VanGuard::propagate snapshot\n");
   // TODO snapshots
   // if (trie.snapshot_count) {
   //   int level = S.decisionLevel();
@@ -1163,6 +1206,14 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
   //     last_change_level = level;
   //   }
   // }
+
+  if (!rear->enabled) {
+    enabled = false;
+    return NULL;
+  }
+
+  Trie& trie = S.trie;
+  printf("TODO VanGuard::propagate snapshot\n");
 
   if (verbosity >= 2) {
     printf("PROP " L_LIT " ", L_lit(p));

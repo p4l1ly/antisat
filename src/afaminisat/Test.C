@@ -40,6 +40,27 @@ void test_init_onelit() {
 }
 
 
+void test_twolit_conflict() {
+  Solver S;
+  assert(init_test(S, 2) == l_Undef);
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+
+  S.enqueue(~Lit(0));
+  S.enqueue(~Lit(1));
+
+  Reason *conflict_reason = S.propagate();
+  assert(conflict_reason != NULL);
+  assert(S.value(Lit(0)) == l_False);
+  assert(S.value(Lit(1)) == l_False);
+
+  assert(S.watches[index(Lit(0))].size() == 0);
+  assert(S.watches[index(~Lit(0))].size() == 0);
+  assert(S.watches[index(Lit(1))].size() == 0);
+  assert(S.watches[index(~Lit(1))].size() == 0);
+}
+
+
 void test_twolit_jump() {
   Solver S;
   assert(init_test(S, 2) == l_Undef);
@@ -47,7 +68,7 @@ void test_twolit_jump() {
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(~Lit(0));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_False);
   assert(S.value(Lit(1)) == l_True);
 }
@@ -59,12 +80,12 @@ void test_twolit_van_accept() {
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(Lit(1));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_Undef);
   assert(S.value(Lit(1)) == l_True);
 
   S.enqueue(~Lit(0));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_False);
   assert(S.value(Lit(1)) == l_True);
 }
@@ -76,7 +97,7 @@ void test_twolit_van_exhaust() {
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(~Lit(1));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_True);
   assert(S.value(Lit(1)) == l_False);
 }
@@ -88,12 +109,12 @@ void test_twolit_rear_accept_then_van_accept() {
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(Lit(0));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_True);
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(Lit(1));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_True);
   assert(S.value(Lit(1)) == l_True);
 }
@@ -105,24 +126,256 @@ void test_twolit_rear_accept_then_van_exhaust() {
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(Lit(0));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_True);
   assert(S.value(Lit(1)) == l_Undef);
 
   S.enqueue(~Lit(1));
-  S.propagate();
+  assert(S.propagate() == NULL);
   assert(S.value(Lit(0)) == l_True);
   assert(S.value(Lit(1)) == l_False);
 }
+
+void test_L() {
+  Solver S;
+  std::unordered_set<unsigned> finals({2});
+  assert(init_test(S, 3, finals) == l_Undef);
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_Undef);
+
+  S.trie.root.elems[0].hors[0].hor = new HorLine{Place{&S.trie.root, 0, 0}};
+  S.trie.root.elems[0].hors[0].hor->elems.emplace_back(Lit(2));
+  assert(S.trie.reset(S) == NULL);
+
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_Undef);
+
+  S.enqueue(~Lit(0));
+  assert(S.propagate() == NULL);
+  assert(S.value(Lit(0)) == l_False);
+  assert(S.value(Lit(1)) == l_True);
+  assert(S.value(Lit(2)) == l_True);
+
+  assert(S.undos.size() == 0);
+  for (int i = 0; i < 3; ++i) S.undoOne();
+  S.enqueue(~Lit(0));
+  S.propQ.clear();
+
+  assert(S.value(Lit(0)) == l_False);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_Undef);
+
+  assert(S.trie.reset(S) == NULL);
+  assert(S.value(Lit(0)) == l_False);
+  assert(S.value(Lit(1)) == l_True);
+  assert(S.value(Lit(2)) == l_True);
+  assert(S.propagate() == NULL);
+
+  assert(S.watches[index(Lit(0))].size() == 0);
+  assert(S.watches[index(~Lit(0))].size() == 0);
+  assert(S.watches[index(Lit(1))].size() == 0);
+  assert(S.watches[index(~Lit(1))].size() == 0);
+  assert(S.watches[index(Lit(2))].size() == 0);
+  assert(S.watches[index(~Lit(2))].size() == 0);
+
+  assert(S.undos.size() == 0);
+  for (int i = 0; i < 3; ++i) S.undoOne();
+  S.enqueue(~Lit(2));
+  S.propQ.clear();
+
+  assert(S.trie.reset(S) == NULL);
+  assert(S.value(Lit(0)) == l_True);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_False);
+
+  assert(S.watches[index(Lit(1))].size() == 1);
+  assert(S.watches[index(~Lit(1))].size() == 1);
+  assert(((VanGuard *)S.watches[index(Lit(1))][0])->enabled);
+  ((VanGuard *)S.watches[index(Lit(1))][0])->enabled = false;
+  S.watches[index(Lit(1))].clear();
+  S.watches[index(~Lit(1))].clear();
+
+  assert(S.undos.size() == 0);
+  for (int i = 0; i < 2; ++i) S.undoOne();
+  S.enqueue(~Lit(0));
+  S.enqueue(~Lit(2));
+  S.propQ.clear();
+
+  Reason *conflict_reason = S.trie.reset(S);
+  assert(conflict_reason != NULL);
+  vec<Lit> out_reason;
+  conflict_reason->calcReason(S, lit_Undef, out_reason);
+
+  std::unordered_set<int> out_reason_set;
+  for (int i = 0; i < out_reason.size(); i++) out_reason_set.insert(index(out_reason[i]));
+  assert(out_reason_set == std::unordered_set({index(~Lit(0)), index(~Lit(2))}));
+
+  assert(S.watches[index(Lit(1))].size() == 1);
+  assert(S.watches[index(~Lit(1))].size() == 1);
+  assert(((VanGuard *)S.watches[index(Lit(1))][0])->enabled);
+  ((VanGuard *)S.watches[index(Lit(1))][0])->enabled = false;
+  S.watches[index(Lit(1))].clear();
+  S.watches[index(~Lit(1))].clear();
+
+  assert(S.undos.size() == 0);
+  for (int i = 0; i < 2; ++i) S.undoOne();
+  S.enqueue(~Lit(0));
+  S.enqueue(~Lit(1));
+  S.propQ.clear();
+
+  {
+    Reason *conflict_reason = S.trie.reset(S);
+    assert(conflict_reason != NULL);
+    vec<Lit> out_reason;
+    conflict_reason->calcReason(S, lit_Undef, out_reason);
+
+    std::unordered_set<int> out_reason_set;
+    for (int i = 0; i < out_reason.size(); i++) out_reason_set.insert(index(out_reason[i]));
+    assert(out_reason_set == std::unordered_set({index(~Lit(0)), index(~Lit(1))}));
+
+    assert(S.watches[index(Lit(2))].size() == 0);
+    assert(S.watches[index(~Lit(2))].size() == 0);
+  }
+}
+
+
+void test_cap() {
+  Solver S;
+  std::unordered_set<unsigned> finals({2, 3});
+  assert(init_test(S, 4, finals) == l_Undef);
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_Undef);
+  assert(S.value(Lit(3)) == l_Undef);
+
+  S.trie.root.elems.emplace_back(Lit(2));
+  S.trie.root.elems[1].hors.emplace_back(Lit(3), 0, 1);
+  assert(S.trie.reset(S) == NULL);
+
+  S.enqueue(~Lit(3));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_True);
+  assert(S.value(Lit(3)) == l_False);
+
+  S.enqueue(~Lit(0));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_False);
+  assert(S.value(Lit(1)) == l_True);
+  assert(S.value(Lit(2)) == l_True);
+  assert(S.value(Lit(3)) == l_False);
+}
+
+
+void test_chain4() {
+  Solver S;
+  std::unordered_set<unsigned> finals;
+  assert(init_test(S, 4, finals) == l_Undef);
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_Undef);
+  assert(S.value(Lit(3)) == l_Undef);
+
+  assert(S.trie.reset(S) == NULL);
+
+  S.enqueue(~Lit(2));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_False);
+  assert(S.value(Lit(3)) == l_Undef);
+
+  S.enqueue(~Lit(3));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_False);
+  assert(S.value(Lit(3)) == l_False);
+
+  S.enqueue(~Lit(1));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_True);
+  assert(S.value(Lit(1)) == l_False);
+  assert(S.value(Lit(2)) == l_False);
+  assert(S.value(Lit(3)) == l_False);
+}
+
+
+void test_chair() {
+  Solver S;
+  std::unordered_set<unsigned> finals({3, 4, 5});
+  assert(init_test(S, 6, finals) == l_Undef);
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_Undef);
+  assert(S.value(Lit(2)) == l_Undef);
+  assert(S.value(Lit(3)) == l_Undef);
+
+  S.trie.root.elems[0].hors[0].hor = new HorLine{Place{&S.trie.root, 0, 0}};
+  S.trie.root.elems[0].hors[0].hor->elems.emplace_back(Lit(3));
+  S.trie.root.elems[0].hors[0].hor->elems[0].hors.emplace_back(Lit(4), 0, 2);
+  S.trie.root.elems[0].hors[0].hor->elems[0].hors.emplace_back(Lit(5), 0, 3);
+  assert(S.trie.reset(S) == NULL);
+
+  S.enqueue(~Lit(1));
+  S.enqueue(~Lit(4));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_Undef);
+  assert(S.value(Lit(1)) == l_False);
+  assert(S.value(Lit(2)) == l_Undef);
+  assert(S.value(Lit(3)) == l_Undef);
+  assert(S.value(Lit(4)) == l_False);
+  assert(S.value(Lit(5)) == l_Undef);
+
+  S.enqueue(~Lit(0));
+  assert(S.propagate() == NULL);
+
+  assert(S.value(Lit(0)) == l_False);
+  assert(S.value(Lit(1)) == l_False);
+  assert(S.value(Lit(2)) == l_True);
+  assert(S.value(Lit(3)) == l_Undef);
+  assert(S.value(Lit(4)) == l_False);
+  assert(S.value(Lit(5)) == l_Undef);
+
+  S.enqueue(~Lit(3));
+  S.enqueue(~Lit(5));
+  Reason *conflict_reason = S.propagate();
+  assert(conflict_reason != NULL);
+
+  vec<Lit> out_reason;
+  conflict_reason->calcReason(S, lit_Undef, out_reason);
+
+  std::unordered_set<int> out_reason_set;
+  for (int i = 0; i < out_reason.size(); i++) out_reason_set.insert(index(out_reason[i]));
+  assert(out_reason_set == std::unordered_set({
+    index(~Lit(0)),
+    index(~Lit(3)),
+    index(~Lit(4)),
+    index(~Lit(5))
+  }));
+}
+
 
 
 int main(int argc, char **argv) {
   test_init_twolit();
   test_init_onelit();
+  test_twolit_conflict();
   test_twolit_jump();
   test_twolit_van_accept();
   test_twolit_van_exhaust();
   test_twolit_rear_accept_then_van_accept();
   test_twolit_rear_accept_then_van_exhaust();
+  test_L();
+  test_cap();
+  test_chair();
   return 0;
 }
