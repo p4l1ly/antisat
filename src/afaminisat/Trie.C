@@ -521,6 +521,8 @@ void RearGuard::onSat(Solver &S, int accept_level) {
   {
     // if (i) --i;
     int lvl = added_vars[i].first;
+    unsigned last_i = i + 1;
+
     if (verbosity >= 2) printf("LVLLVL %d\n", lvl);
     if (lvl < S.root_level) goto break_rear;
     Snapshot *next_bjumper = NULL;
@@ -537,21 +539,24 @@ void RearGuard::onSat(Solver &S, int accept_level) {
         if (verbosity >= 0) printf("I %d " L_LIT " %d\n", i - 1, L_lit(added_var.second), added_var.first);
 
         if (added_var.first < lvl) {
-          if (verbosity >= 2) {
-            printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+          if (last_i > i) {
+            if (verbosity >= 2) {
+              printf("GREATER_BACKJUMPER_ENABLE1 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+            }
+            CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, rguard);
+            snapshot.rear_snapshots.push_back({
+              {extended_hor, extended_hor_ix, i - 1},
+              rguard,
+              visit_level
+            });
+            if (next_bjumper) {
+              next_bjumper->rear_snapshots.back().last_change_level = lvl;
+            } else {
+              rguard->last_change_level = lvl;
+            }
+            next_bjumper = &snapshot;
+            last_i = i;
           }
-          CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, rguard);
-          snapshot.rear_snapshots.push_back({
-            {extended_hor, extended_hor_ix, i - 1},
-            rguard,
-            visit_level
-          });
-          if (next_bjumper) {
-            next_bjumper->rear_snapshots.back().last_change_level = lvl;
-          } else {
-            rguard->last_change_level = lvl;
-          }
-          next_bjumper = &snapshot;
           goto continue_rear;
         }
       }
@@ -573,6 +578,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
         rguard->last_change_level = lvl;
       }
       next_bjumper = &snapshot;
+      goto break_rear;
 continue_rear: ;
     }
   }
