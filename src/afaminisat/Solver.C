@@ -739,6 +739,7 @@ void Solver::claRescaleActivity(void)
 |________________________________________________________________________________________________@*/
 bool Solver::solve(const vec<Lit>& assumps)
 {
+    root_level = 0;
     if (trie.root.elems.size() && trie.reset(*this)) return false;
     simplifyDB();
     if (!ok) return false;
@@ -750,13 +751,19 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
 
-    for (int i = 0; i < assumps.size(); i++)
-        if (!assume(assumps[i]) || propagate() != NULL){
-            propQ.clear();
-            cancelUntil(0);
-            return false;
-        }
-    root_level = decisionLevel();
+    for (int i = 0; i < assumps.size(); i++) {
+      if (!assume(assumps[i])) {
+          propQ.clear();
+          cancelUntil(0);
+          return false;
+      }
+      ++root_level;
+      if (propagate() != NULL) {
+          propQ.clear();
+          cancelUntil(0);
+          return false;
+      }
+    }
     return true;
 }
 
