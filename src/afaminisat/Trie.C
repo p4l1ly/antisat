@@ -492,12 +492,6 @@ void RearGuard::onSat(Solver &S, int accept_level) {
 
   if (visit_level == accept_level) {
     rguard = this;
-    enabled = true;
-    hor = extended_hor;
-    hor_ix = extended_hor_ix;
-    ver_ix = (unsigned)added_vars.size() - 1;
-    trie.last_rear = this;
-    next = previous = NULL;
     if (verbosity >= 2) {
       std::cout << "REUSING_GREATER_PLACE " << (Place &)*this
         << " " << this << " " << last_change_level << std::endl;
@@ -514,13 +508,12 @@ void RearGuard::onSat(Solver &S, int accept_level) {
 
     // Put the new rear guard into conflict at the end of the added branch
     rguard = &incomplete_rguards->emplace_back(
-      Place{extended_hor, extended_hor_ix, (unsigned)added_vars.size() - 1},
-      visit_level,
+      Place{NULL, 0, 0},
+      0,
       (RearGuard *)NULL,
-      true
+      false
     );
     if (verbosity >= 2) std::cout << "NEW_GREATER_PLACE3 " << rguard << " " << extended_hor << " " << extended_hor_ix << std::endl;
-    trie.last_rear = rguard;
   }
 
   unsigned i = added_vars.size() - 1;
@@ -530,7 +523,6 @@ void RearGuard::onSat(Solver &S, int accept_level) {
     int lvl = added_vars[i].first;
     if (verbosity >= 2) printf("LVLLVL %d\n", lvl);
     if (lvl < S.root_level) goto break_rear;
-    int original_last_change_level = rguard->last_change_level;
     Snapshot *next_bjumper = NULL;
 
     for (int iter = lvl - S.root_level; iter; --lvl) {
@@ -552,7 +544,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
           snapshot.rear_snapshots.push_back({
             {extended_hor, extended_hor_ix, i - 1},
             rguard,
-            original_last_change_level
+            visit_level
           });
           if (next_bjumper) {
             next_bjumper->rear_snapshots.back().last_change_level = lvl;
@@ -573,7 +565,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
       snapshot.rear_snapshots.push_back({
         {extended_hor, extended_hor_ix, IX_NULL},
         rguard,
-        original_last_change_level
+        visit_level
       });
       if (next_bjumper) {
         next_bjumper->rear_snapshots.back().last_change_level = lvl;
