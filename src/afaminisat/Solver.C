@@ -497,11 +497,11 @@ Reason* Solver::propagate(void)
         if (verbosity >= 2) printf("WS_LEN %d " L_LIT "\n", ws.size(), L_lit(p));
         bool          keep_watch;
         Constr        **i, **j;
-        for (i = j = (Constr**)ws; confl == NULL && i < (Constr**)ws + ws.size(); i++){
+        for (i = j = (Constr**)ws; confl == NULL && i < (Constr**)ws + ws.size(); ++i){
             stats.inspects++;
             keep_watch = false;
             if (verbosity >= 2) {
-              printf("PROP_IX %ld\n", i - (Constr**)ws);
+              printf("PROP_IX %ld %p\n", i - (Constr**)ws, *i);
               std::cout << std::flush;
             }
             Reason *confl2 = (*i)->propagate(*this, p, keep_watch);

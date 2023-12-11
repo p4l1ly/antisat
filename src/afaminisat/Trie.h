@@ -65,6 +65,9 @@ public:
   bool ver_is_singleton() const;
   bool is_ver() const;
   bool in_exhaust() const;
+  HorHead *get_leftmost() const;
+  int get_depth() const;
+  int get_depth_if_valid() const;
 
   void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
@@ -103,22 +106,35 @@ public:
 };
 
 struct RearSnapshot {
-  Place place;
   RearGuard *ix;
+  Place place;
   int last_change_level;
+  VanGuard *jumped_van;
+  int jumped_van_visit_level;
+  Place accepting_place;
+  VanGuard *accepting_reusable_van;
+  int accepting_van_visit_level;
 };
 
 struct VanSnapshot {
-  Place place;
   VanGuard *ix;
+  Place place;
   int last_change_level;
+  RearGuard *rear;
 };
 
 struct RearGuard : public WatchedPlace {
   bool enabled;
   int last_change_level;
   RearGuard *previous, *next;
-  VanGuard *last_van, *deepest_accepting_van;
+  VanGuard *last_van;
+
+  VanGuard *jumped_van;
+  int jumped_van_visit_level; 
+
+  Place accepting_place;
+  VanGuard *accepting_reusable_van;
+  int accepting_van_visit_level;
 
   RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_)
   : WatchedPlace(place)
@@ -127,15 +143,16 @@ struct RearGuard : public WatchedPlace {
   , next(NULL)
   , enabled(enabled_)
   , last_van(NULL)
-  , deepest_accepting_van(NULL)
+  , accepting_place(NULL, 0, 0)
   { }
 
   void on_accept_rear(Solver &S);
   void on_accept_van(Solver &S);
-  void onSat(Solver &S, int accept_level);
 
   Reason* jump(Solver &S);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
+
+  void make_snapshot(Solver &S);
 };
 
 struct VanGuard : public WatchedPlace {
@@ -158,15 +175,14 @@ struct VanGuard : public WatchedPlace {
       previous = pre;
       rear->last_van = this;
     }
-    else {
-      on_accept();
-    }
   }
 
-  void on_accept();
+  void on_accept(Solver &S);
   Reason* on_exhaust(Solver &S);
   Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
+
+  void make_snapshot(Solver &S);
 };
 
 struct Snapshot {
@@ -177,21 +193,34 @@ struct Snapshot {
   vector<VanSnapshot> van_snapshots;
   LogList<Place> reasons;
 
-  int accept_depth = -2;
-  int accept_level = -1;
-  RearGuard *accept_place = NULL;
+  Place accepting_place;
+  RearGuard *accepting_reusable_rear = NULL;
+  VanGuard *accepting_reusable_van = NULL;
+  int accepting_rear_visit_level = -1;
+  int accepting_van_visit_level = -1;
 
-  Snapshot() : new_rears(), rear_snapshots() {}
+  Snapshot()
+  : new_rears()
+  , new_vans()
+  , rear_snapshots()
+  , van_snapshots()
+  , reasons()
+  // IX_NULL in hor_ix means no change. If hor==NULL and hor_ix==0, it means that
+  // trie.accepting_place should be cleared.
+  , accepting_place(NULL, IX_NULL, 0)
+  {}
 
   Snapshot(Snapshot&& old) noexcept
   : new_rears(std::move(old.new_rears))
-  // , new_vans(std::move(old.new_vans))
+  , new_vans(std::move(old.new_vans))
   , rear_snapshots(std::move(old.rear_snapshots))
-  // , van_snapshots(std::move(old.van_snapshots))
+  , van_snapshots(std::move(old.van_snapshots))
   , is_acc(old.is_acc)
-  , accept_depth(old.accept_depth)
-  , accept_level(old.accept_level)
-  , accept_place(old.accept_place)
+  , accepting_place(old.accepting_place)
+  , accepting_reusable_rear(old.accepting_reusable_rear)
+  , accepting_reusable_van(old.accepting_reusable_van)
+  , accepting_rear_visit_level(old.accepting_rear_visit_level)
+  , accepting_van_visit_level(old.accepting_van_visit_level)
   , reasons(std::move(old.reasons))
   {}
 
@@ -210,12 +239,12 @@ public:
   Lit tag;
   HorLine *hor;
 
-  int accept_level;
-  int visit_level;
   int depth;
 
-  HorHead(Lit tag_, int visit_level_, int depth_)
-  : tag(tag_), hor(NULL), visit_level(visit_level_), depth(depth_)
+  HorHead(Lit tag_, int depth_)
+  : tag(tag_)
+  , hor(NULL)
+  , depth(depth_)
   {
     if (verbosity >= -2) hor_head_count++;
   }
@@ -301,12 +330,15 @@ public:
   unsigned snapshot_count = 0;
   std::vector<Snapshot> snapshots;
 
-  int accept_depth = -1;
-  int accept_level = -1;
-  RearGuard *accept_place = NULL;
+  Place accepting_place;
+  RearGuard *accepting_reusable_rear;
+  VanGuard *accepting_reusable_van;
+  int accepting_rear_visit_level;
+  int accepting_van_visit_level;
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
+  void make_accepting_snapshot(Solver &S);
 
   Place to_cut;
 
