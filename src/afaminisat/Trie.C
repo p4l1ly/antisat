@@ -549,11 +549,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
               rguard,
               visit_level
             });
-            if (next_bjumper) {
-              next_bjumper->rear_snapshots.back().last_change_level = lvl;
-            } else {
-              rguard->last_change_level = lvl;
-            }
+            if (next_bjumper) next_bjumper->rear_snapshots.back().last_change_level = lvl;
             next_bjumper = &snapshot;
             last_i = i;
           }
@@ -572,11 +568,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
         rguard,
         visit_level
       });
-      if (next_bjumper) {
-        next_bjumper->rear_snapshots.back().last_change_level = lvl;
-      } else {
-        rguard->last_change_level = lvl;
-      }
+      if (next_bjumper) next_bjumper->rear_snapshots.back().last_change_level = lvl;
       next_bjumper = &snapshot;
       goto break_rear;
 continue_rear: ;
