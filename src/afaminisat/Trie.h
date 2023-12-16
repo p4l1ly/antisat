@@ -90,8 +90,14 @@ struct PlaceAttrs : Place {
 
 struct WatchedPlace : public Place, public Constr {
 public:
+
+#ifdef MY_DEBUG
+  int watch_ix_pos = -1;
+  int watch_ix_neg = -1;
+#else
   int watch_ix_pos;
   int watch_ix_neg;
+#endif
 
   WatchedPlace(Place place);
 
@@ -158,10 +164,10 @@ struct RearGuard : public WatchedPlace {
   , fork_level(fork_level_)
   { }
 
-  void on_accept_rear(Solver &S);
+  void on_accept_rear(Solver &S, int visit_level);
   void on_accept_van(Solver &S);
 
-  Reason* jump(Solver &S);
+  Place* jump(Solver &S);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S);
@@ -189,9 +195,9 @@ struct VanGuard : public WatchedPlace {
     }
   }
 
-  void on_accept(Solver &S);
-  Reason* on_exhaust(Solver &S);
-  Reason* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
+  void on_accept(Solver &S, int visit_level);
+  Place* on_exhaust(Solver &S);
+  Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S);
@@ -312,7 +318,7 @@ extern Mode TRIE_MODE;
 struct StackItem {
   HorLine* hor;
   unsigned hor_ix;
-  Reason *handle(Solver &S, RearGuard &rear);
+  Place *handle(Solver &S, RearGuard &rear);
 };
 
 class Trie : public Undoable {
@@ -344,11 +350,11 @@ public:
   std::vector<Snapshot> snapshots;
 
   Place accepting_place;
-  RearGuard *accepting_reusable_rear;
-  VanGuard *accepting_reusable_van;
-  int accepting_rear_visit_level;
-  int accepting_van_visit_level;
-  RearGuard *accepting_rear_of_van;
+  RearGuard *accepting_reusable_rear = NULL;
+  VanGuard *accepting_reusable_van = NULL;
+  int accepting_rear_visit_level = -1;
+  int accepting_van_visit_level = -1;
+  RearGuard *accepting_rear_of_van = NULL;
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
@@ -363,13 +369,29 @@ public:
 
   // Result: should the trie be cut at the active place's back_ptr?
   void onSat(Solver &S);
-  Reason* reset(Solver &S);
+  Place* reset(Solver &S);
 
   void undo(Solver& S);
 
   // debugging
   void to_dot(Solver& S, const char *filename);
   void print_places();
+
+  // private
+  void onSatSnapshots(
+    unsigned i,
+    unsigned &last_i_rear,
+    unsigned &last_i_van,
+    HorLine *extended_hor,
+    unsigned extended_hor_ix,
+    int lvl,
+    Snapshot &snapshot,
+    VanGuard *vguard,
+    RearGuard *rguard,
+    VanSnapshot *&next_snapshot_van,
+    RearSnapshot *&next_snapshot_rear,
+    vector<std::pair<int, Lit>> &added_vars
+  );
 };
 
 
