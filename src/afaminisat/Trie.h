@@ -136,7 +136,17 @@ struct RearGuard : public WatchedPlace {
   VanGuard *accepting_reusable_van;
   int accepting_van_visit_level;
 
-  RearGuard(Place place, int last_change_level_, RearGuard *previous_, bool enabled_)
+  RearGuard *parent;
+  int fork_level;
+
+  RearGuard(
+    Place place,
+    int last_change_level_,
+    RearGuard *previous_,
+    bool enabled_,
+    RearGuard *parent_,
+    int fork_level_
+  )
   : WatchedPlace(place)
   , last_change_level(last_change_level_)
   , previous(previous_)
@@ -144,6 +154,8 @@ struct RearGuard : public WatchedPlace {
   , enabled(enabled_)
   , last_van(NULL)
   , accepting_place(NULL, 0, 0)
+  , parent(parent_)
+  , fork_level(fork_level_)
   { }
 
   void on_accept_rear(Solver &S);
@@ -198,6 +210,7 @@ struct Snapshot {
   VanGuard *accepting_reusable_van = NULL;
   int accepting_rear_visit_level = -1;
   int accepting_van_visit_level = -1;
+  RearGuard *accepting_rear_of_van = NULL;
 
   Snapshot()
   : new_rears()
@@ -335,6 +348,7 @@ public:
   VanGuard *accepting_reusable_van;
   int accepting_rear_visit_level;
   int accepting_van_visit_level;
+  RearGuard *accepting_rear_of_van;
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
