@@ -46,6 +46,7 @@ enum MultimoveEnd {
 
 struct RearGuard;
 struct VanGuard;
+class Trie;
 
 struct Place : public Reason {
 public:
@@ -65,17 +66,10 @@ public:
   bool ver_is_singleton() const;
   bool is_ver() const;
   bool in_exhaust() const;
-  HorHead *get_leftmost() const;
-  int get_depth() const;
-  int get_depth_if_valid() const;
-
-  void branch(Solver &S);
-  WhatToDo after_hors_change(Solver &S);
-  WhatToDo after_vers_change(Solver &S);
-  WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
-  MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-
-  VanGuard &save_as_van(Solver &S, RearGuard &rear, bool enabled = true);
+  HorHead &get_leftmost(Trie &trie) const;
+  void set_van_visit_level(int level, VanGuard &van);
+  void set_rear_visit_level(int level, RearGuard &rear);
+  int get_depth_if_valid(Trie &trie) const;
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 
@@ -115,11 +109,7 @@ struct RearSnapshot {
   RearGuard *ix;
   Place place;
   int last_change_level;
-  VanGuard *jumped_van;
-  int jumped_van_visit_level;
   Place accepting_place;
-  VanGuard *accepting_reusable_van;
-  int accepting_van_visit_level;
 };
 
 struct VanSnapshot {
@@ -135,23 +125,14 @@ struct RearGuard : public WatchedPlace {
   RearGuard *previous, *next;
   VanGuard *last_van;
 
-  VanGuard *jumped_van;
-  int jumped_van_visit_level; 
-
   Place accepting_place;
   VanGuard *accepting_reusable_van;
-  int accepting_van_visit_level;
-
-  RearGuard *parent;
-  int fork_level;
 
   RearGuard(
     Place place,
     int last_change_level_,
     RearGuard *previous_,
-    bool enabled_,
-    RearGuard *parent_,
-    int fork_level_
+    bool enabled_
   )
   : WatchedPlace(place)
   , last_change_level(last_change_level_)
@@ -160,11 +141,9 @@ struct RearGuard : public WatchedPlace {
   , enabled(enabled_)
   , last_van(NULL)
   , accepting_place(NULL, 0, 0)
-  , parent(parent_)
-  , fork_level(fork_level_)
   { }
 
-  void on_accept_rear(Solver &S, int visit_level);
+  void on_accept_rear(Solver &S);
   void on_accept_van(Solver &S);
 
   Place* jump(Solver &S);
@@ -195,12 +174,18 @@ struct VanGuard : public WatchedPlace {
     }
   }
 
-  void on_accept(Solver &S, int visit_level);
+  void on_accept(Solver &S);
   Place* on_exhaust(Solver &S);
   Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 
-  void make_snapshot(Solver &S);
+  void make_snapshot(Solver &S, int level);
+
+  void branch(Solver &S);
+  WhatToDo after_hors_change(Solver &S);
+  WhatToDo after_vers_change(Solver &S);
+  WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
+  MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
 };
 
 struct Snapshot {
@@ -213,11 +198,6 @@ struct Snapshot {
   vector<Place> cuts;
 
   Place accepting_place;
-  RearGuard *accepting_reusable_rear = NULL;
-  VanGuard *accepting_reusable_van = NULL;
-  int accepting_rear_visit_level = -1;
-  int accepting_van_visit_level = -1;
-  RearGuard *accepting_rear_of_van = NULL;
 
   Snapshot()
   : new_rears()
@@ -238,10 +218,6 @@ struct Snapshot {
   , van_snapshots(std::move(old.van_snapshots))
   , is_acc(old.is_acc)
   , accepting_place(old.accepting_place)
-  , accepting_reusable_rear(old.accepting_reusable_rear)
-  , accepting_reusable_van(old.accepting_reusable_van)
-  , accepting_rear_visit_level(old.accepting_rear_visit_level)
-  , accepting_van_visit_level(old.accepting_van_visit_level)
   , reasons(std::move(old.reasons))
   , cuts(std::move(old.cuts))
   {}
@@ -263,11 +239,45 @@ public:
 
   int depth;
   bool is_under_cut = false;
+  int van_visit_level;
+  int rear_visit_level;
+  RearGuard *van_visit_rear;
+  VanGuard *van_visit_van;
+  RearGuard *rear_visit_rear;
 
-  HorHead(Lit tag_, int depth_)
+  HorHead(
+    Lit tag_,
+    int depth_,
+    int van_visit_level_,
+    int rear_visit_level_,
+    RearGuard *van_visit_rear_,
+    VanGuard *van_visit_van_,
+    RearGuard *rear_visit_rear_
+  )
   : tag(tag_)
   , hor(NULL)
   , depth(depth_)
+  , van_visit_level(van_visit_level_)
+  , rear_visit_level(rear_visit_level_)
+  , van_visit_rear(van_visit_rear_)
+  , van_visit_van(van_visit_van_)
+  , rear_visit_rear(rear_visit_rear_)
+  {
+    if (verbosity >= -2) hor_head_count++;
+  }
+
+  HorHead(
+    Lit tag_,
+    int depth_
+  )
+  : tag(tag_)
+  , hor(NULL)
+  , depth(depth_)
+  , van_visit_level(0)
+  , rear_visit_level(0)
+  , van_visit_rear(NULL)
+  , van_visit_van(NULL)
+  , rear_visit_rear(NULL)
   {
     if (verbosity >= -2) hor_head_count++;
   }
@@ -329,6 +339,7 @@ class Trie : public Undoable {
 public:
   // the underlying automaton
   HorLine root;
+  HorHead root_leftmost;
 
   LogList<RearGuard> root_new_rears;
   LogList<VanGuard> root_new_vans;
@@ -354,11 +365,6 @@ public:
   std::vector<Snapshot> snapshots;
 
   Place accepting_place;
-  RearGuard *accepting_reusable_rear = NULL;
-  VanGuard *accepting_reusable_van = NULL;
-  int accepting_rear_visit_level = -1;
-  int accepting_van_visit_level = -1;
-  RearGuard *accepting_rear_of_van = NULL;
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
@@ -395,7 +401,9 @@ public:
     VanSnapshot *&next_snapshot_van,
     RearSnapshot *&next_snapshot_rear,
     vector<std::pair<int, Lit>> &added_vars,
-    bool &switch_to_parent
+    RearGuard *leftmost_van_visit_rear,
+    int leftmost_rear_visit_level,
+    int leftmost_van_visit_level
   );
 };
 

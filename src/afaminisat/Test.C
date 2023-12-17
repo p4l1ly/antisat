@@ -45,10 +45,10 @@ void test_init_onelit() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 
@@ -89,10 +89,10 @@ void test_twolit_jump() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == 0);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 void test_twolit_van_accept() {
@@ -114,10 +114,10 @@ void test_twolit_van_accept() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == 0);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 void test_twolit_van_exhaust() {
@@ -134,10 +134,10 @@ void test_twolit_van_exhaust() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 void test_twolit_rear_accept_then_van_accept() {
@@ -159,10 +159,10 @@ void test_twolit_rear_accept_then_van_accept() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 void test_twolit_rear_accept_then_van_exhaust() {
@@ -184,10 +184,10 @@ void test_twolit_rear_accept_then_van_exhaust() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 void test_L() {
@@ -219,10 +219,10 @@ void test_L() {
   assert(S.trie.accepting_place.hor == S.trie.root.elems[0].hors[0].hor);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[1]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[1]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[1]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[1]);
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
   // Set ~Lit(0) before reset.
@@ -252,10 +252,10 @@ void test_L() {
   assert(S.trie.accepting_place.hor == S.trie.root.elems[0].hors[0].hor);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[1]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[1]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[1]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[1]);
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
   // ~Lit(2) forces Lit(0), the rear guard then accepts.
@@ -274,10 +274,10 @@ void test_L() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -370,10 +370,10 @@ void test_cap() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == 0);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 
@@ -415,10 +415,10 @@ void test_chain4() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == IX_NULL);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 }
 
 
@@ -461,10 +461,10 @@ void test_chair() {
   assert(S.trie.accepting_place.hor == &S.trie.root);
   assert(S.trie.accepting_place.hor_ix == 0);
   assert(S.trie.accepting_place.ver_ix == 1);
-  assert(S.trie.accepting_rear_visit_level == 0);
-  assert(S.trie.accepting_van_visit_level == 0);
-  assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
-  assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
+  // assert(S.trie.accepting_rear_visit_level == 0);
+  // assert(S.trie.accepting_van_visit_level == 0);
+  // assert(S.trie.accepting_reusable_van == &S.trie.root_new_vans[0]);
+  // assert(S.trie.accepting_reusable_rear == &S.trie.root_new_rears[0]);
 
   S.enqueue(~Lit(3));
   S.enqueue(~Lit(5));
