@@ -509,6 +509,8 @@ Reason* Solver::propagate(void)
                 confl = confl2,
                 propQ.clear();
             if (keep_watch) {
+                if (verbosity >= 2) printf("MOVE_WATCH_PROP0 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
+                (*i)->moveWatch(j - (Constr**)ws, p);
                 *j++ = *i;
             } else if (verbosity >= 2) {
               printf("REMOVE_WATCH_PROP " L_LIT " %p\n", L_lit(p), *i);
@@ -519,11 +521,14 @@ Reason* Solver::propagate(void)
 
         if (confl == NULL) {
           // Copy the remaining watches:
-          while (i < end)
+          while (i < end) {
+              if (verbosity >= 2) printf("MOVE_WATCH_PROP1 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
+              (*i)->moveWatch(j - (Constr**)ws, p);
               *j++ = *i++;
+          }
         } else {
           while (i < end) {
-              if (verbosity >= 2) printf("MOVE_WATCH_PROP %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
+              if (verbosity >= 2) printf("MOVE_WATCH_PROP2 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
               (*i)->moveWatch(j - (Constr**)ws, p);
               *j++ = *i++;
           }

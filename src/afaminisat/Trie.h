@@ -210,6 +210,7 @@ struct Snapshot {
   vector<RearSnapshot> rear_snapshots;
   vector<VanSnapshot> van_snapshots;
   LogList<Place> reasons;
+  vector<Place> cuts;
 
   Place accepting_place;
   RearGuard *accepting_reusable_rear = NULL;
@@ -224,6 +225,7 @@ struct Snapshot {
   , rear_snapshots()
   , van_snapshots()
   , reasons()
+  , cuts()
   // IX_NULL in hor_ix means no change. If hor==NULL and hor_ix==0, it means that
   // trie.accepting_place should be cleared.
   , accepting_place(NULL, IX_NULL, 0)
@@ -241,6 +243,7 @@ struct Snapshot {
   , accepting_rear_visit_level(old.accepting_rear_visit_level)
   , accepting_van_visit_level(old.accepting_van_visit_level)
   , reasons(std::move(old.reasons))
+  , cuts(std::move(old.cuts))
   {}
 
   Snapshot(Snapshot& old) = delete;
@@ -259,6 +262,7 @@ public:
   HorLine *hor;
 
   int depth;
+  bool is_under_cut = false;
 
   HorHead(Lit tag_, int depth_)
   : tag(tag_)
@@ -360,7 +364,7 @@ public:
   Snapshot& new_snapshot();
   void make_accepting_snapshot(Solver &S);
 
-  Place to_cut;
+  vector<Place> root_cuts;
 
   Trie();
   bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits);
@@ -390,7 +394,8 @@ public:
     RearGuard *rguard,
     VanSnapshot *&next_snapshot_van,
     RearSnapshot *&next_snapshot_rear,
-    vector<std::pair<int, Lit>> &added_vars
+    vector<std::pair<int, Lit>> &added_vars,
+    bool &switch_to_parent
   );
 };
 

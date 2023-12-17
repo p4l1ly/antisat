@@ -14,13 +14,13 @@ Mode TRIE_MODE = branch_always;
 
 void check_duplicate_rears(Trie &trie, RearGuard &p) {
   ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
-    assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+    assert(!x.enabled || !p.enabled || &x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
   })
   unsigned i = 0;
   for (int j = 0; j < trie.snapshot_count; ++j) {
     Snapshot& snapshot = trie.snapshots[j];
     ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
-      assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+      assert(!x.enabled || !p.enabled || &x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
     })
     ++i;
   }
@@ -28,13 +28,13 @@ void check_duplicate_rears(Trie &trie, RearGuard &p) {
 
 void check_duplicate_vans(Trie &trie, VanGuard &p) {
   ITER_LOGLIST(trie.root_new_vans, VanGuard, x, {
-    assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+    assert(!x.enabled || !p.enabled || &x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
   })
   unsigned i = 0;
   for (int j = 0; j < trie.snapshot_count; ++j) {
     Snapshot& snapshot = trie.snapshots[j];
     ITER_LOGLIST(snapshot.new_vans, VanGuard, x, {
-      assert(&x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
+      assert(!x.enabled || !p.enabled || &x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
     })
     ++i;
   }
@@ -234,7 +234,7 @@ inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
     watches[watch_ix_pos] = &REMOVED_WATCH;
   }
 #ifdef MY_DEBUG
-  watch_ix_neg = -1;
+  watch_ix_pos = -1;
 #endif
 }
 
@@ -269,8 +269,8 @@ Trie::Trie()
 , back_ptrs()
 , snapshots()
 , stack()
-, to_cut(NULL, 0, 0)
 , accepting_place(NULL, 0, 0)
+, root_cuts()
 { }
 
 bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& init_clause_omits) {
@@ -410,7 +410,6 @@ void Trie::onSat(Solver &S) {
 
   // max level of added_vars+my_zeroes
   int max_level = -1;
-  int last_but_max_level = -2;
 
   // added_vars are (level, variable) pairs, of zero variables added in the
   // accepting condition (= not included in my_zeroes)
@@ -423,10 +422,7 @@ void Trie::onSat(Solver &S) {
       }
       int lvl = S.level[var(x)];
       if (lvl > max_level) {
-        last_but_max_level = max_level;
         max_level = lvl;
-      } else if (lvl > last_but_max_level && lvl != max_level) {
-        last_but_max_level = lvl;
       }
       if (!my_zeroes_set.contains(index(x))) {
         added_vars.emplace_back(lvl, x);
@@ -437,13 +433,20 @@ void Trie::onSat(Solver &S) {
   if (verbosity >= 2) printf("MAX_LEVEL %d\n", max_level);
 
   bool ver_accept = accepting_place.is_ver();
-
   // We have found a solution that covers the last traversed clause => we
   // shrink the clause (cut it up to the knee) instead of adding a new branch
   // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
-    to_cut = ver_accept ? accepting_place : accepting_place.hor->back_ptr;
+
+    Place cut = ver_accept ? accepting_place : accepting_place.hor->back_ptr;
+    cut.deref_ver().is_under_cut = true;
+    if (accepting_van_visit_level > S.root_level) {
+      snapshots[accepting_van_visit_level - S.root_level - 1].cuts.push_back(cut);
+    } else {
+      root_cuts.push_back(cut);
+    }
+
     S.cancelUntil(max_level);
     return;
   }
@@ -549,11 +552,8 @@ void Trie::onSat(Solver &S) {
   } else {
     LogList<RearGuard> *incomplete_rears;
 
-    if (accepting_rear_visit_level <= S.root_level) {
-      incomplete_rears = &root_new_rears;
-    } else {
-      incomplete_rears = &snapshots[accepting_rear_visit_level - S.root_level - 1].new_rears;
-    }
+    if (accepting_rear_visit_level <= S.root_level) incomplete_rears = &root_new_rears;
+    else incomplete_rears = &snapshots[accepting_rear_visit_level - S.root_level - 1].new_rears;
 
     rguard = &incomplete_rears->emplace_back(
       Place{NULL, 0, 0}, 0, (RearGuard *)NULL, false, accepting_rear_of_van,
@@ -564,7 +564,7 @@ void Trie::onSat(Solver &S) {
 
   if (accepting_reusable_van) {
     vguard = accepting_reusable_van;
-    if (verbosity >= 2) std::cout << "REUSING_VAN " << rguard << std::endl;
+    if (verbosity >= 2) std::cout << "REUSING_VAN " << vguard << std::endl;
   } else {
     LogList<VanGuard> *incomplete_vans;
 
@@ -577,19 +577,23 @@ void Trie::onSat(Solver &S) {
 
   unsigned i = added_vars.size() - 1;
 
+  bool switch_to_parent = (
+    accepting_rear_of_van->fork_level > max(S.root_level, accepting_van_visit_level)
+  );
+  int lvl = added_vars[i].first;
+  VanSnapshot *next_snapshot_van = NULL;
+
   {
     // if (i) --i;
-    int lvl = added_vars[i].first;
     unsigned last_i_rear = i + 1;
     unsigned last_i_van = i + 2;
 
     if (verbosity >= 2) printf("LVLLVL %d\n", lvl);
     if (lvl < S.root_level) goto break_rear;
-    VanSnapshot *next_snapshot_van = NULL;
     RearSnapshot *next_snapshot_rear = NULL;
 
     for (int iter = lvl - S.root_level; iter; --lvl) {
-      if (lvl <= accepting_van_visit_level) break;
+      if (lvl <= accepting_van_visit_level) goto break_rear;
       --iter;
       Snapshot &snapshot = snapshots[iter];
       if (verbosity >= 0) printf("GLVL2 %d/%d %d\n", lvl, S.root_level, i);
@@ -612,7 +616,8 @@ void Trie::onSat(Solver &S) {
             rguard,
             next_snapshot_van,
             next_snapshot_rear,
-            added_vars
+            added_vars,
+            switch_to_parent
           );
           goto continue_rear;
         }
@@ -632,18 +637,39 @@ void Trie::onSat(Solver &S) {
         rguard,
         next_snapshot_van,
         next_snapshot_rear,
-        added_vars
+        added_vars,
+        switch_to_parent
       );
       goto break_rear;
 continue_rear: ;
     }
   }
-break_rear:
+
+break_rear: ;
+  if (switch_to_parent) {
+    Snapshot &snapshot = snapshots[accepting_rear_of_van->fork_level - S.root_level - 1];
+    if (verbosity >= 2) {
+      printf("VAN_SNAPSHOT_ENABLE4 %p %p %d %d %d\n", vguard, extended_hor, extended_hor_ix, i - 1, accepting_rear_of_van->fork_level);
+    }
+    CHECK_UNIQUE_VAN_SNAPSHOT(snapshot, vguard);
+
+    RearGuard *rear_of_van = accepting_rear_of_van->parent;
+
+    if (verbosity >= 2) {
+      printf("VAN_SNAPSHOT_REAR_OF_VAN4 %p %d\n", rear_of_van, rear_of_van->fork_level);
+    }
+
+    snapshot.van_snapshots.push_back({
+      vguard,
+      {extended_hor, extended_hor_ix, IX_NULL},
+      accepting_van_visit_level,
+      rear_of_van
+    });
+    if (next_snapshot_van) next_snapshot_van->last_change_level = accepting_rear_of_van->fork_level;
+  }
 
 
   S.cancelUntil(max_level);
-
-  if (verbosity >= 2) printf("ACCEPT_LVL1 %d\n", last_but_max_level);
 
   CHECK_ALL_DUPLICATE_PLACES(*this);
 }
@@ -661,17 +687,25 @@ void Trie::onSatSnapshots(
   RearGuard *rguard,
   VanSnapshot *&next_snapshot_van,
   RearSnapshot *&next_snapshot_rear,
-  vector<std::pair<int, Lit>> &added_vars
+  vector<std::pair<int, Lit>> &added_vars,
+  bool &switch_to_parent
 ) {
   if (lvl <= accepting_rear_visit_level) {
     if (last_i_van > i) {
       if (verbosity >= 2) {
-        printf("VAN_SNAPSHOT_ENABLE1 %p %p %d %d\n", vguard, extended_hor, extended_hor_ix, i - 1);
+        printf("VAN_SNAPSHOT_ENABLE1 %p %p %d %d %d\n", vguard, extended_hor, extended_hor_ix, i - 1, lvl);
       }
       CHECK_UNIQUE_VAN_SNAPSHOT(snapshot, vguard);
 
       RearGuard *rear_of_van = accepting_rear_of_van;
-      if (rear_of_van->fork_level > lvl) rear_of_van = rear_of_van->parent;
+      if (rear_of_van->fork_level >= lvl) {
+        rear_of_van = rear_of_van->parent;
+        switch_to_parent = false;
+      }
+
+      if (verbosity >= 2) {
+        printf("VAN_SNAPSHOT_REAR_OF_VAN %p %d\n", rear_of_van, rear_of_van->fork_level);
+      }
 
       snapshot.van_snapshots.push_back({
         vguard,
@@ -682,27 +716,56 @@ void Trie::onSatSnapshots(
       if (next_snapshot_van) next_snapshot_van->last_change_level = lvl;
       next_snapshot_van = &snapshot.van_snapshots.back();
       last_i_van = i;
+    } else if (switch_to_parent) {
+      RearGuard *rear_of_van = accepting_rear_of_van;
+      if (rear_of_van->fork_level >= lvl) {
+        switch_to_parent = false;
+
+        if (verbosity >= 2) {
+          printf("VAN_SNAPSHOT_ENABLE5 %p %p %d %d %d\n", vguard, extended_hor, extended_hor_ix, i - 1, lvl);
+        }
+        CHECK_UNIQUE_VAN_SNAPSHOT(snapshot, vguard);
+
+        RearGuard *rear_of_van = accepting_rear_of_van->parent;
+
+        if (verbosity >= 2) {
+          printf("VAN_SNAPSHOT_REAR_OF_VAN5 %p %d\n", rear_of_van, rear_of_van->fork_level);
+        }
+
+        snapshot.van_snapshots.push_back({
+          vguard,
+          {extended_hor, extended_hor_ix, i - 1},
+          accepting_van_visit_level,
+          rear_of_van
+        });
+        if (next_snapshot_van) next_snapshot_van->last_change_level = lvl;
+      }
     }
   } else {
     if (last_i_rear > i) {
       if (verbosity >= 2) {
-        printf("REAR_SNAPSHOT_ENABLE2 %p %d %d\n", extended_hor, extended_hor_ix, i - 1);
+        printf("REAR_SNAPSHOT_ENABLE2 %p %d %d %d\n", extended_hor, extended_hor_ix, i - 1, lvl);
       }
       CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, rguard);
 
       int jumped_van_visit_level;
       if (i == 0) {
         jumped_van_visit_level = accepting_van_visit_level;
+        printf("A\n");
       } else {
         int pre_level = added_vars[i - 1].first;
         if (pre_level <= accepting_van_visit_level) {
           jumped_van_visit_level = accepting_van_visit_level;
+          printf("B\n");
         } else if (pre_level < accepting_rear_visit_level) {
           jumped_van_visit_level = pre_level;
+          printf("C\n");
         } else if (i == 1) {
           jumped_van_visit_level = accepting_rear_visit_level;
+          printf("D\n");
         } else {
           jumped_van_visit_level = added_vars[i - 2].first;
+          printf("E\n");
         }
       }
 
@@ -723,7 +786,7 @@ void Trie::onSatSnapshots(
 
     if (i + 1 < added_vars.size() && last_i_van > i + 1) {
       if (verbosity >= 2) {
-        printf("VAN_SNAPSHOT_ENABLE2 %p %p %d %d\n", vguard, extended_hor, extended_hor_ix, i);
+        printf("VAN_SNAPSHOT_ENABLE2 %p %p %d %d %d\n", vguard, extended_hor, extended_hor_ix, i, lvl);
       }
       CHECK_UNIQUE_VAN_SNAPSHOT(snapshot, vguard);
       snapshot.van_snapshots.push_back({
@@ -761,13 +824,6 @@ WhatToDo Place::after_vers_change(Solver &S) {
   if (in_exhaust()) return WhatToDo::EXHAUST;
 
   HorHead &horhead = deref_ver();
-
-  if (verbosity >= 2) {
-    std::cout << "VISIT_LEVEL3 "
-      << *this << " "
-      << S.decisionLevel()
-      << std::endl;
-  }
 
   Lit out = horhead.tag;
   if (verbosity >= 2) printf("OUTVER " L_LIT "\n", L_lit(out));
@@ -933,6 +989,7 @@ MultimoveEnd Place::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 Place* RearGuard::jump(Solver &S) {
   Trie &trie = S.trie;
   int level = S.decisionLevel();
+  bool accepted = false;
 
   while (last_van) {
     VanGuard &van = *last_van;
@@ -955,18 +1012,19 @@ Place* RearGuard::jump(Solver &S) {
       last_van = van.previous;
       van.on_accept(S, van_visit_level);
       van.last_change_level = level;
+      accepted = true;
     } else {
       VanGuard *old_previous = van.previous;
       RearGuard *rguard = this;
 
-      if (old_previous != NULL) {
+      if (accepted || old_previous != NULL) {
         LogList<RearGuard> &new_rears =
           trie.snapshot_count == 0 ? trie.root_new_rears : trie.get_last_snapshot().new_rears;
         rguard = van.rear = &new_rears.emplace_back(van, level, trie.last_rear, enabled, this, level);
         if (trie.last_rear) trie.last_rear->next = rguard;
         trie.last_rear = rguard;
-        std::cout << "BRANCH_REAR " << rguard << " " << old_previous << std::endl;
-        old_previous->next = NULL;
+        std::cout << "BRANCH_REAR " << rguard << " " << old_previous << " " << accepted << std::endl;
+        if (old_previous != NULL) old_previous->next = NULL;
         van.previous = NULL;
         rguard->last_van = &van;
         last_van = old_previous;
@@ -983,12 +1041,13 @@ Place* RearGuard::jump(Solver &S) {
         if (conflict == NULL) {
           // each branch of the pushed van will stop at a l_True or l_Undef => we recur at most once.
           conflict = rguard->jump(S);
-          if (conflict != NULL) {(Place &)*this = *conflict; return conflict;}
-        } else {(Place &)*this = *conflict; return conflict;}
-      } else assert(conflict == NULL);
-
-      rguard->set_watch(S);
-      if (old_previous == NULL) {return NULL;}
+          if (conflict != NULL) {(Place &)*this = (Place &)*rguard = *conflict; return conflict;}
+        } else {(Place&)*this = (Place &)*rguard = *conflict; return conflict;}
+      } else {
+        assert(conflict == NULL);
+        rguard->set_watch(S);
+      }
+      if (!accepted && old_previous == NULL) {return NULL;}
     }
   }
 
@@ -1025,7 +1084,7 @@ void Trie::undo(Solver& S) {
         << snapshot.new_rears.size() << "c"
         << snapshot.rear_snapshots.size() << " "
         << snapshot.new_vans.size() << "c"
-        << snapshot.van_snapshots.size() << " "
+        << snapshot.van_snapshots.size()
         << std::endl << std::flush;
   }
 
@@ -1080,8 +1139,14 @@ void Trie::undo(Solver& S) {
       std::cout << "CHANGED_VAN " << &vguard << " " << vguard << " " << van_snapshot.place
         << " " << vguard.enabled << " LCLVL "
         << vguard.last_change_level << "->" << van_snapshot.last_change_level
-        << " " << vguard.previous << " " << vguard.rear->last_van
         << std::endl << std::flush;
+    }
+
+    if (HorHead *leftmost = van_snapshot.place.get_leftmost()) {
+      if (leftmost->is_under_cut) {
+        std::cout << "IS_UNDER_CUT" << std::endl;
+        continue;
+      }
     }
 
     bool watch_unwatch = false;
@@ -1202,8 +1267,12 @@ void Trie::undo(Solver& S) {
     accepting_rear_of_van = snapshot.accepting_rear_of_van;
   }
 
+  for (Place cut : snapshot.cuts) cut.cut_away();
+
   --snapshot_count;
 
+
+  if (verbosity >= 2) {std::cout << "CHECK_DUPS\n"; print_places();}
   CHECK_ALL_DUPLICATE_PLACES(*this);
 }
 
@@ -1224,6 +1293,7 @@ Snapshot& Trie::new_snapshot() {
   snapshot->reasons.clear_nodestroy();
   snapshot->rear_snapshots.clear();
   snapshot->van_snapshots.clear();
+  snapshot->cuts.clear();
   snapshot->accepting_place = Place(NULL, IX_NULL, 0);
 
   return *snapshot;
@@ -1280,9 +1350,12 @@ Place* Trie::reset(Solver &S) {
   }
 
   ITER_LOGLIST(root_new_vans, VanGuard, vguard, {
-    if (vguard.enabled && !vguard.in_exhaust()) vguard.remove_watch(S, vguard.get_tag());
     if (verbosity >= 2) printf("ResettingVan %p\n", &vguard);
+    if (vguard.enabled && !vguard.in_exhaust()) vguard.remove_watch(S, vguard.get_tag());
   });
+
+  for (Place cut : root_cuts) cut.cut_away();
+  root_cuts.clear();
 
   root_new_rears.clear_nodestroy();
   root_new_vans.clear_nodestroy();
@@ -1298,12 +1371,7 @@ Place* Trie::reset(Solver &S) {
   active_var = 0;
   active_var_old = 0;
 
-  if (verbosity >= 2) printf("RESET\n");
-
-  if (to_cut.hor != NULL) {
-    to_cut.cut_away();
-    to_cut.hor = NULL;
-  }
+  if (verbosity >= 2) printf("RESET %p %p\n", &root_rguard, &root_vguard);
 
   accepting_place.hor = NULL;
 
@@ -1365,7 +1433,8 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
 void VanGuard::on_accept(Solver &S, int visit_level) {
   if (verbosity >= 2) {
-    std::cout << "ON_ACCEPT " << this << " " << rear << " " << previous << " " << next << " " << last_change_level << " " << S.decisionLevel() << std::endl;
+    std::cout << "ON_ACCEPT " << this << " " << rear << " " << previous << " " << next << " "
+      << last_change_level << " " << S.decisionLevel() << " " << rear->last_change_level << std::endl;
   }
   enabled = false;
   if (previous != NULL) previous->next = next;
@@ -1430,8 +1499,8 @@ void VanGuard::on_accept(Solver &S, int visit_level) {
 
 void RearGuard::make_snapshot(Solver &S) {
   int level = S.decisionLevel();
-  if (level <= S.root_level) return;
   if (last_change_level == level) return;
+  if (level <= S.root_level) {last_change_level = level; return;}
 
   Snapshot &snapshot = S.trie.get_last_snapshot();
   CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, this);
@@ -1447,11 +1516,11 @@ void RearGuard::make_snapshot(Solver &S) {
 void VanGuard::make_snapshot(Solver &S) {
   int level = S.decisionLevel();
   if (last_change_level == level) return;
-  if (level <= S.root_level) return;
+  if (level <= S.root_level) {last_change_level = level; return;}
 
   Snapshot &snapshot = S.trie.get_last_snapshot();
   CHECK_UNIQUE_VAN_SNAPSHOT(snapshot, this);
-  printf("VAN_SNAPSHOT_ENABLE0 %p %p %d %d\n", this, hor, hor_ix, ver_ix);
+  printf("VAN_SNAPSHOT_ENABLE0 %p %p %d %d %d\n", this, hor, hor_ix, ver_ix, level);
   snapshot.van_snapshots.emplace_back(VanSnapshot{this, *this, last_change_level, rear});
   last_change_level = level;
 }
@@ -1471,17 +1540,23 @@ Place* VanGuard::on_exhaust(Solver &S) {
 
 
 Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
-  if (verbosity >= 2) std::cout << "VAN_PROP " << this << " " << *this << " " << p << std::endl;
+  if (verbosity >= 2) std::cout << "VAN_PROP " << this << " " << *this << " " << p << " " << get_tag() << std::endl;
   assert(get_tag() == p || get_tag() == ~p);
+
+  if (!rear->enabled) {
+    if (verbosity >= 2) std::cout << "VAN_DISABLED_REAR " << rear << std::endl;
+    keep_watch = true;
+    return NULL;
+  }
 
   if (sign(p)) {
 #ifdef MY_DEBUG
-    watch_ix_pos = -1;
+    watch_ix_neg = -1;
 #endif
     remove_watch_pos(S, ~p);
   } else {
 #ifdef MY_DEBUG
-    watch_ix_neg = -1;
+    watch_ix_pos = -1;
 #endif
     remove_watch_neg(S, ~p);
   }
@@ -1490,15 +1565,6 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
 
   int visit_level = last_change_level;
   make_snapshot(S);
-
-  if (!rear->enabled) {
-    if (verbosity >= 2) std::cout << "VAN_DISABLED_REAR " << rear << std::endl;
-    enabled = false;
-    if (previous != NULL) previous->next = next;
-    if (next == NULL) rear->last_van = previous;
-    else next->previous = previous;
-    return NULL;
-  }
 
   Trie& trie = S.trie;
 
@@ -1623,6 +1689,7 @@ void RearGuard::on_accept_rear(Solver &S, int visit_level) {
   //   - or it lies on the same horizontal line (including back_ptr) as the old selected guard.
   // The latter can happen if the branch is added by onSat and it is important even if the
   // RearGuard is reused, if the level changes.
+
   if (is_ver()) {
     HorHead &horhead = deref_ver();
     if (horhead.hor != NULL) return;
@@ -1655,21 +1722,25 @@ void RearGuard::on_accept_rear(Solver &S, int visit_level) {
 
   trie.make_accepting_snapshot(S);
 
-  std::cout << "DEEPEST_ACCEPT\n";
+  std::cout << "DEEPEST_ACCEPT " << jumped_van_visit_level << " " << visit_level << std::endl;
   trie.accepting_place = *this;
   trie.accepting_van_visit_level = jumped_van_visit_level;
-  trie.accepting_rear_of_van = this;
   trie.accepting_rear_visit_level = visit_level;
   int level = S.decisionLevel();
   if (jumped_van_visit_level == level) trie.accepting_reusable_van = jumped_van;
   else trie.accepting_reusable_van = NULL;
-  if (visit_level == level) trie.accepting_reusable_rear = this;
-  else trie.accepting_reusable_rear = NULL;
+  if (visit_level == level) {
+    trie.accepting_reusable_rear = this;
+  }
+  else {
+    trie.accepting_reusable_rear = NULL;
+  }
+  trie.accepting_rear_of_van = this;
 }
 
 
 Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
-  if (verbosity >= 2) std::cout << "REAR_PROP " << this << " " << *this << " " << p << std::endl;
+  if (verbosity >= 2) std::cout << "REAR_PROP " << this << " " << *this << " " << p << " " << last_change_level << std::endl;
   assert(get_tag() == p || get_tag() == ~p);
 
   int visit_level = last_change_level;
@@ -1677,12 +1748,12 @@ Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
 
   if (sign(p)) {
 #ifdef MY_DEBUG
-    watch_ix_pos = -1;
+    watch_ix_neg = -1;
 #endif
     remove_watch_pos(S, ~p);
   } else {
 #ifdef MY_DEBUG
-    watch_ix_neg = -1;
+    watch_ix_pos = -1;
 #endif
     remove_watch_neg(S, ~p);
   }
@@ -1693,6 +1764,7 @@ Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
   if (value == l_True) {
     if (verbosity >= 2) std::cout << "TRIGGERED_REAR_ACCEPT " << this << std::endl;
     on_accept_rear(S, visit_level);
+
     CHECK_ALL_DUPLICATE_PLACES(S.trie);
     return NULL;
   }
@@ -1774,7 +1846,7 @@ std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p) {
 
 void Trie::print_places() {
     ITER_LOGLIST(root_new_rears, RearGuard, x, {
-      std::cout << "REAR_PLACE -1 " << (Place &)x << " " << x.enabled << " ";
+      std::cout << "REAR_PLACE -1 " << (Place &)x << " " << x.enabled << " " << x.last_change_level << " ";
       if (x.enabled) std::cout << x.in_exhaust();
       else std::cout << "N/A";
       std::cout << " " << &x << std::endl;
@@ -1783,7 +1855,7 @@ void Trie::print_places() {
     for (int j = 0; j < snapshot_count; ++j) {
       Snapshot& snapshot = snapshots[j];
       ITER_LOGLIST(snapshot.new_rears, RearGuard, x, {
-        std::cout << "REAR_PLACE " << i << " " << (Place &)x << " " << x.enabled << " ";
+        std::cout << "REAR_PLACE " << i << " " << (Place &)x << " " << x.enabled << " " << x.last_change_level << " ";
         if (x.enabled) std::cout << x.in_exhaust();
         else std::cout << "N/A";
         std::cout << " " << &x << std::endl;
@@ -1791,8 +1863,8 @@ void Trie::print_places() {
       ++i;
     }
     ITER_LOGLIST(root_new_vans, VanGuard, x, {
-      std::cout << "VAN_PLACE -1 " << (Place &)x << " " << x.enabled << " ";
-      if (x.enabled) std::cout << x.in_exhaust();
+      std::cout << "VAN_PLACE -1 " << (Place &)x << " " << x.enabled << " " << x.rear << " " << x.last_change_level << " " << std::flush;
+      if (x.enabled && x.rear->enabled) std::cout << x.in_exhaust();
       else std::cout << "N/A";
       std::cout << " " << &x << std::endl;
     })
@@ -1800,8 +1872,8 @@ void Trie::print_places() {
     for (int j = 0; j < snapshot_count; ++j) {
       Snapshot& snapshot = snapshots[j];
       ITER_LOGLIST(snapshot.new_vans, VanGuard, x, {
-        std::cout << "VAN_PLACE " << i << " " << (Place &)x << " " << x.enabled << " " << std::endl;
-        if (x.enabled) std::cout << x.in_exhaust();
+        std::cout << "VAN_PLACE " << i << " " << (Place &)x << " " << x.enabled << " " << x.rear << " " << x.last_change_level << " " << std::flush;
+        if (x.enabled && x.rear->enabled) std::cout << x.in_exhaust();
         else std::cout << "N/A";
         std::cout << " " << &x << std::endl;
       })
