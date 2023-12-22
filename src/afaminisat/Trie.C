@@ -1,3 +1,8 @@
+// TODO
+// 1. reuse rears and vans
+// 2. profiling and optimization
+// 3. improve code beauty
+
 #include <algorithm>
 #include <iostream>
 #include <fstream>
@@ -525,6 +530,7 @@ void Trie::onSat(Solver &S) {
   RearGuard *rguard;
   VanGuard *vguard;
 
+  // if (leftmost_van_visit_level)
   // if (accepting_reusable_rear) {
   //   rguard = accepting_reusable_rear;
   //   if (verbosity >= 2) std::cout << "REUSING_REAR " << rguard << std::endl;
@@ -1023,6 +1029,8 @@ Place* RearGuard::jump(Solver &S) {
   Trie &trie = S.trie;
   int level = S.decisionLevel();
   bool accepted = accepting_place.hor != NULL;
+
+  if (accepted) accepting_place.set_rear_visit_level(level, *this);
 
   while (last_van) {
     VanGuard &van = *last_van;
@@ -1662,7 +1670,6 @@ void RearGuard::on_accept_van(Solver &S) {
 
   trie.make_accepting_snapshot(S);
   if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_VAN " << this << " " << accepting_place << std::endl;
-  accepting_place.set_rear_visit_level(S.decisionLevel(), *this);
   trie.accepting_place = accepting_place;
 }
 

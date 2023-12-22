@@ -126,7 +126,6 @@ struct RearGuard : public WatchedPlace {
   VanGuard *last_van;
 
   Place accepting_place;
-  VanGuard *accepting_reusable_van;
 
   RearGuard(
     Place place,
