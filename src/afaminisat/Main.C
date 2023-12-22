@@ -51,7 +51,7 @@ namespace mc = automata_safa_capnp::rpc::model_checker;
 namespace mcs = automata_safa_capnp::rpc::model_checkers;
 
 #ifdef MY_DEBUG
-int verbosity = -3;
+int verbosity = 4;
 const int VERBOSE_FROM = -1;
 #endif
 const bool write_debug_dots = false;

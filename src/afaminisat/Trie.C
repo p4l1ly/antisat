@@ -530,7 +530,7 @@ void Trie::onSat(Solver &S) {
   RearGuard *rguard;
   VanGuard *vguard;
 
-  // if (leftmost_van_visit_level)
+  // if (leftmost_van_visit_level == le)
   // if (accepting_reusable_rear) {
   //   rguard = accepting_reusable_rear;
   //   if (verbosity >= 2) std::cout << "REUSING_REAR " << rguard << std::endl;
@@ -1028,9 +1028,8 @@ MultimoveEnd VanGuard::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 Place* RearGuard::jump(Solver &S) {
   Trie &trie = S.trie;
   int level = S.decisionLevel();
-  bool accepted = accepting_place.hor != NULL;
 
-  if (accepted) accepting_place.set_rear_visit_level(level, *this);
+  if (accepting_place.hor != NULL) accepting_place.set_rear_visit_level(level, *this);
 
   while (last_van) {
     VanGuard &van = *last_van;
@@ -1045,7 +1044,7 @@ Place* RearGuard::jump(Solver &S) {
         << this << "->" << last_van
         << " " << *this << "->" << van
         << " " << lit << " " << value.toInt()
-        << " " << accepted
+        << " " << (accepting_place.hor != NULL)
         << std::endl;
     }
 
@@ -1055,18 +1054,25 @@ Place* RearGuard::jump(Solver &S) {
       last_van = van.previous;
       van.on_accept(S);
       van.last_change_level = level;
-      accepted = true;
     } else {
       VanGuard *old_previous = van.previous;
       RearGuard *rguard = this;
 
-      if (accepted || old_previous != NULL) {
+      bool branching = old_previous != NULL
+        || (
+          accepting_place.hor != NULL
+          && accepting_place.get_leftmost(trie).depth >= van.get_leftmost(trie).depth
+        );
+
+      if (branching) {
         LogList<RearGuard> &new_rears =
           trie.snapshot_count == 0 ? trie.root_new_rears : trie.get_last_snapshot().new_rears;
         rguard = van.rear = &new_rears.emplace_back(van, level, trie.last_rear, enabled);
         if (trie.last_rear) trie.last_rear->next = rguard;
         trie.last_rear = rguard;
-        if (verbosity >= 2) std::cout << "BRANCH_REAR " << rguard << " " << old_previous << " " << accepted << std::endl;
+        if (verbosity >= 2) {
+          std::cout << "BRANCH_REAR " << rguard << " " << old_previous << " " << (accepting_place.hor != NULL) << std::endl;
+        }
         if (old_previous != NULL) old_previous->next = NULL;
         van.previous = NULL;
         rguard->last_van = &van;
@@ -1089,7 +1095,7 @@ Place* RearGuard::jump(Solver &S) {
         assert(conflict == NULL);
         rguard->set_watch(S);
       }
-      if (!accepted && old_previous == NULL) {
+      if (!branching) {
         if (verbosity >= 2) std::cout << "SKIP_ON_ACCEPT_VAN" << std::endl;
         return NULL;
       }
