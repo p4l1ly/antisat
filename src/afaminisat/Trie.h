@@ -74,6 +74,8 @@ public:
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+
+  void *getSpecificPtr() { return this; }
 };
 
 struct PlaceAttrs : Place {
@@ -149,6 +151,7 @@ struct RearGuard : public WatchedPlace {
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S);
+  void *getSpecificPtr2() { return this; }
 };
 
 struct VanGuard : public WatchedPlace {
@@ -185,6 +188,7 @@ struct VanGuard : public WatchedPlace {
   WhatToDo after_vers_change(Solver &S);
   WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
+  void *getSpecificPtr2() { return this; }
 };
 
 struct Snapshot {
@@ -193,7 +197,6 @@ struct Snapshot {
   LogList<VanGuard> new_vans;
   vector<RearSnapshot> rear_snapshots;
   vector<VanSnapshot> van_snapshots;
-  LogList<Place> reasons;
   vector<Place> cuts;
 
   Place accepting_place;
@@ -203,7 +206,6 @@ struct Snapshot {
   , new_vans()
   , rear_snapshots()
   , van_snapshots()
-  , reasons()
   , cuts()
   // IX_NULL in hor_ix means no change. If hor==NULL and hor_ix==0, it means that
   // trie.accepting_place should be cleared.
@@ -217,7 +219,6 @@ struct Snapshot {
   , van_snapshots(std::move(old.van_snapshots))
   , is_acc(old.is_acc)
   , accepting_place(old.accepting_place)
-  , reasons(std::move(old.reasons))
   , cuts(std::move(old.cuts))
   {}
 
@@ -320,6 +321,7 @@ struct RemovedWatch : public Constr {
   Reason* propagate (Solver& S, Lit p, bool& keep_watch) { return NULL; };
   bool simplify(Solver& S) { return false; };
   void moveWatch(int i, Lit p) {};
+  void *getSpecificPtr2() { return this; }
 };
 
 
@@ -342,7 +344,6 @@ public:
 
   LogList<RearGuard> root_new_rears;
   LogList<VanGuard> root_new_vans;
-  LogList<Place> root_reasons;
   vector<StackItem> stack;
   RearGuard *last_rear = NULL;
 

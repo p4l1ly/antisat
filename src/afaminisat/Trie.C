@@ -269,7 +269,6 @@ Trie::Trie()
 : root{Place(NULL, 0, 0), vector<VerHead>()}
 , root_new_rears()
 , root_new_vans()
-, root_reasons()
 , my_literals()
 , back_ptrs()
 , snapshots()
@@ -422,6 +421,8 @@ void Trie::onSat(Solver &S) {
       << " " << leftmost_van_visit_rear
       << " " << leftmost_van_visit_van
       << " " << leftmost_rear_visit_rear
+      << " " << leftmost.tag
+      << " " << accepting_place.get_tag()
       << std::endl;
   }
 
@@ -508,29 +509,22 @@ void Trie::onSat(Solver &S) {
     assert(extended_hor_ix == extended_hor->elems.size());
   }
 
+
 #ifdef MY_DEBUG
   {
+    Lit leftmost_tag = leftmost.tag;
     std::cout << std::flush;
     Lit first_lit = added_vars[0].second;
-    if (ver_accept) {
-      HorHead &horhead = accepting_place.deref_ver();
-      assert(horhead.tag != first_lit);
-    } else {
-      Place back = accepting_place.hor->back_ptr;
-      if (back.hor != NULL) {
-        HorHead &horhead = back.deref_ver();
-        assert(horhead.tag != first_lit);
-      }
-    }
+    assert(leftmost_tag != first_lit);
     for (VerHead &verhead: extended_hor->elems) {
       assert(verhead.tag != first_lit);
     }
   }
 #endif
+
   RearGuard *rguard;
   VanGuard *vguard;
 
-  // if (leftmost_van_visit_level == le)
   // if (accepting_reusable_rear) {
   //   rguard = accepting_reusable_rear;
   //   if (verbosity >= 2) std::cout << "REUSING_REAR " << rguard << std::endl;
@@ -547,11 +541,17 @@ void Trie::onSat(Solver &S) {
     if (verbosity >= 2) std::cout << "NEW_REAR " << rguard << std::endl;
   }
 
-  // if (accepting_reusable_van) {
-  //   vguard = accepting_reusable_van;
-  //   if (verbosity >= 2) std::cout << "REUSING_VAN " << vguard << std::endl;
-  // } else {
-  {
+  if (
+    leftmost_van_visit_level >= S.level[var(accepting_place.get_tag())] &&
+    (
+      S.reason[var(accepting_place.get_tag())] == NULL ||
+      S.reason[var(accepting_place.get_tag())]->getSpecificPtr() !=
+        leftmost_van_visit_van->getSpecificPtr()
+    )
+  ) {
+    vguard = leftmost_van_visit_van;
+    if (verbosity >= 2) std::cout << "REUSING_VAN " << vguard << std::endl;
+  } else {
     LogList<VanGuard> *incomplete_vans;
 
     if (leftmost_van_visit_level <= S.root_level) incomplete_vans = &root_new_vans;
@@ -559,6 +559,7 @@ void Trie::onSat(Solver &S) {
 
     vguard = &incomplete_vans->emplace_back(Place{NULL, 0, 0}, (RearGuard *)NULL, 0, false);
     if (verbosity >= 2) std::cout << "NEW_VAN " << vguard << std::endl;
+    leftmost.van_visit_van = vguard;
   }
 
   int depth = leftmost_depth;
@@ -819,7 +820,9 @@ void Trie::onSatSnapshots(
 
     if (i + 1 < added_vars.size() && i + 1 < last_i_van) {
       if (verbosity >= 2) {
-        printf("VAN_SNAPSHOT_ENABLE2 %p %p %d %d %d\n", vguard, extended_hor, extended_hor_ix, i, lvl);
+        printf(
+            "VAN_SNAPSHOT_ENABLE2 %p %p %d %d %d\n",
+            vguard, extended_hor, extended_hor_ix, i, lvl);
       }
       CHECK_UNIQUE_VAN_SNAPSHOT(snapshot, vguard);
       snapshot.van_snapshots.push_back({
@@ -902,6 +905,8 @@ Place *StackItem::handle(Solver &S, RearGuard &rear) {
 
   VanGuard &vguard = new_vans.emplace_back(place, &rear, S.decisionLevel(), false);
 
+  hor->back_ptr.deref_ver().van_visit_van = &vguard;
+
   if (verbosity >= 2) {
     std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << std::endl;
   }
@@ -938,17 +943,13 @@ Place *StackItem::handle(Solver &S, RearGuard &rear) {
       return NULL;
     }
     default: { // case MultimoveEnd::E_EXHAUST:
-      // TODO PERF - reasons vector is no more needed since we're using VanGuards.
-      Place *reason = trie.snapshot_count == 0
-        ? &trie.root_reasons.emplace_back(vguard)
-        : &trie.get_last_snapshot().reasons.emplace_back(vguard);
       if (rear.last_change_level == -1) { // this means that rear is an uninitialized root rear
-        return reason;
+        return &vguard;
       }
-      if (S.enqueue(rear.get_tag(), reason)) {
+      if (S.enqueue(rear.get_tag(), &vguard)) {
         return NULL;
       } else {
-        return reason;
+        return &vguard;
       }
     }
   }
@@ -959,8 +960,9 @@ WhatToDo VanGuard::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
   if (is_ver()) {
     if (S.value(out_lit) == l_True) {
       HorLine *hor2 = deref_ver().hor;
-      if (hor2 == NULL) return WhatToDo::DONE;
-      else {
+      if (hor2 == NULL) {
+        return WhatToDo::DONE;
+      } else {
         hor = hor2;
         hor_ix = 0;
         ver_ix = IX_NULL;
@@ -978,7 +980,9 @@ WhatToDo VanGuard::move_on_propagate(Solver &S, Lit out_lit, bool do_branch) {
   }
   else {
     if (S.value(out_lit) == l_True) {
-      if (hor_ix + 1 == hor->elems.size()) return WhatToDo::DONE;
+      if (hor_ix + 1 == hor->elems.size()) {
+        return WhatToDo::DONE;
+      }
       ++hor_ix;
       CHECK_ALL_DUPLICATE_PLACES(S.trie);
       return after_hors_change(S);
@@ -1029,7 +1033,9 @@ Place* RearGuard::jump(Solver &S) {
   Trie &trie = S.trie;
   int level = S.decisionLevel();
 
-  if (accepting_place.hor != NULL) accepting_place.set_rear_visit_level(level, *this);
+  if (accepting_place.hor != NULL) {
+    accepting_place.set_rear_visit_level(level, *this);
+  }
 
   while (last_van) {
     VanGuard &van = *last_van;
@@ -1315,7 +1321,6 @@ Snapshot& Trie::new_snapshot() {
 
   snapshot->new_rears.clear_nodestroy();
   snapshot->new_vans.clear_nodestroy();
-  snapshot->reasons.clear_nodestroy();
   snapshot->rear_snapshots.clear();
   snapshot->van_snapshots.clear();
   snapshot->cuts.clear();
@@ -1347,7 +1352,7 @@ void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
         out_reason.push(~x);
       } else {
         if (x != p) {
-          std::cout << "CALC_REASON_PROBLEM " << __hor << " " << __hix << " " << __vix << " "
+          std::cout << "CALC_REASON_PROBLEM " << this << " " << __hor << " " << __hix << " " << __vix << " "
             << x << " " << p << std::endl;
           assert(false);
         }
@@ -1388,7 +1393,6 @@ Place* Trie::reset(Solver &S) {
 
   root_new_rears.clear_nodestroy();
   root_new_vans.clear_nodestroy();
-  root_reasons.clear_nodestroy();
 
   RearGuard &root_rguard = root_new_rears.emplace_back(
     Place{&root, IX_NULL, IX_NULL}, -1, (RearGuard *)NULL, true

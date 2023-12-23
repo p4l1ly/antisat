@@ -501,7 +501,7 @@ Reason* Solver::propagate(void)
             stats.inspects++;
             keep_watch = false;
             if (verbosity >= 2) {
-              printf("PROP_IX %ld %p\n", i - (Constr**)ws, *i);
+              printf("PROP_IX %ld %p %p\n", i - (Constr**)ws, (*i), (*i)->getSpecificPtr2());
               std::cout << std::flush;
             }
             Reason *confl2 = (*i)->propagate(*this, p, keep_watch);

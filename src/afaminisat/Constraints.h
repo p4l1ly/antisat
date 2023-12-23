@@ -41,6 +41,7 @@ struct Undoable {
 
 struct Reason {
     virtual void calcReason(Solver& S, Lit p, vec<Lit>& out_reason) = 0;
+    virtual void *getSpecificPtr() = 0;
 
     virtual ~Reason(void) { };  // (not used, just to keep the compiler happy)
 };
@@ -50,6 +51,7 @@ struct Constr {
     virtual Reason* propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
     virtual void moveWatch(int i, Lit p) = 0;
+    virtual void *getSpecificPtr2() = 0;
 
     virtual ~Constr(void) { };  // (not used, just to keep the compiler happy)
 };
@@ -68,6 +70,9 @@ public:
     int  size        (void)      const { return size_learnt >> 1; }
     bool learnt      (void)      const { return size_learnt & 1; }
     Lit  operator [] (int index) const { return data[index]; }
+
+    void *getSpecificPtr() { return this; }
+    void *getSpecificPtr2() { return this; }
 
     // Constructor -- creates a new clause and add it to watcher lists.
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
