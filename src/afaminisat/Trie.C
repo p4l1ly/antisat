@@ -1,7 +1,6 @@
 // TODO
-// 1. reuse rears and vans
-// 2. profiling and optimization
-// 3. improve code beauty
+// 1. profiling and optimization
+// 2. improve code beauty
 
 #include <algorithm>
 #include <iostream>
@@ -382,14 +381,16 @@ void Place::set_van_visit_level(int level, VanGuard &van) {
   }
 }
 
-void Place::set_rear_visit_level(int level, RearGuard &rear) {
+void Place::set_rear_visit_level(int level, RearGuard &rear, Trie &trie) {
   HorHead *horhead;
   if (is_ver()) {
      horhead = &deref_ver();
+     if (horhead->hor) return;
   } else {
+    if (hor->elems.size() != hor_ix + 1) return;
     Place back = hor->back_ptr;
     if (back.hor != NULL) horhead = &back.deref_ver();
-    else return;
+    else horhead = &trie.root_leftmost;
   }
   if (verbosity >= 2) std::cout << "REAR_VISIT_LEVEL0 " << *this << " " << level << std::endl;
   horhead->rear_visit_level = level;
@@ -525,11 +526,13 @@ void Trie::onSat(Solver &S) {
   RearGuard *rguard;
   VanGuard *vguard;
 
-  // if (accepting_reusable_rear) {
-  //   rguard = accepting_reusable_rear;
-  //   if (verbosity >= 2) std::cout << "REUSING_REAR " << rguard << std::endl;
-  // } else {
-  {
+  if (
+    leftmost_rear_visit_level >= S.level[var(accepting_place.get_tag())] &&
+    leftmost_rear_visit_rear->last_van == NULL
+  ) {
+    rguard = leftmost_rear_visit_rear;
+    if (verbosity >= 2) std::cout << "REUSING_REAR " << rguard << std::endl;
+  } else {
     LogList<RearGuard> *incomplete_rears;
 
     if (leftmost_rear_visit_level <= S.root_level) incomplete_rears = &root_new_rears;
@@ -539,6 +542,7 @@ void Trie::onSat(Solver &S) {
       Place{NULL, 0, 0}, 0, (RearGuard *)NULL, false
     );
     if (verbosity >= 2) std::cout << "NEW_REAR " << rguard << std::endl;
+    leftmost.rear_visit_rear = rguard;
   }
 
   if (
@@ -1034,13 +1038,12 @@ Place* RearGuard::jump(Solver &S) {
   int level = S.decisionLevel();
 
   if (accepting_place.hor != NULL) {
-    accepting_place.set_rear_visit_level(level, *this);
+    accepting_place.set_rear_visit_level(level, *this, trie);
   }
 
   while (last_van) {
     VanGuard &van = *last_van;
     van.make_snapshot(S, S.decisionLevel());
-    van.set_rear_visit_level(level, *this);
 
     Lit lit = van.get_tag();
     lbool value = S.value(lit);
@@ -1057,6 +1060,7 @@ Place* RearGuard::jump(Solver &S) {
     van.remove_watch(S, lit);
 
     if (value == l_True) {
+      van.set_rear_visit_level(level, *this, trie);
       last_van = van.previous;
       van.on_accept(S);
       van.last_change_level = level;
@@ -1064,13 +1068,14 @@ Place* RearGuard::jump(Solver &S) {
       VanGuard *old_previous = van.previous;
       RearGuard *rguard = this;
 
-      bool branching = old_previous != NULL
-        || (
-          accepting_place.hor != NULL
-          && accepting_place.get_leftmost(trie).depth >= van.get_leftmost(trie).depth
-        );
+      bool reuse = old_previous == NULL && (
+        accepting_place.hor == NULL
+        || accepting_place.get_leftmost(trie).depth < van.get_leftmost(trie).depth
+      );
 
-      if (branching) {
+      if (reuse) {
+        (Place &)*this = van;
+      } else {
         LogList<RearGuard> &new_rears =
           trie.snapshot_count == 0 ? trie.root_new_rears : trie.get_last_snapshot().new_rears;
         rguard = van.rear = &new_rears.emplace_back(van, level, trie.last_rear, enabled);
@@ -1083,9 +1088,8 @@ Place* RearGuard::jump(Solver &S) {
         van.previous = NULL;
         rguard->last_van = &van;
         last_van = old_previous;
-      } else {
-        (Place &)*this = van;
       }
+      van.set_rear_visit_level(level, *rguard, trie);
 
       ++van.ver_ix;
       van.set_van_visit_level(level, van);
@@ -1101,7 +1105,7 @@ Place* RearGuard::jump(Solver &S) {
         assert(conflict == NULL);
         rguard->set_watch(S);
       }
-      if (!branching) {
+      if (reuse) {
         if (verbosity >= 2) std::cout << "SKIP_ON_ACCEPT_VAN" << std::endl;
         return NULL;
       }

@@ -68,7 +68,7 @@ public:
   bool in_exhaust() const;
   HorHead &get_leftmost(Trie &trie) const;
   void set_van_visit_level(int level, VanGuard &van);
-  void set_rear_visit_level(int level, RearGuard &rear);
+  void set_rear_visit_level(int level, RearGuard &rear, Trie &trie);
   int get_depth_if_valid(Trie &trie) const;
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
