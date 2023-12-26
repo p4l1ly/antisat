@@ -266,13 +266,16 @@ public:
   int accept_level = -1;
   RearGuard *accept_place = NULL;
 
+  unsigned on_sat_count = 0;
+  vector<unsigned> my_zeroes_set;
+
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
 
   Place to_cut;
 
   Trie();
-  bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits);
+  bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits, Solver &S);
 
   bool guess(Solver &S);
 

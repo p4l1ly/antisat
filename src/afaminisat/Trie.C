@@ -216,7 +216,9 @@ Trie::Trie()
 , to_cut(NULL, 0, 0)
 { }
 
-bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& init_clause_omits) {
+bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& init_clause_omits, Solver &S) {
+  my_zeroes_set.resize(S.watches.size(), 0);
+
   my_literals.reserve(my_literals_.size());
   for (int i = 0; i < my_literals_.size(); ++i) {
     my_literals.push_back(my_literals_[i]);
@@ -322,17 +324,22 @@ void RearGuard::onSat(Solver &S, int accept_level) {
     std::cout << std::endl;
   }
 
-  unordered_set<int> my_zeroes_set;
+  if (trie.on_sat_count == std::numeric_limits<unsigned>::max()) {
+    trie.on_sat_count = 0;
+    for (unsigned &x: trie.my_zeroes_set) {
+      x = std::numeric_limits<unsigned>::max();
+    }
+  } else {
+    ++trie.on_sat_count;
+  }
 
   ITER_MY_ZEROES(*this, x,
       if (verbosity >= 2) {
         printf("MY_ZERO1 " L_LIT " %d %d\n", L_lit(x), S.value(x).toInt(), S.level[var(x)]);
         std::cout << std::flush;
       }
-      my_zeroes_set.insert(index(x));
-#ifdef MY_DEBUG
+      trie.my_zeroes_set[index(x)] = trie.on_sat_count;
       assert(S.value(x) == l_False);
-#endif
   )
 
   // max level of added_vars+my_zeroes
@@ -355,7 +362,7 @@ void RearGuard::onSat(Solver &S, int accept_level) {
       } else if (lvl > last_but_max_level && lvl != max_level) {
         last_but_max_level = lvl;
       }
-      if (!my_zeroes_set.contains(index(x))) {
+      if (trie.my_zeroes_set[index(x)] != trie.on_sat_count) {
         added_vars.emplace_back(lvl, x);
       }
     }

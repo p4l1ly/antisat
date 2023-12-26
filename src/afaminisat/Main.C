@@ -271,7 +271,7 @@ public:
             unique_outputs.push(S.outputs[i]);
           }
         }
-        short_sat = !S.trie.init(unique_outputs, S.finals);
+        short_sat = !S.trie.init(unique_outputs, S.finals, S);
         if (short_sat) {
           return;
         }
