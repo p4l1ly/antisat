@@ -366,6 +366,9 @@ public:
 
   Place accepting_place;
 
+  unsigned on_sat_count = 0;
+  vector<unsigned> my_zeroes_set;
+
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
   void make_accepting_snapshot(Solver &S);
@@ -373,7 +376,7 @@ public:
   vector<Place> root_cuts;
 
   Trie();
-  bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits);
+  bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits, Solver &S);
 
   bool guess(Solver &S);
 

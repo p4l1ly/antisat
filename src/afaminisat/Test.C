@@ -19,7 +19,7 @@ lbool init_test(
 
   for (int i = 0; i < nVars; ++i) trie_lits.push(Lit(i));
 
-  if (!S.trie.init(trie_lits, finals)) return l_True;
+  if (!S.trie.init(trie_lits, finals, S)) return l_True;
   S.root_level = 0;
   if (S.trie.reset(S)) return l_False;
   return l_Undef;
