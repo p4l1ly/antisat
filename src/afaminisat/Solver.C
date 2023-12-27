@@ -78,7 +78,6 @@ inline void Solver::undoOne(void)
     Var     x  = var(trail.last()); trail.pop();
     assigns[x] = toInt(l_Undef);
     reason [x] = NULL;
-    order.undo(x);
 }
 
 
@@ -690,7 +689,7 @@ lbool Solver::search()
             stats.decisions++;
 
             if (!trie.guess(*this)) {
-              Var next = order.select(params.random_var_freq);
+              Var next = order.select(params.random_var_freq, *this);
 
               if (next == var_Undef){
                   // Model found:
@@ -715,6 +714,7 @@ void Solver::varRescaleActivity(void)
     for (int i = 0; i < nVars(); i++)
         activity[i] *= 1e-100;
     var_inc *= 1e-100;
+    order.tolerance *= 1e-100;
 }
 
 
@@ -775,6 +775,8 @@ bool Solver::resume() {
         nof_conflicts *= 1.5;
         nof_learnts   *= 1.1;
     }
+
+    order.new_stage();
 
     return status == l_True;
 }

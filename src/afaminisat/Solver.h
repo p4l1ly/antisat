@@ -132,10 +132,15 @@ public:
     void    varBumpActivity(Lit p) {
         if (var_decay < 0) return;     // (negative decay means static variable order -- don't bump)
         if ( (activity[var(p)] += var_inc) > 1e100 ) varRescaleActivity();
-        order.update(var(p));
+        order.update(var(p), *this);
     }
 
-    void    varDecayActivity(void) { if (var_decay >= 0) var_inc *= var_decay; }
+    void    varDecayActivity(void) {
+      if (var_decay >= 0) {
+        var_inc *= var_decay;
+        order.tolerance *= var_decay;
+      }
+    }
     void    varRescaleActivity(void);
 
     void    claBumpActivity(Clause* c) { if ( (c->activity() += cla_inc) > 1e20 ) claRescaleActivity(); }
@@ -212,5 +217,4 @@ public:
 };
 
 
-//=================================================================================================
 #endif

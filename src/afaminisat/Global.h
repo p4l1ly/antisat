@@ -275,7 +275,7 @@ inline void printClause(const vec<Lit> &c) {
 #ifdef MY_DEBUG
 extern int verbosity;
 #else
-const int verbosity = -4;
+const int verbosity = -5;
 #endif
 
 
