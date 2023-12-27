@@ -188,13 +188,22 @@ public:
 
     // -- constraints:
     friend class Clause;
-    friend class AtMost;
+    friend class UpwardClause;
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
+    friend bool UpwardClause_new(Solver& S, Lit p, const vec<Lit>& ps, UpwardClause*& out_clause);
 
     void  addClause(const vec<Lit>& ps) {
       if (ok){
         Clause* c;
         ok = Clause_new(*this, ps, false, c);
+        if (c != NULL) constrs.push(c);
+      }
+    }
+
+    void  addUpwardClause(Lit out, const vec<Lit>& ps) {
+      if (ok){
+        UpwardClause* c;
+        ok = UpwardClause_new(*this, out, ps, c);
         if (c != NULL) constrs.push(c);
       }
     }
