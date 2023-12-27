@@ -62,9 +62,28 @@ bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
     auto outputs = in.getOutputs();
     auto clauses = in.getClauses();
     auto finals = in.getFinals();
+    auto pureVars = in.getPureVars();
+    auto upwardClauses = in.getUpwardClauses();
 
-    int nVars = *acnt + outputs.size() + clauses.size();
+    int nVars = *acnt + outputs.size();
+
+    for (auto clause: clauses) {
+        for (auto lit: clause) {
+            int var = lit.getVar();
+            if (var + 1 > nVars) {
+              nVars = var + 1;
+            }
+        }
+    }
+
     S.pures.growTo(nVars, false);
+
+    for (auto pure: pureVars) S.pures[pure] = true;
+    for (unsigned i = 0; i < outputs.size(); ++i) S.pures[i] = true;
+
+    unordered_set<unsigned> upwardClausesSet;
+    for (auto upward: upwardClauses) upwardClausesSet.insert(upward);
+
     S.output_map.growTo(nVars, -1);
 
     int i = 0;
@@ -80,16 +99,31 @@ bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
 
     while (nVars > S.nVars()) S.newVar();
 
-    vec<Lit>    lits;
-    for (auto clause: clauses) {
-        lits.clear();
-        for (auto lit: clause) {
-            int var = lit.getVar();
-            lits.push(lit.getPositive() ? Lit(var) : Lit(var, true));
-        }
-        S.addClause(lits);
-        if (!S.okay())
-            return false;
+    {
+      vec<Lit>    lits;
+      int i = 0;
+      for (auto clause: clauses) {
+          lits.clear();
+          if (upwardClausesSet.contains(i)) {
+            auto out0 = clause[0];
+            int var = out0.getVar();
+            Lit out = out0.getPositive() ? Lit(var) : Lit(var, true);
+            for (int j = 1; j < clause.size(); ++j) {
+                auto lit = clause[j];
+                int var = lit.getVar();
+                lits.push(lit.getPositive() ? Lit(var) : Lit(var, true));
+            }
+            S.addUpwardClause(out, lits);
+          } else {
+            for (auto lit: clause) {
+                int var = lit.getVar();
+                lits.push(lit.getPositive() ? Lit(var) : Lit(var, true));
+            }
+            S.addClause(lits);
+          }
+          if (!S.okay())
+              return false;
+      }
     }
 
     return S.okay();

@@ -66,10 +66,8 @@ class Clause : public Constr, public Reason {
     Lit         data[0];
 
 public:
-    int  max_level   (const Solver& S) const;
     int  size        (void)      const { return size_learnt >> 1; }
     bool learnt      (void)      const { return size_learnt & 1; }
-    Lit  operator [] (int index) const { return data[index]; }
 
     void *getSpecificPtr() { return this; }
     void *getSpecificPtr2() { return this; }
@@ -91,6 +89,28 @@ public:
     void remove    (Solver& S, bool just_dealloc = false);
     Reason* propagate (Solver& S, Lit p, bool& keep_watch);
     bool simplify  (Solver& S);
+    void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+    void moveWatch(int i, Lit p);
+};
+
+
+class UpwardClause : public Constr, public Reason {
+    unsigned    size;
+    Lit         output = lit_Undef;
+    Lit         data[0];
+
+public:
+    Lit  operator [] (int index) const { return data[index]; }
+
+    void *getSpecificPtr() { return this; }
+    void *getSpecificPtr2() { return this; }
+
+    // Constructor -- creates a new clause and add it to watcher lists.
+    friend bool UpwardClause_new(Solver& S, Lit output_, const vec<Lit>& ps, UpwardClause*& out_clause);
+
+    // Constraint interface:
+    void remove    (Solver& S, bool just_dealloc = false) { }
+    Reason* propagate (Solver& S, Lit p, bool& keep_watch);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
     void moveWatch(int i, Lit p);
 };

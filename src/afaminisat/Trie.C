@@ -1,12 +1,11 @@
 // TODO
 // 2. improve code beauty
-// 4. support upward-only clauses (input and implementation)
-// 5. support pure variables in the input
 // 6. input generation:
 //      a. add upward-only and pure flags
 //      b. remove positive-only or negative-only variables
 //      c. find out why a1 contains 3 states instead of 2 (I think it is because we don't have
 //         unreachable state detection).
+//      d. find out why, in some test, we have initial propagation/assignment (unit clauses?)
 // 7. enable switching of heap vs tolerance order
 // 8. backport last few commits (unrelated to Trie) to the novan version
 

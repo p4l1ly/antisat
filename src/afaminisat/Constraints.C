@@ -188,8 +188,6 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     return false;
 }
 
-int  Clause::max_level(const Solver& S) const { return S.level[var(data[0])]; }
-
 
 bool Clause::locked(const Solver& S) const {
     return (const Clause *)S.reason[var(data[0])] == this; }
@@ -283,3 +281,119 @@ void Clause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
 }
 
 inline void Clause::moveWatch(int i, Lit p) { }
+
+
+//=================================================================================================
+// Clause constraint:
+
+
+// Returns FALSE if top-level conflict detected (must be handled); TRUE otherwise.
+// 'out_clause' may be set to NULL if clause is already satisfied by the top-level assignment.
+//
+bool UpwardClause_new(Solver& S, Lit output_, const vec<Lit>& ps_, UpwardClause*& out_clause)
+{
+    vec<Lit>    ps;
+    out_clause = NULL;
+
+    assert(S.decisionLevel() == 0);
+    ps_.copyTo(ps);             // Make a copy of the input vector.
+
+    // Remove false literals:
+    for (int i = 0; i < ps.size();){
+        if (S.value(ps[i]) != l_Undef){
+            if (S.value(ps[i]) == l_True)
+                return true;    // Clause always true -- don't add anything.
+            else
+                ps[i] = ps.last(),
+                ps.pop();
+        }else
+            i++;
+    }
+
+    // Remove duplicates:
+    sortUnique(ps);
+    for (int i = 0; i < ps.size()-1; i++){
+        if (ps[i] == ~ps[i+1])
+            return true;        // Clause always true -- don't add anything.
+    }
+
+    if (ps.size() == 0)
+        return S.enqueue(output_);
+    else{
+        // Allocate clause:
+        assert(sizeof(Lit)   == sizeof(unsigned));
+        assert(sizeof(float) == sizeof(unsigned));
+        void*   mem = xmalloc<char>(sizeof(UpwardClause) + sizeof(unsigned)*(ps.size()));
+        UpwardClause* c   = new (mem) UpwardClause;
+
+        c->output = output_;
+        c->size = ps.size();
+        for (int i = 0; i < ps.size(); i++) c->data[i] = ps[i];
+
+        S.stats.clauses++;
+        S.stats.clauses_literals += c->size + 1;
+
+        // Store clause:
+        if (verbosity >= 2) printf("WATCHES_PUSH5 " L_LIT " %d %p %d\n", L_lit(~c->data[0]), S.watches[index(~c->data[0])].size(), c, S.value(~c->data[0]).toInt());
+        S.watches[index(~c->data[0])].push(c);
+        out_clause = c;
+
+        return true;
+    }
+}
+
+inline void UpwardClause::moveWatch(int i, Lit p) { }
+
+Reason* UpwardClause::propagate(Solver& S, Lit p, bool& keep_watch) {
+  // Make sure the false literal is data[0]:
+  Lit     false_lit = ~p;
+  assert(data[0] == false_lit);
+
+  // If 0th watch is true, then clause is already satisfied.
+  if (S.value(output) == l_True){
+      keep_watch = true;
+      return NULL; }
+
+  // Look for new watch:
+  for (int i = 1; i < size; i++){
+      if (S.value(data[i]) != l_False){
+          data[0] = data[i], data[i] = false_lit;
+          if (verbosity >= 2) printf("WATCHES_PUSH6 " L_LIT " %d %p %d\n", L_lit(~data[0]), S.watches[index(~data[0])].size(), this, S.value(~data[0]).toInt());
+          S.watches[index(~data[0])].push(this);
+          return NULL; } }
+
+  // Clause is unit under assignment:
+  keep_watch = true;
+  if (S.enqueue(output, this)) return NULL;
+  return this;
+}
+
+void UpwardClause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
+  assert(p == lit_Undef || p == output);
+
+  if (p == lit_Undef) {
+    if (verbosity >= 2 && S.value(output) != l_False) {
+      printf(
+        "CALC_REASON_NONFALSE_UP_OUT " L_LIT " " L_LIT "\n",
+        L_lit(output),
+        L_lit(p)
+      );
+      std::cout << std::flush;
+    }
+    assert(S.value(output) == l_False);
+    out_reason.push(~output);
+  }
+
+  for (int i = 0; i < size; i++) {
+      if (verbosity >= 2 && S.value(data[i]) != l_False) {
+        printf(
+            "CALC_REASON_NONFALSE_UP " L_LIT " " L_LIT "\n",
+            L_lit(data[i]),
+            L_lit(p)
+        );
+        std::cout << std::flush;
+      }
+      assert(S.value(data[i]) == l_False);
+      out_reason.push(~data[i]);
+  }
+}
