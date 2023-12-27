@@ -700,7 +700,7 @@ lbool Solver::search()
                   return l_True;
               }
 
-              check(assume(Lit(next, true)));
+              // check(assume(Lit(next, true)));
             }
         }
     }

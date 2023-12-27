@@ -38,14 +38,19 @@ class VarOrder: Undoable {
     const vec<int>&     output_map;
     double              random_seed;   // For the internal random number generator
     std::vector<Var> order;
-    unsigned guess_line = 0;
+    unsigned guess_line = -1;
     std::vector<unsigned> var_ixs;
     std::vector<unsigned> snapshots;
     std::vector<int> barriers;
     const unsigned max_bubble_moves = 5;
     // const double tolerance_decrease = 0.9999995;
+
     const double tolerance_decrease = 0.999;
     const double tolerance_increase = 1.05;
+    //
+    // const double tolerance_decrease = 1.0;
+    // const double tolerance_increase = 1.0;
+
     const unsigned min_bubble_move_count_since_last_stage = 1;
     const unsigned min_update_count_since_last_stage = 5;
 
