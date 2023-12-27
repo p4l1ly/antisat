@@ -23,6 +23,7 @@ add_executable(
   src/afaminisat/SupQ.C
   src/afaminisat/Constraints.C
   src/afaminisat/LogList.C
+  src/afaminisat/VarOrder.C
 )
 target_include_directories(afaminisat PRIVATE "${AutomataSafaCapnpInclude}")
 target_link_libraries(
@@ -38,5 +39,6 @@ add_executable(
   src/afaminisat/SupQ.C
   src/afaminisat/Constraints.C
   src/afaminisat/LogList.C
+  src/afaminisat/VarOrder.C
 )
 set_property(TARGET test PROPERTY CXX_STANDARD 20)

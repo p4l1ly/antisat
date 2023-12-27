@@ -236,6 +236,8 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     vec<Lit> solver_input;
     MeasuredSupQ container_supq;
 
+public:
+    int solveCnt = 0;
     int satCnt = 0;
     int unsatCnt = 0;
     int maxDepth = 0;
@@ -244,7 +246,6 @@ class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server 
     bool short_unsat = false;
     bool short_sat = false;
 
-public:
     ModelCheckingImpl(cnfafa::Afa::Reader cnfafa, char mode)
     : solver_input(cnfafa.getOutputs().size())
     , container_supq()
@@ -275,6 +276,7 @@ public:
         if (short_sat) {
           return;
         }
+        S.order.init();
 
         switch (mode) {
           case '0': TRIE_MODE = clauses; break;
@@ -361,7 +363,6 @@ public:
 
         bool st;
         bool empty;
-        unsigned solveCnt = 0;
 
         while (true) {
             if (false) { // (container_supq.get_or_add(*cell)) {
@@ -403,6 +404,11 @@ public:
                 }
               }
               solveCnt++;
+              if (verbosity >= -4) {
+                if (solveCnt % 1000 == 0) {
+                  std::cout << "MID " << solveCnt << " " << satCnt << " " << unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
+                }
+              }
               st = S.solve(solver_input);
 
               delete cell;
@@ -425,6 +431,11 @@ public:
                         }
                       }
                       solveCnt++;
+                      if (verbosity >= -4) {
+                        if (solveCnt % 1000 == 0) {
+                          std::cout << "MID " << solveCnt << " " << satCnt << " " << unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
+                        }
+                      }
 
                       if (!S.resume()) break;
                       satCnt++;
@@ -527,9 +538,9 @@ int main(int argc, char** argv) {
           ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>(), mode);
           close(fd);
           if (mc.modelCheck()) {
-              std::cout << "EMPTY" << std::endl;
+              std::cout << "EMPTY " << mc.solveCnt << " " << mc.satCnt << " " << mc.unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
           } else {
-              std::cout << "NOT_EMPTY" << std::endl;
+              std::cout << "NOT_EMPTY " << mc.solveCnt << " " << mc.satCnt << " " << mc.unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
           }
           if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
         }

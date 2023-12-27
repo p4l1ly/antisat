@@ -1,6 +1,7 @@
 // TODO
 // 1. profiling and optimization
 // 2. improve code beauty
+// 3. (?) implement strengthenCC from http://minisat.se/downloads/MiniSat_v1.13_short.pdf
 
 #include <algorithm>
 #include <iostream>

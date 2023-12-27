@@ -12,12 +12,16 @@ struct LeastSizeCompare
 {
     bool operator()(const vector<int>* lhs, const vector<int>* rhs) const
     {
-        // return lhs->size() < rhs->size();
         if (lhs->size() != rhs->size()) return lhs->size() < rhs->size();
-        for (unsigned i = 0; i < lhs->size(); i++) {
-            if ((*lhs)[i] != (*rhs)[i]) return (*lhs)[i] < (*rhs)[i];
-        }
-        return false;
+
+        // We're sure that the inserted elements are unequal and if the sizes are equal, we don't
+        // care about the order.
+        return true;
+
+        // for (unsigned i = 0; i < lhs->size(); i++) {
+        //     if ((*lhs)[i] != (*rhs)[i]) return (*lhs)[i] < (*rhs)[i];
+        // }
+        // return false;
     }
 };
 
@@ -60,6 +64,12 @@ public:
         data.pop_front();
         return result;
     }
+
+    ~CellContainerBfs() {
+      for (vector<int> *x: data) {
+        delete x;
+      }
+    }
 };
 
 class CellContainerDfs : public CellContainer {
@@ -72,5 +82,11 @@ public:
         vector<int>* result = data.back();
         data.pop_back();
         return result;
+    }
+
+    ~CellContainerDfs() {
+      for (vector<int> *x: data) {
+        delete x;
+      }
     }
 };
