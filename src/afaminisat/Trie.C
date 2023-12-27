@@ -1,7 +1,15 @@
 // TODO
-// 1. profiling and optimization
 // 2. improve code beauty
-// 3. (?) implement strengthenCC from http://minisat.se/downloads/MiniSat_v1.13_short.pdf
+// 3. move VarOrder snapshots, similarly to guess_line
+// 4. support upward-only clauses (input and implementation)
+// 5. support pure variables in the input
+// 6. input generation:
+//      a. add upward-only and pure flags
+//      b. remove positive-only or negative-only variables
+//      c. find out why a1 contains 3 states instead of 2 (I think it is because we don't have
+//         unreachable state detection).
+// 7. enable switching of heap vs tolerance order
+// 8. backport last few commits to the novan version
 
 #include <algorithm>
 #include <iostream>

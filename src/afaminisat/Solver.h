@@ -110,6 +110,7 @@ public:
     // Temporaries (to reduce allocation overhead):
     //
     vec<char>           analyze_seen;
+    vec<Lit>            analyze_toclear;
 
     // Main internal methods:
     //

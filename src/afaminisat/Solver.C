@@ -176,6 +176,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
     seen.growTo(nVars(), 0);
     int out_learnt_final_size;
     int out_btlevel_final;
+    int trail_index = trail.size() - 1;
 
     // Generate conflict clause:
     //
@@ -184,7 +185,8 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
     p_reason.clear();
     confl->calcReason(*this, p, p_reason);
-    if (decisionLevel() <= root_level) return false;
+    int decLevel = decisionLevel();
+    if (decLevel <= root_level) return false;
 
     while (true) {
         if (verbosity >= 2) {
@@ -200,7 +202,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
             if (!seen[var(q)] && level[var(q)] > 0){
                 seen[var(q)] = 1;
                 varBumpActivity(q);
-                if (level[var(q)] == decisionLevel())
+                if (level[var(q)] == decLevel)
                     pathC++;
                 else{
                     if (verbosity >= 2) printf("PUSH " L_LIT " %d %d\n", L_lit(~q), level[var(q)], decisionLevel());
@@ -212,7 +214,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
         // Select next clause to look at:
         while (true) {
-            p = trail.last();
+            p = trail[trail_index];
             confl = reason[var(p)];
 
             if (seen[var(p)]) {
@@ -225,7 +227,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
                   out_learnt_final_size = out_learnt.size();
                   out_btlevel_final = out_btlevel;
                 }
-                undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
+                --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
                 goto resolved;
               }
 
@@ -240,12 +242,12 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
               p_reason.clear();
               confl->calcReason(*this, p, p_reason);
-              undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
+              --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
               break;
             }
 
-            undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
+            --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
             if (confl == NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
@@ -272,14 +274,23 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
               out_learnt.shrink(pathC);
               out_learnt[0] = lit_Undef;
+
+              trail_index = trail_lim[max_level].first - 1;
               cancelUntil(max_level);
+              decLevel = max_level;
             }
         }
     }
 
 resolved:
 
-    for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
+    out_learnt.copyTo(analyze_toclear);
+
+    if (verbosity >= 2){
+        printf(L_IND "Learnt0 ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
@@ -287,11 +298,41 @@ resolved:
     out_btlevel = out_btlevel_final;
 #pragma GCC diagnostic pop
 
+    if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
+
+    {
+      int i, j;
+      for (i = j = 1; i < out_learnt.size(); i++) {
+          Lit p = out_learnt[i];
+          Reason *r = reason[var(p)];
+          if (r == NULL) {
+              out_learnt[j++] = out_learnt[i];
+          } else {
+              vec<Lit> c;
+              assert(value(p) == l_False);
+              r->calcReason(*this, ~p, c);
+              for (int k = 0; k < c.size(); k++)
+                  if (!seen[var(c[k])] && level[var(c[k])] != 0){
+                      out_learnt[j++] = out_learnt[i];
+                      goto continue2;
+                  }
+              if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
+          }
+    continue2: ;
+      }
+
+      out_learnt.shrink(i - j);
+    }
+
+    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
+
     if (verbosity >= 2){
         printf(L_IND "Learnt ", L_ind);
         printClause(out_learnt);
         printf(" at level %d\n", out_btlevel);
     }
+
+    if (verbosity >= 2) printf("ANALYZED2\n");
 
     return true;
 }
@@ -304,6 +345,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
     vec<Lit>    p_reason;
     int out_learnt_final_size;
     int out_btlevel_final;
+    int trail_index = trail.size() - 1;
 
     seen.growTo(nVars(), 0);
 
@@ -315,13 +357,14 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
     //
     out_learnt.push(lit_Undef);      // (leave room for the asserting literal)
     out_btlevel = 0;
+    int decLevel = decisionLevel();
     while(true){
         for (int j = 0; j < p_reason.size(); j++){
             Lit q = p_reason[j];
             if (!seen[var(q)] && level[var(q)] > 0){
                 seen[var(q)] = 1;
                 varBumpActivity(q);
-                if (level[var(q)] == decisionLevel())
+                if (level[var(q)] == decLevel)
                     pathC++;
                 else{
                     out_learnt.push(~q),
@@ -334,7 +377,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
 
         // Select next clause to look at:
         while (true) {
-            p = trail.last();
+            p = trail[trail_index];
             confl = reason[var(p)];
 
             if (seen[var(p)]) {
@@ -348,7 +391,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                   out_btlevel_final = out_btlevel;
                 }
 
-                undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
+                --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
                 goto resolved;
               }
 
@@ -375,11 +418,11 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                 printf("\n");
               }
 
-              undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
+              --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
               break;
             }
 
-            undoOne(); if (trail_lim.last().first == trail.size()) undoOneLevel();
+            --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
             if (confl == NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
@@ -406,6 +449,10 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
 
               out_learnt.shrink(pathC);
               out_learnt[0] = lit_Undef;
+
+              int foo = trail_lim[max_level].first - 1;
+              trail_index = trail_lim[max_level].first - 1;
+              decLevel = max_level;
               cancelUntil(max_level);
             }
         }
@@ -413,13 +460,47 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
 
 resolved:
 
-    for (int j = 0; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;    // ('seen[]' is now cleared)
+    out_learnt.copyTo(analyze_toclear);
+
+    if (verbosity >= 2){
+        printf(L_IND "Learnt0 ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
     out_btlevel = out_btlevel_final;
 #pragma GCC diagnostic pop
+
+    if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
+
+    {
+      int i, j;
+      for (i = j = 1; i < out_learnt.size(); i++) {
+          Lit p = out_learnt[i];
+          Reason *r = reason[var(p)];
+          if (r == NULL) {
+              out_learnt[j++] = out_learnt[i];
+          } else {
+              vec<Lit> c;
+              assert(value(p) == l_False);
+              r->calcReason(*this, ~p, c);
+              for (int k = 0; k < c.size(); k++)
+                  if (!seen[var(c[k])] && level[var(c[k])] != 0){
+                      out_learnt[j++] = out_learnt[i];
+                      goto continue2;
+                  }
+              if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
+          }
+    continue2: ;
+      }
+
+      out_learnt.shrink(i - j);
+    }
+
+    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
 
     if (verbosity >= 2){
         printf(L_IND "Learnt ", L_ind);
