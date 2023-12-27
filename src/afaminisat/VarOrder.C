@@ -13,7 +13,7 @@ void VarOrder::undo(Solver &S) {
   snapshots.pop_back();
 
   if (verbosity >= 2) {
-    std::cout << "VAR_UNDO"
+    std::cout << "VARORDER_UNDO"
       << " " << guess_line
       << " " << previous_guess_line
       << " " << order.size()
@@ -179,22 +179,32 @@ void VarOrder::update(Var right, Solver &S) {
 
     int left_barrier = barriers[right_ix - 1];
     if (left_barrier != -1) {
+      // TODO this is completely uncovered with our tests (yet).
       if (verbosity >= -4) printf("LEFT_BARRIER\n");
       if (left_barrier < level) {
         if (verbosity >= -4) printf("KEEP_BARRIER\n");
         --right_ix;
         delete_barrier = false;
         break;
+      } else {
+        assert(S.decisionLevel() - left_barrier > 0);
+        if (S.decisionLevel() - left_barrier == 1) {
+          assert(guess_line == right_ix - 1);
+          if (verbosity >= -4) printf("MOVING_GUESS_LINE2 %d %d\n", guess_line, level);
+          ++guess_line;
+        } else {
+          assert(S.decisionLevel() - left_barrier - 1 <= snapshots.size());
+          unsigned snapshot_ix = snapshots.size() - (S.decisionLevel() - left_barrier - 1);
+          if (verbosity >= -4) {
+            printf("MOVING_SNAPSHOT %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level);
+          }
+          ++snapshots[snapshot_ix];
+        }
       }
     }
 
-    barriers[right_ix] = barriers[right_ix - 1];
+    barriers[right_ix] = left_barrier;
     --right_ix;
-
-    if (guess_line == right_ix) {
-      if (verbosity >= -3) printf("MOVING_GUESS_LINE2 %d %d\n", guess_line, level);
-      ++guess_line;
-    }
   }
 
   if (bubble_move_count) {
