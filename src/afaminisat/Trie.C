@@ -1,6 +1,5 @@
 // TODO
 // 2. improve code beauty
-// 3. move VarOrder snapshots, similarly to guess_line
 // 4. support upward-only clauses (input and implementation)
 // 5. support pure variables in the input
 // 6. input generation:
@@ -9,7 +8,7 @@
 //      c. find out why a1 contains 3 states instead of 2 (I think it is because we don't have
 //         unreachable state detection).
 // 7. enable switching of heap vs tolerance order
-// 8. backport last few commits to the novan version
+// 8. backport last few commits (unrelated to Trie) to the novan version
 
 #include <algorithm>
 #include <iostream>

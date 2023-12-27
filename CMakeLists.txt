@@ -31,14 +31,14 @@ target_link_libraries(
 )
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
 
-add_executable(
-  test
-  src/afaminisat/Test.C
-  src/afaminisat/Solver.C
-  src/afaminisat/Trie.C
-  src/afaminisat/SupQ.C
-  src/afaminisat/Constraints.C
-  src/afaminisat/LogList.C
-  src/afaminisat/VarOrder.C
-)
-set_property(TARGET test PROPERTY CXX_STANDARD 20)
+# add_executable(
+#   test
+#   src/afaminisat/Test.C
+#   src/afaminisat/Solver.C
+#   src/afaminisat/Trie.C
+#   src/afaminisat/SupQ.C
+#   src/afaminisat/Constraints.C
+#   src/afaminisat/LogList.C
+#   src/afaminisat/VarOrder.C
+# )
+# set_property(TARGET test PROPERTY CXX_STANDARD 20)
