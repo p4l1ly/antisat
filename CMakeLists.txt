@@ -7,10 +7,6 @@ project(
   LANGUAGES CXX
 )
 
-find_package(CapnProto REQUIRED)
-find_library(AutomataSafaCapnp automata-safa-capnp REQUIRED)
-find_path(AutomataSafaCapnpInclude automata-safa-capnp REQUIRED)
-
 set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DMY_DEBUG")
@@ -24,10 +20,6 @@ add_executable(
   src/afaminisat/Constraints.C
   src/afaminisat/LogList.C
   src/afaminisat/VarOrder.C
-)
-target_include_directories(afaminisat PRIVATE "${AutomataSafaCapnpInclude}")
-target_link_libraries(
-    afaminisat PRIVATE CapnProto::capnp CapnProto::capnp-rpc "${AutomataSafaCapnp}"
 )
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
 

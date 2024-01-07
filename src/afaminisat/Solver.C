@@ -839,6 +839,18 @@ bool Solver::solve(const vec<Lit>& assumps)
           return false;
       }
     }
+
+    // Trie can assume posq_outputs to be true. Trie's places should be the only watchers.
+    for (Lit posq_output: posq_outputs) {
+      if (value(posq_output) == l_Undef) {
+        check(enqueue(posq_output));
+      } else {
+        assert(value(posq_output) == l_False);
+      }
+    }
+
+    check(propagate() == NULL);
+
     return true;
 }
 
