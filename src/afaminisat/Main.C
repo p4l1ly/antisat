@@ -22,9 +22,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Constraints.h"
 #include "Trie.h"
-#include <automata-safa-capnp/Afa/Model/CnfAfa.capnp.h>
-#include <automata-safa-capnp/Afa/Rpc/ModelChecker.capnp.h>
-#include <automata-safa-capnp/Afa/Rpc/ModelCheckers.capnp.h>
 
 #include <ctime>
 #include <unistd.h>
@@ -35,10 +32,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <string>
 #include <algorithm>
 #include <fcntl.h>
-
-#include <capnp/serialize.h>
-#include <capnp/ez-rpc.h>
-#include <kj/thread.h>
+#include <iterator>
 
 using std::cout;
 using std::endl;
@@ -46,87 +40,110 @@ using std::vector;
 using std::string;
 namespace chrono = std::chrono;
 
-namespace cnfafa = automata_safa_capnp::model::cnf_afa;
-namespace mc = automata_safa_capnp::rpc::model_checker;
-namespace mcs = automata_safa_capnp::rpc::model_checkers;
-
 #ifdef MY_DEBUG
-int verbosity = -4;
+int verbosity = 4;
 const int VERBOSE_FROM = -1;
 #endif
 const bool write_debug_dots = false;
 int port = 4002;
 
-bool parse_cnfafa(const cnfafa::Afa::Reader &in, Solver& S, int* acnt) {
-    *acnt = in.getVariableCount();
-    auto outputs = in.getOutputs();
-    auto clauses = in.getClauses();
-    auto finals = in.getFinals();
-    auto pureVars = in.getPureVars();
-    auto upwardClauses = in.getUpwardClauses();
+std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
+  std::string line;
+  if (getline(std::cin, line)) {
+    std::istringstream is(line);
+    return std::pair(
+      true,
+      std::move(std::vector<int> {std::istream_iterator<int>(is), std::istream_iterator<int>()})
+    );
+  }
+  if (required) {
+    std::cerr << "Too few lines" << std::endl;
+    exit(1);
+  }
+  return std::pair(false, std::vector<int>());
+}
 
-    int nVars = *acnt + outputs.size();
+bool parse_cnfafa(Solver& S, int* acnt) {
+  *acnt = getIntLine().second[0];
+  std::vector<int> outputs(std::move(getIntLine().second));
+  std::vector<int> finals(std::move(getIntLine().second));
+  std::vector<int> pureVars(std::move(getIntLine().second));
+  std::vector<int> upwardClauses(std::move(getIntLine().second));
+  std::vector<int> posqOutputs(std::move(getIntLine().second));
 
-    for (auto clause: clauses) {
-        for (auto lit: clause) {
-            int var = lit.getVar();
-            if (var + 1 > nVars) {
-              nVars = var + 1;
-            }
-        }
-    }
+  int nVars = *acnt + outputs.size();
 
-    S.pures.growTo(nVars, false);
+  std::vector<std::vector<int>> clauses;
+  while (true) {
+    auto intLine = getIntLine(false);
+    if (!intLine.first) break;
+    clauses.push_back(std::move(intLine.second));
+  }
 
-    for (auto pure: pureVars) S.pures[pure] = true;
-    for (unsigned i = 0; i < outputs.size(); ++i) S.pures[i] = true;
-
-    unordered_set<unsigned> upwardClausesSet;
-    for (auto upward: upwardClauses) upwardClausesSet.insert(upward);
-
-    S.output_map.growTo(nVars, -1);
-
-    int i = 0;
-    for (auto output: outputs) {
-        int var = output.getVar();
-        S.output_map[var] = i;
-        Lit lit = output.getPositive() ? Lit(var) : Lit(var, true);
-        S.outputs.push(lit);
-        i++;
-    }
-
-    for (auto final_: finals) S.finals.insert(final_);
-
-    while (nVars > S.nVars()) S.newVar();
-
-    {
-      vec<Lit>    lits;
-      int i = 0;
-      for (auto clause: clauses) {
-          lits.clear();
-          if (upwardClausesSet.contains(i)) {
-            auto out0 = clause[0];
-            int var = out0.getVar();
-            Lit out = out0.getPositive() ? Lit(var) : Lit(var, true);
-            for (int j = 1; j < clause.size(); ++j) {
-                auto lit = clause[j];
-                int var = lit.getVar();
-                lits.push(lit.getPositive() ? Lit(var) : Lit(var, true));
-            }
-            S.addUpwardClause(out, lits);
-          } else {
-            for (auto lit: clause) {
-                int var = lit.getVar();
-                lits.push(lit.getPositive() ? Lit(var) : Lit(var, true));
-            }
-            S.addClause(lits);
-          }
-          if (!S.okay())
-              return false;
+  for (auto clause: clauses) {
+    for (auto lit: clause) {
+      int var = abs(lit) - 1;
+      if (var + 1 > nVars) {
+        nVars = var + 1;
       }
     }
+  }
 
-    return S.okay();
+  S.pures.growTo(nVars, false);
+
+  for (int pure: pureVars) S.pures[pure] = true;
+  for (unsigned i = 0; i < outputs.size(); ++i) S.pures[i] = true;
+
+  unordered_set<unsigned> upwardClausesSet;
+  for (auto upward: upwardClauses) upwardClausesSet.insert(upward);
+
+  S.output_map.growTo(nVars, -1);
+
+  int i = 0;
+  for (int output: outputs) {
+    int var = abs(output) - 1;
+    S.output_map[var] = i;
+    Lit lit = output > 0 ? Lit(var) : Lit(var, true);
+    S.outputs.push(lit);
+    i++;
+  }
+
+  for (int posqOutput: posqOutputs) {
+    S.posq_outputs.push_back(S.outputs[posqOutput]);
+  }
+
+  for (auto final_: finals) S.finals.insert(final_);
+
+  while (nVars > S.nVars()) S.newVar();
+
+  {
+    vec<Lit>    lits;
+    int i = 0;
+    for (auto clause: clauses) {
+      lits.clear();
+      if (upwardClausesSet.contains(i)) {
+        auto out0 = clause[0];
+        int var = abs(out0) - 1;
+        Lit out = out0 > 0 ? Lit(var) : Lit(var, true);
+        for (int j = 1; j < clause.size(); ++j) {
+          auto lit = clause[j];
+          int var = abs(lit) - 1;
+          lits.push(lit > 0 ? Lit(var) : Lit(var, true));
+        }
+        S.addUpwardClause(out, lits);
+      } else {
+        for (auto lit: clause) {
+          int var = abs(lit) - 1;
+          lits.push(lit > 0 ? Lit(var) : Lit(var, true));
+        }
+        S.addClause(lits);
+      }
+      if (!S.okay())
+        return false;
+    }
+  }
+
+  return S.okay();
 }
 
 //=================================================================================================
@@ -195,73 +212,8 @@ bool extract_sat_result(
     return false;
 }
 
-class ControlImpl final: public mc::Control::Server {
-    Solver* S;
 
-public:
-    ControlImpl(Solver* S_) : S(S_) {}
-
-    kj::Promise<void> pause(PauseContext context) override {
-        setStatus(context.getResults().getOldStatus());
-        if (S->status == Solver_RUNNING) {
-            S->pauseMutex.lock();
-            S->status = Solver_PAUSED;
-            S->runningMutex.lock();
-            S->pauseMutex.unlock();
-        };
-        return kj::READY_NOW;
-    }
-
-    kj::Promise<void> resume(ResumeContext context) override {
-        setStatus(context.getResults().getOldStatus());
-        if (S->status == Solver_PAUSED) {
-            S->status = Solver_RUNNING;
-            S->runningMutex.unlock();
-        }
-        return kj::READY_NOW;
-    }
-
-    kj::Promise<void> cancel(CancelContext context) override {
-        setStatus(context.getResults().getOldStatus());
-        int old_status = S->status;
-        S->status = Solver_CANCELLED;
-        if (old_status == Solver_PAUSED) {
-            S->runningMutex.unlock();
-        }
-        return kj::READY_NOW;
-    }
-
-    kj::Promise<void> getStatus(GetStatusContext context) override {
-        setStatus(context.getResults().getStatus());
-        return kj::READY_NOW;
-    }
-
-private:
-    void setStatus(mc::Status::Builder status) {
-        std::chrono::duration<double> t;
-        if (S->status == Solver_PAUSED) t = S->elapsed;
-        else t = S->elapsed + chrono::steady_clock::now() - S->tic;
-
-        status.setTime(t.count()*1000);
-
-        switch(S->status) {
-            case Solver_RUNNING:
-                status.setState(mc::State::RUNNING);
-                return;
-            case Solver_INIT:
-                status.setState(mc::State::INIT);
-                return;
-            case Solver_CANCELLED:
-                status.setState(mc::State::CANCELLED);
-                return;
-            case Solver_PAUSED:
-                status.setState(mc::State::PAUSED);
-                return;
-        }
-    }
-};
-
-class ModelCheckingImpl final: public mc::ModelChecking<mcs::Emptiness>::Server {
+class ModelCheckingImpl final {
     Solver S;
     int acnt;
     CellContainerSet cell_container;
@@ -280,14 +232,13 @@ public:
     bool short_unsat = false;
     bool short_sat = false;
 
-    ModelCheckingImpl(cnfafa::Afa::Reader cnfafa, char mode)
-    : solver_input(cnfafa.getOutputs().size())
-    , container_supq()
+    ModelCheckingImpl(char mode) : container_supq()
     {
-        short_unsat = !parse_cnfafa(cnfafa, S, &acnt);
+        short_unsat = !parse_cnfafa(S, &acnt);
         if (short_unsat) {
             return;
         }
+        solver_input.growTo(S.outputs.size());
 
         cell = new vector<int>(S.outputs.size() - S.finals.size());
         int j = 0;
@@ -322,66 +273,6 @@ public:
                 printf("VAR %d " L_LIT "\n", x, L_lit(S.outputs[x]));
             }
         }
-    }
-
-    kj::Promise<void> solve(SolveContext context) override {
-        auto result = context.getResults();
-
-        if (short_unsat) {
-            result.getMeta().setEmpty(true);
-            result.setTime(0);
-            return kj::READY_NOW;
-        }
-        if (short_sat) {
-            result.getMeta().setEmpty(false);
-            result.setTime(0);
-            return kj::READY_NOW;
-        }
-
-        kj::MutexGuarded<kj::Maybe<const kj::Executor&>> executor;
-        kj::Own<kj::PromiseFulfiller<void>> fulfiller;
-
-        kj::Thread([&]() noexcept {
-            kj::EventLoop loop;
-            kj::WaitScope scope(loop);
-
-            auto paf = kj::newPromiseAndFulfiller<void>();
-            fulfiller = kj::mv(paf.fulfiller);
-
-            *executor.lockExclusive() = kj::getCurrentThreadExecutor();
-            paf.promise.wait(scope);
-        }).detach();
-
-        const kj::Executor *exec;
-        {
-            auto lock = executor.lockExclusive();
-            lock.wait([&](kj::Maybe<const kj::Executor&> value) {
-                return value != nullptr;
-            });
-            exec = &KJ_ASSERT_NONNULL(*lock);
-        }
-
-        return exec->executeAsync(
-            [this, result, fulfiller{kj::mv(fulfiller)}]() mutable {
-                try {
-                    result.getMeta().setEmpty(modelCheck());
-                }
-                catch(Cancelled c) {
-                    result.setCancelled(true);
-                }
-
-                std::chrono::duration<double> t;
-                t = S.elapsed + chrono::steady_clock::now() - S.tic;
-                result.setTime(t.count()*1000);
-
-                fulfiller->fulfill();
-            }
-        );
-    }
-
-    kj::Promise<void> getControl(GetControlContext context) override {
-        context.getResults().setControl(kj::heap<ControlImpl>(&S));
-        return kj::READY_NOW;
     }
 
     bool modelCheck() {
@@ -550,42 +441,19 @@ public:
     }
 };
 
-class ModelCheckerImpl final: public mc::ModelChecker<cnfafa::Afa, mcs::Emptiness>::Server {
-public:
-    kj::Promise<void> load(LoadContext context) override {
-        cnfafa::Afa::Reader cnfafa = context.getParams().getModel();
-        context.getResults().setChecking(kj::heap<ModelCheckingImpl>(cnfafa, '2'));
-        return kj::READY_NOW;
-    }
-};
-
 int main(int argc, char** argv) {
     srand(1345719);
-    char mode = '2';
+    char mode = '3';
     if (argc >= 2) mode = argv[1][0];
-    if (argc >= 3) port = atoi(argv[2]);
 
-    if (port == 0) {
-        int fd = open(argv[2], O_RDONLY);
-        if (fd < 0) {
-            std::cout << "ERROR: Could not open file" << std::endl;
-            return -1;
-        }
-        {
-          capnp::StreamFdMessageReader message(fd);
-          ModelCheckingImpl mc(message.getRoot<cnfafa::Afa>(), mode);
-          close(fd);
-          if (mc.modelCheck()) {
-              std::cout << "EMPTY " << mc.solveCnt << " " << mc.satCnt << " " << mc.unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
-          } else {
-              std::cout << "NOT_EMPTY " << mc.solveCnt << " " << mc.satCnt << " " << mc.unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
-          }
-          if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
-        }
-        if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
-    } else {
-        capnp::EzRpcServer server(kj::heap<ModelCheckerImpl>(), "0.0.0.0", port);
-        auto& waitScope = server.getWaitScope();
-        kj::NEVER_DONE.wait(waitScope);
+    {
+      ModelCheckingImpl mc(mode);
+      if (mc.modelCheck()) {
+          std::cout << "EMPTY " << mc.solveCnt << " " << mc.satCnt << " " << mc.unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
+      } else {
+          std::cout << "NOT_EMPTY " << mc.solveCnt << " " << mc.satCnt << " " << mc.unsatCnt << " " << global_bubble_move_count << " " << global_bubble_move_count_undo << std::endl;
+      }
+      if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
     }
+    if (verbosity >= -2) printf("memstats %d %d %d\n", hor_head_count, hor_count, ver_count);
 }

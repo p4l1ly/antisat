@@ -831,13 +831,31 @@ bool Solver::solve(const vec<Lit>& assumps)
     nof_conflicts = 100;
     nof_learnts   = nConstrs() / 3;
 
-    for (int i = 0; i < assumps.size(); i++)
-        if (!assume(assumps[i]) || propagate() != NULL){
-            propQ.clear();
-            cancelUntil(0);
-            return false;
-        }
-    root_level = decisionLevel();
+    for (int i = 0; i < assumps.size(); i++) {
+      if (!assume(assumps[i])) {
+          propQ.clear();
+          cancelUntil(0);
+          return false;
+      }
+      ++root_level;
+      if (propagate() != NULL) {
+          propQ.clear();
+          cancelUntil(0);
+          return false;
+      }
+    }
+
+    // Trie can assume posq_outputs to be true. Trie's places should be the only watchers.
+    for (Lit posq_output: posq_outputs) {
+      if (value(posq_output) == l_Undef) {
+        check(enqueue(posq_output));
+      } else {
+        assert(value(posq_output) == l_False);
+      }
+    }
+
+    check(propagate() == NULL);
+
     return true;
 }
 
