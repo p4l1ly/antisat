@@ -197,6 +197,7 @@ public:
       if (ok){
         Clause* c;
         ok = Clause_new(*this, ps, false, c);
+        if (verbosity >= 2) printf("ADD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
         if (c != NULL) constrs.push(c);
       }
     }
@@ -205,6 +206,7 @@ public:
       if (ok){
         UpwardClause* c;
         ok = UpwardClause_new(*this, out, ps, c);
+        if (verbosity >= 2) printf("ADD_UPWARD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
         if (c != NULL) constrs.push(c);
       }
     }

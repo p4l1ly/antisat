@@ -111,6 +111,9 @@ void Solver::record(const vec<Lit>& clause)
     Clause* c;
     check(Clause_new(*this, clause, true, c));
     check(ok);
+    if (verbosity >= 2) {
+      printf("RECORD %p %p\n", c, c ? c->getSpecificPtr2() : NULL);
+    }
     check(enqueue(clause[0], c));
     if (c != NULL) learnts.push(c);
 }
@@ -184,6 +187,9 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
     out_btlevel = 0;
 
     p_reason.clear();
+    if (verbosity >= 2) {
+      printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl, confl->getSpecificPtr());
+    }
     confl->calcReason(*this, p, p_reason);
     int decLevel = decisionLevel();
     if (decLevel <= root_level) return false;
@@ -241,6 +247,9 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
               }
 
               p_reason.clear();
+              if (verbosity >= 2) {
+                printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl, confl->getSpecificPtr());
+              }
               confl->calcReason(*this, p, p_reason);
               --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
@@ -298,6 +307,12 @@ resolved:
     out_btlevel = out_btlevel_final;
 #pragma GCC diagnostic pop
 
+    if (verbosity >= 2){
+        printf(L_IND "Learnt1 ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
+
     if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
 
     {
@@ -327,7 +342,7 @@ resolved:
     for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
 
     if (verbosity >= 2){
-        printf(L_IND "Learnt ", L_ind);
+        printf(L_IND "Learnt2 ", L_ind);
         printClause(out_learnt);
         printf(" at level %d\n", out_btlevel);
     }
@@ -406,7 +421,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
 
               p_reason.clear();
               if (verbosity >= 2) {
-                printf("CALC_REASON " L_LIT "\n", L_lit(p));
+                printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl, confl->getSpecificPtr());
               }
               confl->calcReason(*this, p, p_reason);
 
@@ -474,11 +489,17 @@ resolved:
     out_btlevel = out_btlevel_final;
 #pragma GCC diagnostic pop
 
+    if (verbosity >= 2){
+        printf(L_IND "Learnt1 ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
+
     if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
 
     {
       int i, j;
-      for (i = j = 1; i < out_learnt.size(); i++) {
+      for (i = j = 1; i < out_learnt.size(); ++i) {
           Lit p = out_learnt[i];
           Reason *r = reason[var(p)];
           if (r == NULL) {
@@ -492,7 +513,7 @@ resolved:
                       out_learnt[j++] = out_learnt[i];
                       goto continue2;
                   }
-              if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
+              if (verbosity >= 2) std::cout << "OMIT " << p << " " << out_learnt.size() << std::endl;
           }
     continue2: ;
       }
@@ -503,7 +524,7 @@ resolved:
     for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
 
     if (verbosity >= 2){
-        printf(L_IND "Learnt ", L_ind);
+        printf(L_IND "Learnt2 ", L_ind);
         printClause(out_learnt);
         printf(" at level %d\n", out_btlevel);
     }
@@ -586,10 +607,12 @@ Reason* Solver::propagate(void)
               std::cout << std::flush;
             }
             Reason *confl2 = (*i)->propagate(*this, p, keep_watch);
-            if (confl2)
-                confl = confl2,
+            if (confl2) {
+                confl = confl2;
+                if (verbosity >= 2)
+                  printf("CONFLICT_DETECTED\n");
                 propQ.clear();
-            if (keep_watch) {
+            } if (keep_watch) {
                 if (verbosity >= 2) printf("MOVE_WATCH_PROP0 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
                 (*i)->moveWatch(j - (Constr**)ws, p);
                 *j++ = *i;
@@ -840,16 +863,9 @@ bool Solver::solve(const vec<Lit>& assumps)
       }
     }
 
-    // Trie can assume posq_outputs to be true. Trie's places should be the only watchers.
-    for (Lit posq_output: posq_outputs) {
-      if (value(posq_output) == l_Undef) {
-        check(enqueue(posq_output));
-      } else {
-        assert(value(posq_output) == l_False);
-      }
+    if (verbosity >= 2) {
+      printf("POSQ_OUTPUTS\n");
     }
-
-    check(propagate() == NULL);
 
     return true;
 }

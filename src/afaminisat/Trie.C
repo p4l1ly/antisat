@@ -541,9 +541,13 @@ void Trie::onSat(Solver &S) {
 
   RearGuard *rguard;
   VanGuard *vguard;
+  Lit accepting_tag = accepting_place.get_tag();
+  lbool accepting_val = S.value(accepting_tag);
+  int accepting_var = var(accepting_tag);
 
   if (
-    leftmost_rear_visit_level >= S.level[var(accepting_place.get_tag())] &&
+    accepting_val != l_Undef &&
+    leftmost_rear_visit_level >= S.level[accepting_var] &&
     leftmost_rear_visit_rear->last_van == NULL
   ) {
     rguard = leftmost_rear_visit_rear;
@@ -554,19 +558,17 @@ void Trie::onSat(Solver &S) {
     if (leftmost_rear_visit_level <= S.root_level) incomplete_rears = &root_new_rears;
     else incomplete_rears = &snapshots[leftmost_rear_visit_level - S.root_level - 1].new_rears;
 
-    rguard = &incomplete_rears->emplace_back(
-      Place{NULL, 0, 0}, 0, (RearGuard *)NULL, false
-    );
+    rguard = &incomplete_rears->emplace_back(Place{NULL, 0, 0}, 0, false);
     if (verbosity >= 2) std::cout << "NEW_REAR " << rguard << std::endl;
     leftmost.rear_visit_rear = rguard;
   }
 
   if (
-    leftmost_van_visit_level >= S.level[var(accepting_place.get_tag())] &&
+    accepting_val != l_Undef &&
+    leftmost_van_visit_level >= S.level[accepting_var] &&
     (
-      S.reason[var(accepting_place.get_tag())] == NULL ||
-      S.reason[var(accepting_place.get_tag())]->getSpecificPtr() !=
-        leftmost_van_visit_van->getSpecificPtr()
+      S.reason[accepting_var] == NULL ||
+      S.reason[accepting_var]->getSpecificPtr() != leftmost_van_visit_van->getSpecificPtr()
     )
   ) {
     vguard = leftmost_van_visit_van;
@@ -1094,9 +1096,8 @@ Place* RearGuard::jump(Solver &S) {
       } else {
         LogList<RearGuard> &new_rears =
           trie.snapshot_count == 0 ? trie.root_new_rears : trie.get_last_snapshot().new_rears;
-        rguard = van.rear = &new_rears.emplace_back(van, level, trie.last_rear, enabled);
-        if (trie.last_rear) trie.last_rear->next = rguard;
-        trie.last_rear = rguard;
+        rguard = van.rear = &new_rears.emplace_back(van, level, true);
+        rguard->entangle(trie);
         if (verbosity >= 2) {
           std::cout << "BRANCH_REAR " << rguard << " " << old_previous << " " << (accepting_place.hor != NULL) << std::endl;
         }
@@ -1199,10 +1200,7 @@ void Trie::undo(Solver& S) {
         std::cout << "UNTANGLE_REAR " << rguard << " " << &rguard << std::endl << std::flush;
       }
 
-      rguard.enabled = false;
-      if (rguard.previous != NULL) rguard.previous->next = rguard.next;
-      if (rguard.next == NULL) last_rear = rguard.previous;
-      else rguard.next->previous = rguard.previous;
+      rguard.untangle(*this);
     } else if (verbosity >= 2) {
       std::cout << "SKIP_REAR " << rguard << " " << &rguard << std::endl << std::flush;
     }
@@ -1299,11 +1297,7 @@ void Trie::undo(Solver& S) {
       rguard.enabled = true;
       rguard.last_change_level = rear_snapshot.last_change_level;
       rguard.accepting_place = rear_snapshot.accepting_place;
-
-      rguard.previous = last_rear;
-      rguard.next = NULL;
-      if (last_rear != NULL) last_rear->next = rear_snapshot.ix;
-      last_rear = rear_snapshot.ix;
+      rguard.entangle(*this);
     }
 
     if (!watch_unwatch) rguard.set_watch(S);
@@ -1391,17 +1385,11 @@ void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 }
 
 Place* Trie::reset(Solver &S) {
-  {
-    RearGuard *rguard = last_rear;
-    while (true) {
-      if (rguard == NULL) break;
-      if (verbosity >= 2) printf("ResettingRear %p\n", rguard);
-      if (!rguard->in_exhaust()) {
-        rguard->remove_watch(S, rguard->get_tag());
-      }
-      rguard = rguard->previous;
-    }
-  }
+  ITER_LOGLIST(root_new_rears, RearGuard, rguard, {
+    if (verbosity >= 2) printf("ResettingRear %p\n", &rguard);
+    if (rguard.enabled && !rguard.in_exhaust()) rguard.remove_watch(S, rguard.get_tag());
+  });
+  last_rear = NULL;
 
   ITER_LOGLIST(root_new_vans, VanGuard, vguard, {
     if (verbosity >= 2) printf("ResettingVan %p\n", &vguard);
@@ -1415,7 +1403,7 @@ Place* Trie::reset(Solver &S) {
   root_new_vans.clear_nodestroy();
 
   RearGuard &root_rguard = root_new_rears.emplace_back(
-    Place{&root, IX_NULL, IX_NULL}, -1, (RearGuard *)NULL, true
+    Place{&root, IX_NULL, IX_NULL}, -1, true
   );
   VanGuard &root_vguard = root_new_vans.emplace_back(
     Place{&root, 0, IX_NULL}, &root_rguard, 0, true
@@ -1434,11 +1422,11 @@ Place* Trie::reset(Solver &S) {
 
   Place *conflict = root_vguard.full_multimove_on_propagate(S, root_vguard.after_hors_change(S));
   if (conflict) {
-    last_rear = NULL;
     return conflict;
   }
   root_rguard.last_change_level = 0;
-  last_rear = &root_rguard;
+
+  root_rguard.entangle(*this);
   return root_rguard.jump(S);
 }
 
@@ -1653,11 +1641,8 @@ void Trie::make_accepting_snapshot(Solver &S) {
 void RearGuard::on_accept_van(Solver &S) {
   if (verbosity >= 2) std::cout << "ON_ACCEPT_VAN " << this << " " << *this << " " << accepting_place << std::endl;
 
-  enabled = false;
   Trie &trie = S.trie;
-  if (previous != NULL) previous->next = next;
-  if (next == NULL) trie.last_rear = previous;
-  else next->previous = previous;
+  untangle(trie);
 
   int global_depth;
   int depth;
@@ -1703,13 +1688,22 @@ void RearGuard::on_accept_van(Solver &S) {
   trie.accepting_place = accepting_place;
 }
 
-
-void RearGuard::on_accept_rear(Solver &S) {
+void RearGuard::untangle(Trie &trie) {
   enabled = false;
-  Trie &trie = S.trie;
   if (previous != NULL) previous->next = next;
   if (next == NULL) trie.last_rear = previous;
   else next->previous = previous;
+}
+
+void RearGuard::entangle(Trie &trie) {
+  previous = trie.last_rear;
+  if (trie.last_rear) trie.last_rear->next = this;
+  trie.last_rear = this;
+}
+
+void RearGuard::on_accept_rear(Solver &S) {
+  Trie &trie = S.trie;
+  untangle(trie);
 
   int global_depth;
   int depth;

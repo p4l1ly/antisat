@@ -132,12 +132,11 @@ struct RearGuard : public WatchedPlace {
   RearGuard(
     Place place,
     int last_change_level_,
-    RearGuard *previous_,
     bool enabled_
   )
   : WatchedPlace(place)
   , last_change_level(last_change_level_)
-  , previous(previous_)
+  , previous(NULL)
   , next(NULL)
   , enabled(enabled_)
   , last_van(NULL)
@@ -152,6 +151,8 @@ struct RearGuard : public WatchedPlace {
 
   void make_snapshot(Solver &S);
   void *getSpecificPtr2() { return this; }
+  void untangle(Trie &trie);
+  void entangle(Trie &trie);
 };
 
 struct VanGuard : public WatchedPlace {

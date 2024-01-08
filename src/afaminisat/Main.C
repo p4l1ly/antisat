@@ -105,7 +105,7 @@ bool parse_cnfafa(Solver& S, int* acnt) {
     S.output_map[var] = i;
     Lit lit = output > 0 ? Lit(var) : Lit(var, true);
     S.outputs.push(lit);
-    i++;
+    ++i;
   }
 
   for (int posqOutput: posqOutputs) {
@@ -140,6 +140,7 @@ bool parse_cnfafa(Solver& S, int* acnt) {
       }
       if (!S.okay())
         return false;
+      ++i;
     }
   }
 
@@ -388,6 +389,13 @@ public:
 
                           Clause *c;
                           bool ok_ = Clause_new_handleConflict(S, cell_out, c);
+                          if (verbosity >= 2) {
+                            printf("RECORD_ANTICHAIN %p %p", c, c ? c->getSpecificPtr2() : c);
+                            for (int j = 0; j < cell_out.size(); ++j) {
+                              std::cout << " " << cell_out[j];
+                            }
+                            std::cout << std::endl;
+                          }
                           assert(!ok_);
                           if (c == NULL) break;
                           S.addConstr(c);
