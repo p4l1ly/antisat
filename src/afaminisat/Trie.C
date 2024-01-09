@@ -1,13 +1,8 @@
 // TODO
 // 2. improve code beauty
-// 6. input generation:
-//      a. add upward-only and pure flags
-//      b. remove positive-only or negative-only variables
-//      c. find out why a1 contains 3 states instead of 2 (I think it is because we don't have
-//         unreachable state detection).
-//      d. find out why, in some test, we have initial propagation/assignment (unit clauses?)
 // 7. enable switching of heap vs tolerance order
-// 8. backport last few commits (unrelated to Trie) to the novan version
+// 9. test and backport posq stuff to novan
+// 10. binary clause reasons implementation (it should improve performance by 10 to 20% - suspicious)
 
 #include <algorithm>
 #include <iostream>
@@ -288,8 +283,12 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
   my_zeroes_set.resize(S.watches.size(), 0);
 
   my_literals.reserve(my_literals_.size());
+  my_guessable_literals.reserve(my_literals_.size());
   for (int i = 0; i < my_literals_.size(); ++i) {
     my_literals.push_back(my_literals_[i]);
+    if (!posq_output_map[var(my_literals_[i])]) {
+      my_guessable_literals.push_back(my_literals_[i]);
+    }
   }
   back_ptrs.resize(my_literals_.size());
   stack.reserve(my_literals_.size());
@@ -340,11 +339,16 @@ bool Trie::guess(Solver &S) {
     return true;
   }
   else {
-    if (active_var >= my_literals.size()) return false;
+    if (active_var >= my_guessable_literals.size()) {
+      if (last_rear_ignored != NULL) {
+        if (verbosity >= 2) printf("IGNORED_REMAINED1 %p\n", last_rear_ignored);
+      }
+      return false;
+    }
     active_var_old = active_var;
 
     do {
-      Lit p = my_literals[active_var];
+      Lit p = my_guessable_literals[active_var];
       if (S.value(p) == l_Undef) {
         if (verbosity >= 2) printf("GUESS_ACC %d " L_LIT "\n", active_var, L_lit(p));
 
@@ -358,11 +362,14 @@ bool Trie::guess(Solver &S) {
         return true;
       }
       ++active_var;
-    } while (active_var < my_literals.size());
+    } while (active_var < my_guessable_literals.size());
 
     ++active_var;
     if (verbosity >= 2) printf("noguess %d\n", active_var_old);
     S.undos.push_back(this);
+    if (last_rear_ignored != NULL) {
+      if (verbosity >= 2) printf("IGNORED_REMAINED2 %p\n", last_rear_ignored);
+    }
     return false;
   }
 }
@@ -414,7 +421,24 @@ int Place::get_depth_if_valid(Trie &trie) const {
 void Trie::onSat(Solver &S) {
   CHECK_ALL_DUPLICATE_PLACES(*this);
 
-  HorHead &leftmost = accepting_place.get_leftmost(*this);
+  Place aplace = accepting_place;
+
+  RearGuard *ignored_rear = last_rear_ignored;
+  while (ignored_rear != NULL) {
+    if (verbosity >= 2) {
+      std::cout << "IGNORED_ON_SAT " << ignored_rear << " " << *ignored_rear
+        << " " << ignored_rear->get_depth_if_valid(*this)
+        << " " << accepting_place.get_depth_if_valid(*this) << std::endl;
+    }
+
+    if (ignored_rear->is_best_accepting_rear(*this, aplace)) {
+      if (verbosity >= 2) printf("ACCEPT_AT_IGNORED %p\n", ignored_rear);
+      aplace = *ignored_rear;
+    }
+    ignored_rear = ignored_rear->previous;
+  }
+
+  HorHead &leftmost = aplace.get_leftmost(*this);
   const int leftmost_depth = leftmost.depth;
   const int leftmost_van_visit_level = leftmost.van_visit_level;
   const int leftmost_rear_visit_level = leftmost.rear_visit_level;
@@ -423,7 +447,7 @@ void Trie::onSat(Solver &S) {
   RearGuard *leftmost_rear_visit_rear = leftmost.rear_visit_rear;
 
   if (verbosity >= 2) {
-    std::cout << "ON_SAT " << accepting_place
+    std::cout << "ON_SAT " << aplace
       << " " << S.root_level
       << " " << leftmost_depth
       << " " << leftmost_van_visit_level
@@ -432,7 +456,7 @@ void Trie::onSat(Solver &S) {
       << " " << leftmost_van_visit_van
       << " " << leftmost_rear_visit_rear
       << " " << leftmost.tag
-      << " " << accepting_place.get_tag()
+      << " " << aplace.get_tag()
       << std::endl;
   }
 
@@ -445,7 +469,7 @@ void Trie::onSat(Solver &S) {
     ++on_sat_count;
   }
 
-  ITER_MY_ZEROES(accepting_place, x,
+  ITER_MY_ZEROES(aplace, x,
       if (verbosity >= 2) {
         printf("MY_ZERO1 " L_LIT " %d %d\n", L_lit(x), S.value(x).toInt(), S.level[var(x)]);
         std::cout << std::flush;
@@ -478,14 +502,14 @@ void Trie::onSat(Solver &S) {
 
   if (verbosity >= 2) printf("MAX_LEVEL %d\n", max_level);
 
-  bool ver_accept = accepting_place.is_ver();
+  bool ver_accept = aplace.is_ver();
   // We have found a solution that covers the last traversed clause => we
   // shrink the clause (cut it up to the knee) instead of adding a new branch
   // to the trie.
   if (added_vars.size() == 0) {
     if (verbosity >= 2) printf("NO_ADDED_VAR\n");
 
-    Place cut = ver_accept ? accepting_place : accepting_place.hor->back_ptr;
+    Place cut = ver_accept ? aplace : aplace.hor->back_ptr;
     cut.deref_ver().is_under_cut = true;
     if (leftmost_van_visit_level > S.root_level) {
       snapshots[leftmost_van_visit_level - S.root_level - 1].cuts.push_back(cut);
@@ -512,17 +536,17 @@ void Trie::onSat(Solver &S) {
   HorLine *extended_hor;
   unsigned extended_hor_ix;
   if (ver_accept) {
-    assert(accepting_place.deref_ver().hor == NULL);
+    assert(aplace.deref_ver().hor == NULL);
     // We create a new horizontal empty branch right to the current final place
     // (which is vertical because least_ver_accept is set only when accepting at
     // vertical places).
-    extended_hor = new HorLine{accepting_place};
+    extended_hor = new HorLine{aplace};
     if (verbosity >= -2) ++hor_count;
-    accepting_place.deref_ver().hor = extended_hor;
+    aplace.deref_ver().hor = extended_hor;
     extended_hor_ix = 0;
   } else {
-    extended_hor = accepting_place.hor;
-    extended_hor_ix = accepting_place.hor_ix + 1;
+    extended_hor = aplace.hor;
+    extended_hor_ix = aplace.hor_ix + 1;
     assert(extended_hor_ix == extended_hor->elems.size());
   }
 
@@ -534,6 +558,13 @@ void Trie::onSat(Solver &S) {
     Lit first_lit = added_vars[0].second;
     assert(leftmost_tag != first_lit);
     for (VerHead &verhead: extended_hor->elems) {
+      if (verhead.tag == first_lit) {
+        std::cout << "BAD " << extended_hor_ix << " " << leftmost_tag;
+        for (VerHead &verhead: extended_hor->elems) {
+          std::cout << " " << verhead.tag;
+        }
+        std::cout << std::endl << std::flush;
+      }
       assert(verhead.tag != first_lit);
     }
   }
@@ -541,7 +572,7 @@ void Trie::onSat(Solver &S) {
 
   RearGuard *rguard;
   VanGuard *vguard;
-  Lit accepting_tag = accepting_place.get_tag();
+  Lit accepting_tag = aplace.get_tag();
   lbool accepting_val = S.value(accepting_tag);
   int accepting_var = var(accepting_tag);
 
@@ -946,9 +977,15 @@ Place *StackItem::handle(Solver &S, RearGuard &rear) {
       if (vguard.is_ver()) {
         HorLine *hor2 = vguard.deref_ver().hor;
         if (hor2 == NULL) return NULL;
+        if (verbosity >= 2) {
+          std::cout << "ADD_TO_GREATER_STACK3 " << PlaceAttrs(Place{hor2, 0, IX_NULL}, S) << "\n";
+        }
         trie.stack.emplace_back(hor2, 0);
       } else {
         if (vguard.hor_ix + 1 == vguard.hor->elems.size()) return NULL;
+        if (verbosity >= 2) {
+          std::cout << "ADD_TO_GREATER_STACK4 " << PlaceAttrs(Place{vguard.hor, vguard.hor_ix + 1, IX_NULL}, S) << "\n";
+        }
         trie.stack.emplace_back(vguard.hor, vguard.hor_ix + 1);
       }
 
@@ -1051,7 +1088,7 @@ MultimoveEnd VanGuard::multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   }
 }
 
-Place* RearGuard::jump(Solver &S) {
+Place* RearGuard::jump(Solver &S, Lit old_tag) {
   Trie &trie = S.trie;
   int level = S.decisionLevel();
 
@@ -1097,10 +1134,10 @@ Place* RearGuard::jump(Solver &S) {
         LogList<RearGuard> &new_rears =
           trie.snapshot_count == 0 ? trie.root_new_rears : trie.get_last_snapshot().new_rears;
         rguard = van.rear = &new_rears.emplace_back(van, level, true);
-        rguard->entangle(trie);
         if (verbosity >= 2) {
           std::cout << "BRANCH_REAR " << rguard << " " << old_previous << " " << (accepting_place.hor != NULL) << std::endl;
         }
+        rguard->entangle(trie);
         if (old_previous != NULL) old_previous->next = NULL;
         van.previous = NULL;
         rguard->last_van = &van;
@@ -1112,15 +1149,26 @@ Place* RearGuard::jump(Solver &S) {
       van.set_van_visit_level(level, van);
       Place* conflict = van.full_multimove_on_propagate(S, van.after_vers_change(S));
       if (value == l_False) {
-        if (verbosity >= 2) std::cout << "VAN_VALUE=FALSE " << rguard->last_van << std::endl;
+        if (verbosity >= 2) std::cout << "VAN_VALUE=FALSE " << rguard->last_van << " " << conflict << std::endl;
         if (conflict == NULL) {
           // each branch of the pushed van will stop at a l_True or l_Undef => we recur at most once.
-          conflict = rguard->jump(S);
-          if (conflict != NULL) {(Place &)*this = (Place &)*rguard = *conflict; return conflict;}
-        } else {(Place&)*this = (Place &)*rguard = *conflict; return conflict;}
+          conflict = rguard->jump(S, reuse ? old_tag : lit);
+        }
+        if (conflict != NULL) {
+          // quite a heavy way to satisfy undo.remove_watch
+          if (reuse) {
+            untangle(trie, old_tag);
+          }
+          else {
+            untangle(trie, old_tag);
+            rguard->untangle(trie, lit);
+          }
+          return conflict;
+        }
       } else {
         assert(conflict == NULL);
         rguard->set_watch(S);
+        if (reuse) rguard->retangle(trie, old_tag, lit);
       }
       if (reuse) {
         if (verbosity >= 2) std::cout << "SKIP_ON_ACCEPT_VAN" << std::endl;
@@ -1129,7 +1177,7 @@ Place* RearGuard::jump(Solver &S) {
     }
   }
 
-  on_accept_van(S);
+  on_accept_van(S, old_tag);
 
   return NULL;
 }
@@ -1137,7 +1185,7 @@ Place* RearGuard::jump(Solver &S) {
 
 void Trie::undo(Solver& S) {
   if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, snapshot_count);
-  if (active_var > my_literals.size()) {
+  if (active_var > my_guessable_literals.size()) {
     if (verbosity >= 2) {
       printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(S.outputs[active_var_old]));
       std::cout << std::flush;
@@ -1195,12 +1243,14 @@ void Trie::undo(Solver& S) {
           printf(L_LIT, L_lit(rguard.get_tag()));
           std::cout << " " << &rguard << std::endl << std::flush;
         }
-        rguard.remove_watch(S, rguard.get_tag());
       } else if (verbosity >= 2) {
         std::cout << "UNTANGLE_REAR " << rguard << " " << &rguard << std::endl << std::flush;
+        assert(false);
       }
 
-      rguard.untangle(*this);
+      Lit tag = rguard.get_tag();
+      rguard.remove_watch(S, tag);
+      rguard.untangle(*this, tag);
     } else if (verbosity >= 2) {
       std::cout << "SKIP_REAR " << rguard << " " << &rguard << std::endl << std::flush;
     }
@@ -1281,13 +1331,13 @@ void Trie::undo(Solver& S) {
     Lit new_tag = rear_snapshot.place.get_tag();
 
     if (rguard.enabled) {
-      if (!rguard.in_exhaust()) {
-        Lit old_tag = rguard.get_tag();
-        if (old_tag == new_tag) {
-          watch_unwatch = true;
-        } else {
-          rguard.remove_watch(S, rguard.get_tag());
-        }
+      assert(!rguard.in_exhaust());
+      Lit old_tag = rguard.get_tag();
+      if (old_tag == new_tag) {
+        watch_unwatch = true;
+      } else {
+        rguard.remove_watch(S, rguard.get_tag());
+        rguard.retangle(*this, old_tag, new_tag);
       }
       (Place &)rguard = rear_snapshot.place;
       rguard.last_change_level = rear_snapshot.last_change_level;
@@ -1390,6 +1440,7 @@ Place* Trie::reset(Solver &S) {
     if (rguard.enabled && !rguard.in_exhaust()) rguard.remove_watch(S, rguard.get_tag());
   });
   last_rear = NULL;
+  last_rear_ignored = NULL;
 
   ITER_LOGLIST(root_new_vans, VanGuard, vguard, {
     if (verbosity >= 2) printf("ResettingVan %p\n", &vguard);
@@ -1427,7 +1478,7 @@ Place* Trie::reset(Solver &S) {
   root_rguard.last_change_level = 0;
 
   root_rguard.entangle(*this);
-  return root_rguard.jump(S);
+  return root_rguard.jump(S, lit_Undef);
 }
 
 Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
@@ -1638,11 +1689,11 @@ void Trie::make_accepting_snapshot(Solver &S) {
 }
 
 
-void RearGuard::on_accept_van(Solver &S) {
+void RearGuard::on_accept_van(Solver &S, Lit old_tag) {
   if (verbosity >= 2) std::cout << "ON_ACCEPT_VAN " << this << " " << *this << " " << accepting_place << std::endl;
 
   Trie &trie = S.trie;
-  untangle(trie);
+  untangle(trie, old_tag);
 
   int global_depth;
   int depth;
@@ -1688,23 +1739,70 @@ void RearGuard::on_accept_van(Solver &S) {
   trie.accepting_place = accepting_place;
 }
 
-void RearGuard::untangle(Trie &trie) {
+void RearGuard::untangle(Trie &trie, Lit old_tag) {
   enabled = false;
   if (previous != NULL) previous->next = next;
-  if (next == NULL) trie.last_rear = previous;
+  if (next == NULL) {
+    if (old_tag == lit_Undef || !trie.posq_output_map[var(old_tag)]) {
+      trie.last_rear = previous;
+    } else {
+      if (verbosity >= 2) printf("UNTANGLE_IGNORED %p\n", this);
+      trie.last_rear_ignored = previous;
+    }
+  }
   else next->previous = previous;
 }
 
-void RearGuard::entangle(Trie &trie) {
-  previous = trie.last_rear;
-  if (trie.last_rear) trie.last_rear->next = this;
-  trie.last_rear = this;
+void RearGuard::retangle(Trie &trie, Lit old_tag, Lit new_tag) {
+  int old_var = var(old_tag);
+  int new_var = var(new_tag);
+  if (old_var == new_var) return;
+  bool old_posq = old_var != var_Undef && trie.posq_output_map[old_var];
+  bool new_posq = trie.posq_output_map[new_var];
+  if (old_posq == new_posq) return;
+
+  if (verbosity >= 2) printf("RETANGLE_IGNORED %p %d %d\n", this, old_posq, new_posq);
+
+  // untangle
+  if (previous != NULL) previous->next = next;
+  if (next == NULL) {
+    if (new_posq) {
+      trie.last_rear = previous;
+    } else {
+      trie.last_rear_ignored = previous;
+    }
+  } else next->previous = previous;
+
+  // entangle
+  RearGuard **last_rear;
+  if (old_posq) {
+    last_rear = &trie.last_rear;
+  } else {
+    last_rear = &trie.last_rear_ignored;
+  }
+
+  previous = *last_rear;
+  if (*last_rear) (*last_rear)->next = this;
+  *last_rear = this;
+  next = NULL;
 }
 
-void RearGuard::on_accept_rear(Solver &S) {
-  Trie &trie = S.trie;
-  untangle(trie);
+void RearGuard::entangle(Trie &trie) {
+  RearGuard **last_rear;
+  if (hor_ix == IX_NULL || !trie.posq_output_map[var(get_tag())]) {
+    last_rear = &trie.last_rear;
+  } else {
+    if (verbosity >= 2) printf("ENTANGLE_IGNORED %p\n", this);
+    last_rear = &trie.last_rear_ignored;
+  }
 
+  previous = *last_rear;
+  if (*last_rear) (*last_rear)->next = this;
+  *last_rear = this;
+  next = NULL;
+}
+
+bool RearGuard::is_best_accepting_rear(Trie &trie, Place aplace) {
   int global_depth;
   int depth;
 
@@ -1716,33 +1814,41 @@ void RearGuard::on_accept_rear(Solver &S) {
 
   if (is_ver()) {
     HorHead &horhead = deref_ver();
-    if (horhead.hor != NULL) return;
+    if (horhead.hor != NULL) {return false;}
     depth = horhead.depth;
-    global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth >= depth) return;
+    global_depth = aplace.get_depth_if_valid(trie);
+    if (global_depth >= depth) {return false;}
   } else if (hor == &trie.root) {
-    global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth > 0) return;
-    if (hor->elems.size() != hor_ix + 1) return;
+    global_depth = aplace.get_depth_if_valid(trie);
+    if (global_depth > 0) {return false;}
+    if (hor->elems.size() != hor_ix + 1) {return false;}
     depth = 0;
   } else {
-    if (hor->elems.size() != hor_ix + 1) return;
+    if (hor->elems.size() != hor_ix + 1) {return false;}
     Place back = hor->back_ptr;
     depth = back.deref_ver().depth;
-    global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth > depth) return;
+    global_depth = aplace.get_depth_if_valid(trie);
+    if (global_depth > depth) {return false;}
 
     if (global_depth == depth) {
-      Place old_accepting_place = trie.accepting_place;
-      if (old_accepting_place.is_ver()) {
+      if (aplace.is_ver()) {
         if (
-          old_accepting_place.hor != back.hor ||
-          old_accepting_place.hor_ix != back.hor_ix
-        ) return;
+          aplace.hor != back.hor ||
+          aplace.hor_ix != back.hor_ix
+        ) {return false;}
       }
-      else if (old_accepting_place.hor != hor) return;
+      else if (aplace.hor != hor) {return false;}
     }
   }
+
+  return true;
+}
+
+void RearGuard::on_accept_rear(Solver &S, Lit old_tag) {
+  Trie &trie = S.trie;
+  untangle(trie, old_tag);
+
+  if (!is_best_accepting_rear(trie, trie.accepting_place)) return;
 
   trie.make_accepting_snapshot(S);
   if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_REAR " << this << " " << *this << std::endl;
@@ -1768,18 +1874,18 @@ Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
     remove_watch_neg(S, ~p);
   }
 
-  Lit out_lit = get_tag();
-  lbool value = S.value(out_lit);
+  lbool value = S.value(get_tag());
 
   if (value == l_True) {
+    assert(get_tag() == p);
     if (verbosity >= 2) std::cout << "TRIGGERED_REAR_ACCEPT " << this << std::endl;
-    on_accept_rear(S);
+    on_accept_rear(S, p);
 
     CHECK_ALL_DUPLICATE_PLACES(S.trie);
     return NULL;
   }
 
-  return jump(S);
+  return jump(S, p);
 }
 
 

@@ -863,9 +863,7 @@ bool Solver::solve(const vec<Lit>& assumps)
       }
     }
 
-    if (verbosity >= 2) {
-      printf("POSQ_OUTPUTS\n");
-    }
+    if (verbosity >= 2) printf("INIT_ASSUMPTIONS_END\n");
 
     return true;
 }

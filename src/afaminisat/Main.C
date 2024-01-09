@@ -41,7 +41,7 @@ using std::string;
 namespace chrono = std::chrono;
 
 #ifdef MY_DEBUG
-int verbosity = 4;
+int verbosity = -4;
 const int VERBOSE_FROM = -1;
 #endif
 const bool write_debug_dots = false;
@@ -98,6 +98,7 @@ bool parse_cnfafa(Solver& S, int* acnt) {
   for (auto upward: upwardClauses) upwardClausesSet.insert(upward);
 
   S.output_map.growTo(nVars, -1);
+  S.trie.posq_output_map.resize(nVars, false);
 
   int i = 0;
   for (int output: outputs) {
@@ -109,7 +110,7 @@ bool parse_cnfafa(Solver& S, int* acnt) {
   }
 
   for (int posqOutput: posqOutputs) {
-    S.posq_outputs.push_back(S.outputs[posqOutput]);
+    S.trie.posq_output_map[var(S.outputs[posqOutput])] = true;
   }
 
   for (auto final_: finals) S.finals.insert(final_);

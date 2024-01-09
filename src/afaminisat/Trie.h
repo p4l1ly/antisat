@@ -143,16 +143,20 @@ struct RearGuard : public WatchedPlace {
   , accepting_place(NULL, 0, 0)
   { }
 
-  void on_accept_rear(Solver &S);
-  void on_accept_van(Solver &S);
+  void on_accept_rear(Solver &S, Lit old_tag);
+  void on_accept_van(Solver &S, Lit old_tag);
 
-  Place* jump(Solver &S);
+  Place* jump(Solver &S, Lit old_tag);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S);
   void *getSpecificPtr2() { return this; }
-  void untangle(Trie &trie);
+
+  bool is_best_accepting_rear(Trie &trie, Place aplace);
+
+  void untangle(Trie &trie, Lit p);
   void entangle(Trie &trie);
+  void retangle(Trie &trie, Lit old_tag, Lit new_tag);
 };
 
 struct VanGuard : public WatchedPlace {
@@ -347,9 +351,11 @@ public:
   LogList<VanGuard> root_new_vans;
   vector<StackItem> stack;
   RearGuard *last_rear = NULL;
+  RearGuard *last_rear_ignored = NULL;
 
-  // constant - the number of states of the analysed AFA
   vector<Lit> my_literals;
+  vector<Lit> my_guessable_literals;
+  std::vector<bool> posq_output_map;
 
   // There is one back_ptr for each variable (= state of the analysed AFA).
   // If the trie is already in the accepting condition (all places have accepted),
