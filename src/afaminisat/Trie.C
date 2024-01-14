@@ -1152,16 +1152,22 @@ Place* RearGuard::jump(Solver &S, Lit old_tag) {
         if (verbosity >= 2) std::cout << "VAN_VALUE=FALSE " << rguard->last_van << " " << conflict << std::endl;
         if (conflict == NULL) {
           // each branch of the pushed van will stop at a l_True or l_Undef => we recur at most once.
+          // Untrue. We jump to one branch of the pushed van, we push it further, which can cause
+          // unit propagation of l_False in another branch of the pushed van.
+          if (verbosity >= 2) printf("JUMP2 %p\n", rguard);
           conflict = rguard->jump(S, reuse ? old_tag : lit);
+          if (verbosity >= 2) printf("JUMP2END %p\n", rguard);
         }
         if (conflict != NULL) {
           // quite a heavy way to satisfy undo.remove_watch
           if (reuse) {
-            untangle(trie, old_tag);
+            if (verbosity >= 2) printf("UNTANGLE1 %p\n", rguard);
+            if (enabled) untangle(trie, old_tag);
           }
           else {
-            untangle(trie, old_tag);
-            rguard->untangle(trie, lit);
+            if (verbosity >= 2) printf("UNTANGLE2 %p\n", rguard);
+            if (enabled) untangle(trie, old_tag);
+            if (rguard->enabled) rguard->untangle(trie, lit);
           }
           return conflict;
         }
@@ -1751,9 +1757,27 @@ void RearGuard::untangle(Trie &trie, Lit old_tag) {
     }
   }
   else next->previous = previous;
+
+  if (verbosity >= 2) {
+    printf("UNTANGLE %p\n", this);
+
+    RearGuard *r = trie.last_rear;
+    while (r) {
+      printf("NONIGNORED %p\n", r);
+      r = r->previous;
+    }
+
+    r = trie.last_rear_ignored;
+    while (r) {
+      printf("IGNORED %p\n", r);
+      r = r->previous;
+    }
+  }
 }
 
 void RearGuard::retangle(Trie &trie, Lit old_tag, Lit new_tag) {
+  if (verbosity >= 2) printf("RETANGLE %p\n", this);
+
   int old_var = var(old_tag);
   int new_var = var(new_tag);
   if (old_var == new_var) return;
@@ -1785,9 +1809,25 @@ void RearGuard::retangle(Trie &trie, Lit old_tag, Lit new_tag) {
   if (*last_rear) (*last_rear)->next = this;
   *last_rear = this;
   next = NULL;
+
+  if (verbosity >= 2) {
+    RearGuard *r = trie.last_rear;
+    while (r) {
+      printf("NONIGNORED %p\n", r);
+      r = r->previous;
+    }
+
+    r = trie.last_rear_ignored;
+    while (r) {
+      printf("IGNORED %p\n", r);
+      r = r->previous;
+    }
+  }
 }
 
 void RearGuard::entangle(Trie &trie) {
+  if (verbosity >= 2) printf("ENTANGLE %p\n", this);
+
   RearGuard **last_rear;
   if (hor_ix == IX_NULL || !trie.posq_output_map[var(get_tag())]) {
     last_rear = &trie.last_rear;
@@ -1800,6 +1840,20 @@ void RearGuard::entangle(Trie &trie) {
   if (*last_rear) (*last_rear)->next = this;
   *last_rear = this;
   next = NULL;
+
+  if (verbosity >= 2) {
+    RearGuard *r = trie.last_rear;
+    while (r) {
+      printf("NONIGNORED %p\n", r);
+      r = r->previous;
+    }
+
+    r = trie.last_rear_ignored;
+    while (r) {
+      printf("IGNORED %p\n", r);
+      r = r->previous;
+    }
+  }
 }
 
 bool RearGuard::is_best_accepting_rear(Trie &trie, Place aplace) {
