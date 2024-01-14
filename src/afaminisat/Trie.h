@@ -181,7 +181,7 @@ struct VanGuard : public WatchedPlace {
     }
   }
 
-  void on_accept(Solver &S);
+  bool on_accept(Solver &S, bool untangle = true);
   Place* on_exhaust(Solver &S);
   Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
@@ -340,7 +340,7 @@ extern Mode TRIE_MODE;
 struct StackItem {
   HorLine* hor;
   unsigned hor_ix;
-  Place *handle(Solver &S, RearGuard &rear);
+  std::pair<VanGuard*, bool> handle(Solver &S, RearGuard &rear, VanGuard *reusable);
 };
 
 class Trie : public Undoable {

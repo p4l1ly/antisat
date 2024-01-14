@@ -909,66 +909,68 @@ void VanGuard::branch(Solver &S) {
 }
 
 
-Place *StackItem::handle(Solver &S, RearGuard &rear) {
+std::pair<VanGuard*, bool> StackItem::handle(Solver &S, RearGuard &rear, VanGuard *vguard) {
   Place place = {hor, hor_ix, IX_NULL};
   Trie &trie = S.trie;
 
-  LogList<VanGuard> &new_vans =
-    trie.snapshot_count == 0 ? trie.root_new_vans : trie.get_last_snapshot().new_vans;
+  if (vguard == NULL) {
+    LogList<VanGuard> &new_vans =
+      trie.snapshot_count == 0 ? trie.root_new_vans : trie.get_last_snapshot().new_vans;
 
-  VanGuard &vguard = new_vans.emplace_back(place, &rear, S.decisionLevel(), false);
+    vguard = &new_vans.emplace_back(place, &rear, S.decisionLevel(), false);
+  } else {
+    (Place &)*vguard = place;
+    vguard->previous = NULL;
+    vguard->next = NULL;
+  }
 
-  hor->back_ptr.deref_ver().van_visit_van = &vguard;
+  hor->back_ptr.deref_ver().van_visit_van = vguard;
 
   if (verbosity >= 2) {
     std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << std::endl;
   }
-  switch (vguard.multimove_on_propagate(S, vguard.after_hors_change(S))) {
+  switch (vguard->multimove_on_propagate(S, vguard->after_hors_change(S))) {
     case MultimoveEnd::E_WATCH: {
-      vguard.enabled = true;
+      vguard->enabled = true;
       VanGuard *pre = rear.last_van;
-      if (pre) pre->next = &vguard;
-      vguard.previous = pre;
-      rear.last_van = &vguard;
-      vguard.set_watch(S);
+      if (pre) pre->next = vguard;
+      vguard->previous = pre;
+      rear.last_van = vguard;
+      vguard->set_watch(S);
 
-      if (verbosity >= 2) printf("SAVE_AS_VAN_WATCH %p %d %p %p\n", hor, hor_ix, &vguard, &rear);
+      if (verbosity >= 2) printf("SAVE_AS_VAN_WATCH %p %d %p %p\n", hor, hor_ix, vguard, &rear);
 
-      if (vguard.is_ver()) {
-        HorLine *hor2 = vguard.deref_ver().hor;
-        if (hor2 == NULL) return NULL;
+      if (vguard->is_ver()) {
+        HorLine *hor2 = vguard->deref_ver().hor;
+        if (hor2 == NULL) return std::pair<VanGuard*, bool>(NULL, false);
         if (verbosity >= 2) {
           std::cout << "ADD_TO_GREATER_STACK3 " << PlaceAttrs(Place{hor2, 0, IX_NULL}, S) << "\n";
         }
         trie.stack.emplace_back(hor2, 0);
       } else {
-        if (vguard.hor_ix + 1 == vguard.hor->elems.size()) return NULL;
-        if (verbosity >= 2) {
-          std::cout << "ADD_TO_GREATER_STACK4 " << PlaceAttrs(Place{vguard.hor, vguard.hor_ix + 1, IX_NULL}, S) << "\n";
+        if (vguard->hor_ix + 1 == vguard->hor->elems.size()) {
+          return std::pair<VanGuard*, bool>(NULL, false);
         }
-        trie.stack.emplace_back(vguard.hor, vguard.hor_ix + 1);
+        if (verbosity >= 2) {
+          std::cout << "ADD_TO_GREATER_STACK4 " << PlaceAttrs(Place{vguard->hor, vguard->hor_ix + 1, IX_NULL}, S) << "\n";
+        }
+        trie.stack.emplace_back(vguard->hor, vguard->hor_ix + 1);
       }
 
-      return NULL;
+      return std::pair<VanGuard*, bool>(NULL, false);
     }
     case MultimoveEnd::E_DONE: {
-      if (verbosity >= 2) printf("SAVE_AS_VAN_DONE %p %d %p %p\n", hor, hor_ix, &vguard, &rear);
-      vguard.enabled = true;
-      VanGuard *pre = rear.last_van;
-      if (pre) pre->next = &vguard;
-      vguard.previous = pre;
-      rear.last_van = &vguard;
-      vguard.on_accept(S);
-      return NULL;
+      if (verbosity >= 2) printf("SAVE_AS_VAN_DONE %p %d %p %p\n", hor, hor_ix, vguard, &rear);
+      return std::pair<VanGuard*, bool>(vguard->on_accept(S, false) ? NULL : vguard, false);
     }
     default: { // case MultimoveEnd::E_EXHAUST:
       if (rear.last_change_level == -1) { // this means that rear is an uninitialized root rear
-        return &vguard;
+        return std::pair<VanGuard*, bool>(vguard, true);
       }
-      if (S.enqueue(rear.get_tag(), &vguard)) {
-        return NULL;
+      if (S.enqueue(rear.get_tag(), vguard)) {
+        return std::pair<VanGuard*, bool>(NULL, false);
       } else {
-        return &vguard;
+        return std::pair<VanGuard*, bool>(vguard, true);
       }
     }
   }
@@ -1469,6 +1471,7 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   MultimoveEnd end = multimove_on_propagate(S, what_to_do);
 
   Trie &trie = S.trie;
+  VanGuard *reusable = NULL;
 
   switch (end) {
     case MultimoveEnd::E_WATCH: {
@@ -1484,8 +1487,7 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
       break;
     }
     case MultimoveEnd::E_DONE: {
-      on_accept(S);
-      // TODO if stack is not empty, we can reuse this VanGuard.
+      if (!on_accept(S)) reusable = this;
       break;
     }
     default: {  // MultimoveEnd::E_EXHAUST
@@ -1499,12 +1501,12 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
   while (!trie.stack.empty()) {
     StackItem rsi = trie.stack.back();
     trie.stack.pop_back();
-    Place *reason = rsi.handle(S, rear_);
-    if (reason != NULL) {
+    std::pair<VanGuard *, bool> handle_out = rsi.handle(S, rear_, reusable);
+    if (handle_out.second) {
       trie.stack.clear();
       CHECK_ALL_DUPLICATE_PLACES(trie);
-      return reason;
-    }
+      return handle_out.first;
+    } else reusable = handle_out.first;
   }
 
   CHECK_ALL_DUPLICATE_PLACES(trie);
@@ -1512,15 +1514,17 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 }
 
 
-void VanGuard::on_accept(Solver &S) {
+bool VanGuard::on_accept(Solver &S, bool untangle) {
   if (verbosity >= 2) {
     std::cout << "ON_ACCEPT " << this << " " << rear << " " << previous << " " << next << " "
       << last_change_level << " " << S.decisionLevel() << " " << rear->last_change_level << std::endl;
   }
-  enabled = false;
-  if (previous != NULL) previous->next = next;
-  if (next == NULL) rear->last_van = previous;
-  else next->previous = previous;
+  if (untangle) {
+    enabled = false;
+    if (previous != NULL) previous->next = next;
+    if (next == NULL) rear->last_van = previous;
+    else next->previous = previous;
+  }
 
   Trie &trie = S.trie;
   int global_depth;
@@ -1534,27 +1538,27 @@ void VanGuard::on_accept(Solver &S) {
   // RearGuard is reused, if the level changes.
   if (is_ver()) {
     HorHead &horhead = deref_ver();
-    if (horhead.hor != NULL) return;
+    if (horhead.hor != NULL) return false;
     depth = horhead.depth;
     global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth >= depth) return;
+    if (global_depth >= depth) return false;
     rear_depth = rear->accepting_place.get_depth_if_valid(trie);
-    if (rear_depth >= depth) return;
+    if (rear_depth >= depth) return false;
   } else if (hor == &trie.root) {
     global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth > 0) return;
-    if (hor->elems.size() != hor_ix + 1) return;
+    if (global_depth > 0) return false;
+    if (hor->elems.size() != hor_ix + 1) return false;
     rear_depth = rear->accepting_place.get_depth_if_valid(trie);
-    if (rear_depth > 0) return;
+    if (rear_depth > 0) return false;
     depth = 0;
   } else {
-    if (hor->elems.size() != hor_ix + 1) return;
+    if (hor->elems.size() != hor_ix + 1) return false;
     Place back = hor->back_ptr;
     depth = back.deref_ver().depth;
     global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth > depth) return;
+    if (global_depth > depth) return false;
     rear_depth = rear->accepting_place.get_depth_if_valid(trie);
-    if (rear_depth > depth) return;
+    if (rear_depth > depth) return false;
 
     if (global_depth == depth && rear_depth == depth) {
       Place old_accepting_place = rear->accepting_place;
@@ -1562,15 +1566,16 @@ void VanGuard::on_accept(Solver &S) {
         if (
           old_accepting_place.hor != back.hor ||
           old_accepting_place.hor_ix != back.hor_ix
-        ) return;
+        ) return false;
       }
-      else if (old_accepting_place.hor != hor) return;
+      else if (old_accepting_place.hor != hor) return false;
     }
   }
 
   rear->make_snapshot(S, S.decisionLevel());
   if (verbosity >= 2) std::cout << "DEEPEST_VAN_ACCEPT " << this << " " << *this << " " << rear << std::endl;
   rear->accepting_place = *this;
+  return true;
 }
 
 void RearGuard::make_snapshot(Solver &S, int level) {
