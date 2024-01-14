@@ -258,10 +258,12 @@ bool Trie::guess(Solver &S) {
     if (verbosity >= 2) {
       std::cout << "TRIGGERED_REAR_ACCEPT " << last_rear
         << " " << S.level[var(lit)] << " " << lit
-      << std::endl;
+        << " " << last_rear->get_leftmost(*this).rear_visit_level
+        << std::endl;
     }
-    last_rear->make_snapshot(S, S.level[var(lit)]);
-    last_rear->on_accept_rear(S);
+    int level = max(last_rear->get_leftmost(*this).rear_visit_level, S.level[var(lit)]);
+    last_rear->make_snapshot(S, level);
+    last_rear->on_accept_rear(S, level);
     last_rear->remove_watch(S, lit);
 
     RearGuard *prev = last_rear->previous;
@@ -347,17 +349,20 @@ void Place::set_van_visit_level(int level, VanGuard &van) {
 
 void Place::set_rear_visit_level(int level, RearGuard &rear, Trie &trie) {
   HorHead *horhead;
+  if (verbosity >= 2) std::cout << "REAR_VISIT_LEVEL0 " << *this << " " << level << std::endl;
   if (is_ver()) {
      horhead = &deref_ver();
+     horhead->rear_visit_level = level;
      if (horhead->hor) return;
   } else {
-    if (hor->elems.size() != hor_ix + 1) return;
     Place back = hor->back_ptr;
     if (back.hor != NULL) horhead = &back.deref_ver();
     else horhead = &trie.root_leftmost;
+    horhead->rear_visit_level = level;
+    if (hor->elems.size() != hor_ix + 1) return;
   }
-  if (verbosity >= 2) std::cout << "REAR_VISIT_LEVEL0 " << *this << " " << level << std::endl;
-  horhead->rear_visit_level = level;
+
+  if (verbosity >= 2) std::cout << "REAR_VISIT_REAR " << *this << std::endl;
   horhead->rear_visit_rear = &rear;
 }
 
@@ -1141,7 +1146,7 @@ Place* RearGuard::jump(Solver &S, Lit old_tag) {
 
 
 void Trie::undo(Solver& S) {
-  if (verbosity >= 2) printf("UNDO %d %d %d\n", S.decisionLevel(), S.root_level, snapshot_count);
+  if (verbosity >= 2) printf("UNDO %d %d %d %p\n", S.decisionLevel(), S.root_level, snapshot_count, &get_last_snapshot());
   if (active_var > my_guessable_literals.size()) {
     if (verbosity >= 2) {
       printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(S.outputs[active_var_old]));
@@ -1310,13 +1315,17 @@ void Trie::undo(Solver& S) {
     if (!watch_unwatch) rguard.set_watch(S);
   }
 
-  if (snapshot.accepting_place.hor_ix != IX_NULL) {
+  if ((int)snapshot_count <= accepting_place_level - S.root_level) {
     if (verbosity >= 2) {
       std::cout << "USE_ACCEPTING_SNAPSHOT "
-        << accepting_place << "->" << snapshot.accepting_place << std::endl;
+        << accepting_place << "->" << snapshot.accepting_place
+        << " " << accepting_place_level
+        << "->" << snapshot.accepting_place_level
+        << std::endl;
     }
 
     accepting_place = snapshot.accepting_place;
+    accepting_place_level = snapshot.accepting_place_level;
   }
 
   for (Place cut : snapshot.cuts) cut.cut_away();
@@ -1331,6 +1340,7 @@ void Trie::undo(Solver& S) {
 
 Snapshot& Trie::new_snapshot() {
   unsigned ix = snapshot_count;
+  if (verbosity >= 2) printf("NEW_SNAPSHOT %d\n", ix);
   ++snapshot_count;
 
   Snapshot *snapshot;
@@ -1345,7 +1355,9 @@ Snapshot& Trie::new_snapshot() {
   snapshot->rear_snapshots.clear();
   snapshot->van_snapshots.clear();
   snapshot->cuts.clear();
-  snapshot->accepting_place = Place(NULL, IX_NULL, 0);
+  snapshot->accepting_place = accepting_place;
+  snapshot->accepting_place_level = accepting_place_level;
+  if (verbosity >= 2) std::cout << "NEW_SNAPSHOT2 " << snapshot->accepting_place << " " << snapshot->accepting_place_level << " " << snapshot << std::endl;
 
   return *snapshot;
 }
@@ -1423,6 +1435,7 @@ Place* Trie::reset(Solver &S) {
 
   active_var = 0;
   active_var_old = 0;
+  accepting_place_level = -1;
 
   if (verbosity >= 2) printf("RESET %p %p\n", &root_rguard, &root_vguard);
 
@@ -1611,19 +1624,50 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
 }
 
 
-void Trie::make_accepting_snapshot(Solver &S) {
-  int level = S.decisionLevel();
-  if (level <= S.root_level) return;
-  Snapshot &snapshot = get_last_snapshot();
-  if (snapshot.accepting_place.hor_ix != IX_NULL) return;
+void Trie::update_accepting_place(Solver &S, Place place, int level) {
+  if (level > S.root_level) {
+    Place ap = accepting_place;
+    int apl = accepting_place_level;
+
+    while (level < apl) {
+      Snapshot &s = S.trie.snapshots[apl - S.root_level - 1];
+
+      if (verbosity >= 2) {
+        std::cout << "TRAVEL_ACCEPTING_SNAPSHOT "
+          << ap << "->" << s.accepting_place
+          << " " << apl << "->" << s.accepting_place_level
+          << std::endl;
+      }
+
+      ap = s.accepting_place;
+      apl = s.accepting_place_level;
+    }
+
+    if (apl < level) {
+      Snapshot &snapshot = S.trie.snapshots[level - S.root_level - 1];
+
+      if (verbosity >= 2) {
+        std::cout << "MAKE_ACCEPTING_SNAPSHOT "
+          << snapshot.accepting_place << "->" << ap
+          << " " << snapshot.accepting_place_level << "->" << apl
+          << std::endl;
+      }
+
+      snapshot.accepting_place = ap;
+      snapshot.accepting_place_level = apl;
+    }
+  }
 
   if (verbosity >= 2) {
-    std::cout << "MAKE_ACCEPTING_SNAPSHOT "
-      << snapshot.accepting_place << "->" << accepting_place
+    std::cout << "UPDATE_ACCEPTING_PLACE "
+      << accepting_place << "->" << place
+      << " " << accepting_place_level << "->" << level
+      << " " << S.root_level
       << std::endl;
   }
 
-  snapshot.accepting_place = accepting_place;
+  accepting_place = place;
+  accepting_place_level = level;
 }
 
 
@@ -1672,9 +1716,9 @@ void RearGuard::on_accept_van(Solver &S, Lit old_tag) {
     }
   }
 
-  trie.make_accepting_snapshot(S);
-  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_VAN " << this << " " << accepting_place << std::endl;
-  trie.accepting_place = accepting_place;
+  int level = S.decisionLevel();
+  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_VAN " << this << " " << accepting_place << " " << level << std::endl;
+  trie.update_accepting_place(S, accepting_place, level);
 }
 
 void RearGuard::untangle(Trie &trie, Lit old_tag) {
@@ -1832,16 +1876,14 @@ bool RearGuard::is_best_accepting_rear(Trie &trie, Place aplace) {
   return true;
 }
 
-void RearGuard::on_accept_rear(Solver &S) {
+void RearGuard::on_accept_rear(Solver &S, int level) {
   enabled = false;
 
   Trie &trie = S.trie;
-
   if (!is_best_accepting_rear(trie, trie.accepting_place)) return;
 
-  trie.make_accepting_snapshot(S);
-  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_REAR " << this << " " << *this << std::endl;
-  trie.accepting_place = *this;
+  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_REAR " << this << " " << *this << " " << level << std::endl;
+  trie.update_accepting_place(S, *this, level);
 }
 
 

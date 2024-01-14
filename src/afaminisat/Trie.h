@@ -124,6 +124,7 @@ struct RearGuard : public WatchedPlace {
   VanGuard *last_van;
 
   Place accepting_place;
+  int accepting_place_level;
 
   RearGuard(
     Place place,
@@ -139,7 +140,7 @@ struct RearGuard : public WatchedPlace {
   , accepting_place(NULL, 0, 0)
   { }
 
-  void on_accept_rear(Solver &S);
+  void on_accept_rear(Solver &S, int accepting_place_level);
   void on_accept_van(Solver &S, Lit old_tag);
 
   Place* jump(Solver &S, Lit old_tag);
@@ -201,6 +202,7 @@ struct Snapshot {
   vector<Place> cuts;
 
   Place accepting_place;
+  int accepting_place_level;
 
   Snapshot()
   : new_rears()
@@ -220,6 +222,7 @@ struct Snapshot {
   , van_snapshots(std::move(old.van_snapshots))
   , is_acc(old.is_acc)
   , accepting_place(old.accepting_place)
+  , accepting_place_level(old.accepting_place_level)
   , cuts(std::move(old.cuts))
   {}
 
@@ -368,13 +371,14 @@ public:
   std::vector<Snapshot> snapshots;
 
   Place accepting_place;
+  int accepting_place_level = -1;
 
   unsigned on_sat_count = 0;
   vector<unsigned> my_zeroes_set;
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
-  void make_accepting_snapshot(Solver &S);
+  void update_accepting_place(Solver &S, Place accepting_place_, int accepting_place_level_);
 
   vector<Place> root_cuts;
 
