@@ -89,16 +89,18 @@ public:
 
 #ifdef MY_DEBUG
   int watch_ix_pos = -1;
-  int watch_ix_neg = -1;
+  int watch_ix_neg = -1;  // TODO
 #else
   int watch_ix_pos;
-  int watch_ix_neg;
+  int watch_ix_neg;  // TODO
 #endif
 
   WatchedPlace(Place place);
 
   void set_watch(Solver &S);
+  void set_watch_tmp(Solver &S);  // TODO
   void remove_watch(Solver &S, Lit old_tag);
+  void remove_watch_tmp(Solver &S, Lit old_tag);  // TODO
   void remove_watch_pos(Solver &S, Lit lit);
   void remove_watch_neg(Solver &S, Lit lit);
 
@@ -194,6 +196,8 @@ struct VanGuard : public WatchedPlace {
   WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   void *getSpecificPtr2() { return this; }
+
+  void moveWatch(int i, Lit p);  // TODO
 };
 
 struct Snapshot {

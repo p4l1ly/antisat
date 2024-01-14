@@ -178,10 +178,29 @@ inline void WatchedPlace::set_watch(Solver &S) {
   }
 }
 
+inline void WatchedPlace::set_watch_tmp(Solver &S) {
+  if (verbosity >= 2) {
+    printf("WATCHING_TMP " L_LIT " %p\n", L_lit(get_tag()), this);
+  }
+
+  vec<Constr*> &watches = S.watches[index(~get_tag())];
+#ifdef MY_DEBUG
+  std::cout << std::flush; assert(watch_ix_pos == -1);
+#endif
+  watch_ix_pos = watches.size();
+  if (verbosity >= 2) std::cout << "WATCH_IX_TMP " << watch_ix_pos << " " << ~get_tag() << std::endl;
+  watches.push(this);
+}
+
 
 void WatchedPlace::moveWatch(int i, Lit p) {
   if (sign(p)) watch_ix_neg = i;
   else watch_ix_pos = i;
+}
+
+
+void VanGuard::moveWatch(int i, Lit p) {  // TODO won't be special for VanGuard
+  watch_ix_pos = i;
 }
 
 
@@ -224,6 +243,26 @@ inline void WatchedPlace::remove_watch(Solver &S, Lit old_tag) {
 #ifdef MY_DEBUG
   watch_ix_neg = -1;
 #endif
+}
+
+inline void WatchedPlace::remove_watch_tmp(Solver &S, Lit old_tag) {
+  {
+    vec<Constr*> &watches = S.watches[index(~old_tag)];
+    if (verbosity >= 2) {
+      std::cout << "RemoveWatchTmp " << watches.size() << " " << watch_ix_pos << ~old_tag << std::endl;
+    }
+#ifdef MY_DEBUG
+    std::cout << std::flush; assert(watch_ix_pos >= 0);
+#endif
+    if (watches.size() == watch_ix_pos + 1) {
+      watches.pop();
+    } else {
+      watches[watch_ix_pos] = &REMOVED_WATCH;
+    }
+#ifdef MY_DEBUG
+    watch_ix_pos = -1;
+#endif
+  }
 }
 
 inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
@@ -970,7 +1009,7 @@ Place *StackItem::handle(Solver &S, RearGuard &rear) {
       if (pre) pre->next = &vguard;
       vguard.previous = pre;
       rear.last_van = &vguard;
-      vguard.set_watch(S);
+      vguard.set_watch_tmp(S);
 
       if (verbosity >= 2) printf("SAVE_AS_VAN_WATCH %p %d %p %p\n", hor, hor_ix, &vguard, &rear);
 
@@ -1098,7 +1137,6 @@ Place* RearGuard::jump(Solver &S, Lit old_tag) {
 
   while (last_van) {
     VanGuard &van = *last_van;
-    van.make_snapshot(S, S.decisionLevel());
 
     Lit lit = van.get_tag();
     lbool value = S.value(lit);
@@ -1112,14 +1150,17 @@ Place* RearGuard::jump(Solver &S, Lit old_tag) {
         << std::endl;
     }
 
-    van.remove_watch(S, lit);
+    van.remove_watch_tmp(S, lit);
 
     if (value == l_True) {
+      van.make_snapshot(S, S.level[var(lit)]);
       van.set_rear_visit_level(level, *this, trie);
       last_van = van.previous;
       van.on_accept(S);
       van.last_change_level = level;
     } else {
+      van.make_snapshot(S, S.decisionLevel());
+
       VanGuard *old_previous = van.previous;
       RearGuard *rguard = this;
 
@@ -1227,7 +1268,7 @@ void Trie::undo(Solver& S) {
           printf(L_LIT, L_lit(vguard.get_tag()));
           std::cout << " " << &vguard << std::endl << std::flush;
         }
-        vguard.remove_watch(S, vguard.get_tag());
+        vguard.remove_watch_tmp(S, vguard.get_tag());
       } else if (verbosity >= 2) {
         std::cout << "UNTANGLE_VAN " << vguard << " " << &vguard << std::endl << std::flush;
       }
@@ -1287,7 +1328,7 @@ void Trie::undo(Solver& S) {
         if (old_tag == new_tag) {
           watch_unwatch = true;
         } else {
-          vguard.remove_watch(S, vguard.get_tag());
+          vguard.remove_watch_tmp(S, vguard.get_tag());
         }
       }
       (Place &)vguard = van_snapshot.place;
@@ -1319,7 +1360,7 @@ void Trie::undo(Solver& S) {
       vguard.rear->last_van = &vguard;
     }
 
-    if (!watch_unwatch) vguard.set_watch(S);
+    if (!watch_unwatch) vguard.set_watch_tmp(S);
   }
 
   for (RearSnapshot rear_snapshot: snapshot.rear_snapshots) {
@@ -1450,7 +1491,7 @@ Place* Trie::reset(Solver &S) {
 
   ITER_LOGLIST(root_new_vans, VanGuard, vguard, {
     if (verbosity >= 2) printf("ResettingVan %p\n", &vguard);
-    if (vguard.enabled && !vguard.in_exhaust()) vguard.remove_watch(S, vguard.get_tag());
+    if (vguard.enabled && !vguard.in_exhaust()) vguard.remove_watch_tmp(S, vguard.get_tag());
   });
 
   for (Place cut : root_cuts) cut.cut_away();
@@ -1494,7 +1535,7 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
   switch (end) {
     case MultimoveEnd::E_WATCH: {
-      set_watch(S);
+      set_watch_tmp(S);
       if (is_ver()) {
         HorLine *hor2 = deref_ver().hor;
         if (hor2 == NULL) break;
@@ -1507,6 +1548,7 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
     }
     case MultimoveEnd::E_DONE: {
       on_accept(S);
+      // TODO if stack is not empty, we can reuse this VanGuard.
       break;
     }
     default: {  // MultimoveEnd::E_EXHAUST
@@ -1635,7 +1677,7 @@ Place* VanGuard::on_exhaust(Solver &S) {
 
 Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) std::cout << "VAN_PROP " << this << " " << *this << " " << p << " " << get_tag() << std::endl;
-  assert(get_tag() == p || get_tag() == ~p);
+  assert(get_tag() == ~p);
 
   if (!rear->enabled) {
     if (verbosity >= 2) std::cout << "VAN_DISABLED_REAR " << rear << std::endl;
@@ -1643,38 +1685,19 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
     return NULL;
   }
 
-  if (sign(p)) {
 #ifdef MY_DEBUG
-    watch_ix_neg = -1;
+  watch_ix_pos = -1;
 #endif
-    remove_watch_pos(S, ~p);
-  } else {
-#ifdef MY_DEBUG
-    watch_ix_pos = -1;
-#endif
-    remove_watch_neg(S, ~p);
-  }
 
   if (!enabled) return NULL;
 
   int visit_level = last_change_level;
   make_snapshot(S, S.decisionLevel());
 
-  Trie& trie = S.trie;
+  CHECK_ALL_DUPLICATE_PLACES(S.trie);
 
   Lit out_lit = get_tag();
-
-  lbool value = S.value(out_lit);
-
-  if (value == l_True) {
-    if (verbosity >= 2) std::cout << "TRIGGERED_VAN_ACCEPT" << std::endl;
-    on_accept(S);
-    CHECK_ALL_DUPLICATE_PLACES(trie);
-    return NULL;
-  }
-
   if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
-  CHECK_ALL_DUPLICATE_PLACES(trie);
   return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
 }
 
