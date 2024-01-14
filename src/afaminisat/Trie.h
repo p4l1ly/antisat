@@ -88,21 +88,15 @@ struct WatchedPlace : public Place, public Constr {
 public:
 
 #ifdef MY_DEBUG
-  int watch_ix_pos = -1;
-  int watch_ix_neg = -1;  // TODO
+  int watch_ix = -1;
 #else
-  int watch_ix_pos;
-  int watch_ix_neg;  // TODO
+  int watch_ix;
 #endif
 
   WatchedPlace(Place place);
 
   void set_watch(Solver &S);
-  void set_watch_tmp(Solver &S);  // TODO
   void remove_watch(Solver &S, Lit old_tag);
-  void remove_watch_tmp(Solver &S, Lit old_tag);  // TODO
-  void remove_watch_pos(Solver &S, Lit lit);
-  void remove_watch_neg(Solver &S, Lit lit);
 
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
@@ -145,13 +139,13 @@ struct RearGuard : public WatchedPlace {
   , accepting_place(NULL, 0, 0)
   { }
 
-  void on_accept_rear(Solver &S, Lit old_tag);
+  void on_accept_rear(Solver &S);
   void on_accept_van(Solver &S, Lit old_tag);
 
   Place* jump(Solver &S, Lit old_tag);
   Reason* propagate(Solver& S, Lit p, bool& keep_watch);
 
-  void make_snapshot(Solver &S);
+  void make_snapshot(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
 
   bool is_best_accepting_rear(Trie &trie, Place aplace);
@@ -196,8 +190,6 @@ struct VanGuard : public WatchedPlace {
   WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
   MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   void *getSpecificPtr2() { return this; }
-
-  void moveWatch(int i, Lit p);  // TODO
 };
 
 struct Snapshot {

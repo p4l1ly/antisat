@@ -152,154 +152,43 @@ void Place::cut_away() {
 
 inline void WatchedPlace::set_watch(Solver &S) {
   if (verbosity >= 2) {
-    printf("WATCHING " L_LIT " %p\n", L_lit(get_tag()), this);
-  }
-  int var_ = var(get_tag());
-  var_ += var_;
-  {
-    vec<Constr*> &watches = S.watches[var_];
-#ifdef MY_DEBUG
-    std::cout << std::flush; assert(watch_ix_pos == -1);
-#endif
-    watch_ix_pos = watches.size();
-    if (verbosity >= 2) printf("WATCH_IX_POS %d %d\n", watch_ix_pos, var_ / 2);
-    watches.push(this);
-  }
-
-  ++var_;
-  {
-    vec<Constr*> &watches = S.watches[var_];
-#ifdef MY_DEBUG
-    std::cout << std::flush; assert(watch_ix_neg == -1);
-#endif
-    watch_ix_neg = watches.size();
-    if (verbosity >= 2) printf("WATCH_IX_NEG %d %d\n", watch_ix_neg, var_ / 2);
-    watches.push(this);
-  }
-}
-
-inline void WatchedPlace::set_watch_tmp(Solver &S) {
-  if (verbosity >= 2) {
     printf("WATCHING_TMP " L_LIT " %p\n", L_lit(get_tag()), this);
   }
 
   vec<Constr*> &watches = S.watches[index(~get_tag())];
 #ifdef MY_DEBUG
-  std::cout << std::flush; assert(watch_ix_pos == -1);
+  std::cout << std::flush; assert(watch_ix == -1);
 #endif
-  watch_ix_pos = watches.size();
-  if (verbosity >= 2) std::cout << "WATCH_IX_TMP " << watch_ix_pos << " " << ~get_tag() << std::endl;
+  watch_ix = watches.size();
+  if (verbosity >= 2) std::cout << "WATCH_IX_TMP " << watch_ix << " " << ~get_tag() << std::endl;
   watches.push(this);
 }
 
 
 void WatchedPlace::moveWatch(int i, Lit p) {
-  if (sign(p)) watch_ix_neg = i;
-  else watch_ix_pos = i;
+  watch_ix = i;
 }
-
-
-void VanGuard::moveWatch(int i, Lit p) {  // TODO won't be special for VanGuard
-  watch_ix_pos = i;
-}
-
 
 inline void WatchedPlace::remove_watch(Solver &S, Lit old_tag) {
-  int var_ = var(old_tag);
-  var_ += var_;
-  {
-    vec<Constr*> &watches = S.watches[var_];
-    if (verbosity >= 2) {
-      printf("RemoveWatchPos %d %d %d\n", watches.size(), watch_ix_pos, var(old_tag));
-    }
-#ifdef MY_DEBUG
-    std::cout << std::flush; assert(watch_ix_pos >= 0);
-#endif
-    if (watches.size() == watch_ix_pos + 1) {
-      watches.pop();
-    } else {
-      watches[watch_ix_pos] = &REMOVED_WATCH;
-    }
-#ifdef MY_DEBUG
-    watch_ix_pos = -1;
-#endif
-  }
-
-  ++var_;
-  {
-    vec<Constr*> &watches = S.watches[var_];
-    if (verbosity >= 2) {
-      printf("RemoveWatchNeg %d %d %d %d\n", var_, watches.size(), watch_ix_neg, var(old_tag));
-    }
-#ifdef MY_DEBUG
-    std::cout << std::flush; assert(watch_ix_neg >= 0);
-#endif
-    if (watches.size() == watch_ix_neg + 1) {
-      watches.pop();
-    } else {
-      watches[watch_ix_neg] = &REMOVED_WATCH;
-    }
-  }
-#ifdef MY_DEBUG
-  watch_ix_neg = -1;
-#endif
-}
-
-inline void WatchedPlace::remove_watch_tmp(Solver &S, Lit old_tag) {
   {
     vec<Constr*> &watches = S.watches[index(~old_tag)];
     if (verbosity >= 2) {
-      std::cout << "RemoveWatchTmp " << watches.size() << " " << watch_ix_pos << ~old_tag << std::endl;
+      std::cout << "RemoveWatchTmp " << watches.size() << " " << watch_ix << " " << ~old_tag << std::endl;
     }
 #ifdef MY_DEBUG
-    std::cout << std::flush; assert(watch_ix_pos >= 0);
+    std::cout << std::flush; assert(watch_ix >= 0);
 #endif
-    if (watches.size() == watch_ix_pos + 1) {
+    if (watches.size() == watch_ix + 1) {
       watches.pop();
     } else {
-      watches[watch_ix_pos] = &REMOVED_WATCH;
+      watches[watch_ix] = &REMOVED_WATCH;
     }
 #ifdef MY_DEBUG
-    watch_ix_pos = -1;
+    watch_ix = -1;
 #endif
   }
 }
 
-inline void WatchedPlace::remove_watch_pos(Solver &S, Lit lit) {
-  vec<Constr*> &watches = S.watches[index(lit)];
-  if (verbosity >= 2) {
-    printf("RemoveWatchPos2 %d %d %d\n", watches.size(), watch_ix_pos, var(lit));
-  }
-#ifdef MY_DEBUG
-  std::cout << std::flush; assert(watch_ix_pos >= 0);
-#endif
-  if (watches.size() == watch_ix_pos + 1) {
-    watches.pop();
-  } else {
-    watches[watch_ix_pos] = &REMOVED_WATCH;
-  }
-#ifdef MY_DEBUG
-  watch_ix_pos = -1;
-#endif
-}
-
-inline void WatchedPlace::remove_watch_neg(Solver &S, Lit lit) {
-  vec<Constr*> &watches = S.watches[index(lit)];
-  if (verbosity >= 2) {
-    printf("RemoveWatchNeg2 %d %d %d\n", watches.size(), watch_ix_neg, var(lit));
-  }
-#ifdef MY_DEBUG
-  std::cout << std::flush; assert(watch_ix_neg >= 0);
-#endif
-  if (watches.size() == watch_ix_neg + 1) {
-    watches.pop();
-  } else {
-    watches[watch_ix_neg] = &REMOVED_WATCH;
-  }
-#ifdef MY_DEBUG
-  watch_ix_neg = -1;
-#endif
-}
 
 WatchedPlace::WatchedPlace(Place place)
 : Place(place)
@@ -357,18 +246,38 @@ bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& ini
 bool Trie::guess(Solver &S) {
   CHECK_ALL_DUPLICATE_PLACES(*this);
 
-  if (last_rear != NULL) {
-    RearGuard &rguard = *last_rear;
-    Lit out_lit = rguard.get_tag();
+  while (last_rear != NULL) {
+    assert(!last_rear->in_exhaust());
+
+    Lit lit = last_rear->get_tag();
+    if (S.value(lit) != l_True) {
+      assert(S.value(lit) == l_Undef);
+      break;
+    }
+
     if (verbosity >= 2) {
-      std::cout << "GUESS_GREATER " << rguard << " " << &rguard << " ";
+      std::cout << "TRIGGERED_REAR_ACCEPT " << last_rear
+        << " " << S.level[var(lit)] << " " << lit
+      << std::endl;
+    }
+    last_rear->make_snapshot(S, S.level[var(lit)]);
+    last_rear->on_accept_rear(S);
+    last_rear->remove_watch(S, lit);
+
+    RearGuard *prev = last_rear->previous;
+    if (prev != NULL) prev->next = NULL;
+    last_rear->previous = NULL;
+    assert(last_rear->next == NULL);
+    last_rear = prev;
+  }
+
+  if (last_rear != NULL) {
+    Lit out_lit = last_rear->get_tag();
+    if (verbosity >= 2) {
+      std::cout << "GUESS_GREATER " << last_rear << " " << &last_rear << " ";
       printf(L_LIT "\n", L_lit(out_lit));
     }
     if (verbosity >= 2) std::cout << "GREATER_PUSH2 " << S.decisionLevel() << " " << out_lit << std::endl;
-#ifdef MY_DEBUG
-    assert(rguard.enabled);
-    assert(!rguard.in_exhaust());
-#endif
 
     Snapshot &snapshot = new_snapshot();
     snapshot.is_acc = false;
@@ -477,6 +386,7 @@ void Trie::onSat(Solver &S) {
     ignored_rear = ignored_rear->previous;
   }
 
+  if (verbosity >= 2) std::cout << "ON_SAT0 " << aplace << std::endl;
   HorHead &leftmost = aplace.get_leftmost(*this);
   const int leftmost_depth = leftmost.depth;
   const int leftmost_van_visit_level = leftmost.van_visit_level;
@@ -1009,7 +919,7 @@ Place *StackItem::handle(Solver &S, RearGuard &rear) {
       if (pre) pre->next = &vguard;
       vguard.previous = pre;
       rear.last_van = &vguard;
-      vguard.set_watch_tmp(S);
+      vguard.set_watch(S);
 
       if (verbosity >= 2) printf("SAVE_AS_VAN_WATCH %p %d %p %p\n", hor, hor_ix, &vguard, &rear);
 
@@ -1150,7 +1060,7 @@ Place* RearGuard::jump(Solver &S, Lit old_tag) {
         << std::endl;
     }
 
-    van.remove_watch_tmp(S, lit);
+    van.remove_watch(S, lit);
 
     if (value == l_True) {
       van.make_snapshot(S, S.level[var(lit)]);
@@ -1268,7 +1178,7 @@ void Trie::undo(Solver& S) {
           printf(L_LIT, L_lit(vguard.get_tag()));
           std::cout << " " << &vguard << std::endl << std::flush;
         }
-        vguard.remove_watch_tmp(S, vguard.get_tag());
+        vguard.remove_watch(S, vguard.get_tag());
       } else if (verbosity >= 2) {
         std::cout << "UNTANGLE_VAN " << vguard << " " << &vguard << std::endl << std::flush;
       }
@@ -1328,7 +1238,7 @@ void Trie::undo(Solver& S) {
         if (old_tag == new_tag) {
           watch_unwatch = true;
         } else {
-          vguard.remove_watch_tmp(S, vguard.get_tag());
+          vguard.remove_watch(S, vguard.get_tag());
         }
       }
       (Place &)vguard = van_snapshot.place;
@@ -1360,7 +1270,7 @@ void Trie::undo(Solver& S) {
       vguard.rear->last_van = &vguard;
     }
 
-    if (!watch_unwatch) vguard.set_watch_tmp(S);
+    if (!watch_unwatch) vguard.set_watch(S);
   }
 
   for (RearSnapshot rear_snapshot: snapshot.rear_snapshots) {
@@ -1491,7 +1401,7 @@ Place* Trie::reset(Solver &S) {
 
   ITER_LOGLIST(root_new_vans, VanGuard, vguard, {
     if (verbosity >= 2) printf("ResettingVan %p\n", &vguard);
-    if (vguard.enabled && !vguard.in_exhaust()) vguard.remove_watch_tmp(S, vguard.get_tag());
+    if (vguard.enabled && !vguard.in_exhaust()) vguard.remove_watch(S, vguard.get_tag());
   });
 
   for (Place cut : root_cuts) cut.cut_away();
@@ -1535,7 +1445,7 @@ Place* VanGuard::full_multimove_on_propagate(Solver &S, WhatToDo what_to_do) {
 
   switch (end) {
     case MultimoveEnd::E_WATCH: {
-      set_watch_tmp(S);
+      set_watch(S);
       if (is_ver()) {
         HorLine *hor2 = deref_ver().hor;
         if (hor2 == NULL) break;
@@ -1631,17 +1541,16 @@ void VanGuard::on_accept(Solver &S) {
     }
   }
 
-  rear->make_snapshot(S);
+  rear->make_snapshot(S, S.decisionLevel());
   if (verbosity >= 2) std::cout << "DEEPEST_VAN_ACCEPT " << this << " " << *this << " " << rear << std::endl;
   rear->accepting_place = *this;
 }
 
-void RearGuard::make_snapshot(Solver &S) {
-  int level = S.decisionLevel();
+void RearGuard::make_snapshot(Solver &S, int level) {
   if (last_change_level == level) return;
   if (level <= S.root_level) {last_change_level = level; return;}
 
-  Snapshot &snapshot = S.trie.get_last_snapshot();
+  Snapshot &snapshot = S.trie.snapshots[level - S.root_level - 1];
   if (verbosity >= 2) printf("REAR_SNAPSHOT_ENABLE0 %p %p %d %d %d\n", this, hor, hor_ix, ver_ix, level);
   CHECK_UNIQUE_REAR_SNAPSHOT(snapshot, this);
   snapshot.rear_snapshots.emplace_back(
@@ -1679,14 +1588,14 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) std::cout << "VAN_PROP " << this << " " << *this << " " << p << " " << get_tag() << std::endl;
   assert(get_tag() == ~p);
 
-  if (!rear->enabled) {
+  if (!rear->enabled || S.value(rear->get_tag()) == l_True) {
     if (verbosity >= 2) std::cout << "VAN_DISABLED_REAR " << rear << std::endl;
     keep_watch = true;
     return NULL;
   }
 
 #ifdef MY_DEBUG
-  watch_ix_pos = -1;
+  watch_ix = -1;
 #endif
 
   if (!enabled) return NULL;
@@ -1799,16 +1708,18 @@ void RearGuard::untangle(Trie &trie, Lit old_tag) {
 }
 
 void RearGuard::retangle(Trie &trie, Lit old_tag, Lit new_tag) {
-  if (verbosity >= 2) printf("RETANGLE %p\n", this);
+  if (verbosity >= 2) printf("RETANGLE0 %p\n", this);
 
   int old_var = var(old_tag);
   int new_var = var(new_tag);
   if (old_var == new_var) return;
   bool old_posq = old_var != var_Undef && trie.posq_output_map[old_var];
   bool new_posq = trie.posq_output_map[new_var];
+
+  if (verbosity >= 2) printf("RETANGLE1 %p %d %d\n", this, old_posq, new_posq);
+
   if (old_posq == new_posq) return;
 
-  if (verbosity >= 2) printf("RETANGLE_IGNORED %p %d %d\n", this, old_posq, new_posq);
 
   // untangle
   if (previous != NULL) previous->next = next;
@@ -1921,9 +1832,10 @@ bool RearGuard::is_best_accepting_rear(Trie &trie, Place aplace) {
   return true;
 }
 
-void RearGuard::on_accept_rear(Solver &S, Lit old_tag) {
+void RearGuard::on_accept_rear(Solver &S) {
+  enabled = false;
+
   Trie &trie = S.trie;
-  untangle(trie, old_tag);
 
   if (!is_best_accepting_rear(trie, trie.accepting_place)) return;
 
@@ -1935,32 +1847,13 @@ void RearGuard::on_accept_rear(Solver &S, Lit old_tag) {
 
 Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) std::cout << "REAR_PROP " << this << " " << *this << " " << p << " " << last_change_level << std::endl;
-  assert(get_tag() == p || get_tag() == ~p);
+  assert(get_tag() == ~p);
 
-  make_snapshot(S);
+  make_snapshot(S, S.decisionLevel());
 
-  if (sign(p)) {
 #ifdef MY_DEBUG
-    watch_ix_neg = -1;
+  watch_ix = -1;
 #endif
-    remove_watch_pos(S, ~p);
-  } else {
-#ifdef MY_DEBUG
-    watch_ix_pos = -1;
-#endif
-    remove_watch_neg(S, ~p);
-  }
-
-  lbool value = S.value(get_tag());
-
-  if (value == l_True) {
-    assert(get_tag() == p);
-    if (verbosity >= 2) std::cout << "TRIGGERED_REAR_ACCEPT " << this << std::endl;
-    on_accept_rear(S, p);
-
-    CHECK_ALL_DUPLICATE_PLACES(S.trie);
-    return NULL;
-  }
 
   return jump(S, p);
 }

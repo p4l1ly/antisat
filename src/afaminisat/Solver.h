@@ -224,8 +224,6 @@ public:
     bool    solve(void) { vec<Lit> tmp; return solve(tmp); }
     bool resume();
     void reset();
-
-    vec<lbool>  model;              // If problem is solved, this vector contains the model (if any).
 };
 
 

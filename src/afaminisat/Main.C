@@ -199,9 +199,9 @@ bool extract_sat_result(
         for (int i = S.outputs.size(); i < S.outputs.size() + acnt; i++) {
             printf(
                 "%c",
-                S.model[i] == l_True
+                S.value(i) == l_True
                     ? '1'
-                    : (S.model[i] == l_False ? '0' : 'x')
+                    : (S.value(i) == l_False ? '0' : 'x')
             );
         }
         printf("\n\n");

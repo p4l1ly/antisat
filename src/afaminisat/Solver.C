@@ -790,11 +790,7 @@ lbool Solver::search()
               Var next = order.select(params.random_var_freq, *this);
 
               if (next == var_Undef){
-                  // Model found:
-                  model.clear();
-                  model.growTo(nVars());
-                  for (int i = 0; i < nVars(); i++) model[i] = value(i);
-
+                  // Model found.
                   return l_True;
               }
 
