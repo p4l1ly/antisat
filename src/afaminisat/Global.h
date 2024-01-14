@@ -29,18 +29,23 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <cfloat>
 #include <new>
 
-
 //=================================================================================================
 // Basic Types & Minor Things:
 
-
 #ifdef _MSC_VER
-typedef __int64     int64;
+typedef INT64              int64;
+typedef UINT64             uint64;
+typedef INT_PTR            intp;
+typedef UINT_PTR           uintp;
 #define I64_fmt "I64d"
 #else
-typedef long long   int64;
+typedef long long          int64;
+typedef unsigned long long uint64;
+typedef __PTRDIFF_TYPE__   intp;
+typedef unsigned __PTRDIFF_TYPE__ uintp;
 #define I64_fmt "lld"
 #endif
+
 typedef const char  cchar;
 
 
@@ -118,13 +123,14 @@ static inline double cpuTime(void) {
 template<class T>
 class vec {
     T*  data;
-    int sz;
     int cap;
 
     void     init(int size, const T& pad);
     void     grow(int min_cap);
 
 public:
+    int sz;
+
     // Types:
     typedef int Key;
     typedef T   Datum;
@@ -254,11 +260,13 @@ public:
     friend bool sign (Lit p) { return p.x & 1; }
     friend int  var  (Lit p) { return p.x >> 1; }
     friend int  index(Lit p) { return p.x; }        // A "toInt" method that guarantees small, positive integers suitable for array indexing.
-    friend Lit  toLit(int i) { Lit p; p.x = i; return p; }
+    friend Lit  toLit(int i);
 
     friend bool operator == (Lit p, Lit q) { return index(p) == index(q); }
     friend bool operator <  (Lit p, Lit q) { return index(p)  < index(q); }  // '<' guarantees that p, ~p are adjacent in the ordering.
 };
+
+inline Lit  toLit (int i) { Lit p; p.x = i; return p; }  // Inverse of 'index()'.
 
 inline std::ostream& operator<<(std::ostream& os, Lit const &p) {
   return os << (sign(p) ? "~" : "") << "x" << var(p);

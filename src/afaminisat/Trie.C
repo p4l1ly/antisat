@@ -350,6 +350,13 @@ void Place::set_van_visit_level(int level, VanGuard &van) {
   }
 }
 
+inline bool is_reason(VanGuard* leftmost_van_visit_van, int accepting_var, Solver &S) {
+  GClause r = S.reason[accepting_var];
+  if (r == GClause_NULL) return false;
+  if (r.isLit()) return false;
+  return r.clause()->getSpecificPtr() == leftmost_van_visit_van->getSpecificPtr();
+}
+
 void Place::set_rear_visit_level(int level, RearGuard &rear, Trie &trie) {
   HorHead *horhead;
   if (verbosity >= 2) std::cout << "REAR_VISIT_LEVEL0 " << *this << " " << level << std::endl;
@@ -557,10 +564,7 @@ void Trie::onSat(Solver &S) {
   if (
     accepting_val != l_Undef &&
     leftmost_van_visit_level >= S.level[accepting_var] &&
-    (
-      S.reason[accepting_var] == NULL ||
-      S.reason[accepting_var]->getSpecificPtr() != leftmost_van_visit_van->getSpecificPtr()
-    )
+    !is_reason(leftmost_van_visit_van, accepting_var, S)
   ) {
     vguard = leftmost_van_visit_van;
     if (verbosity >= 2) std::cout << "REUSING_VAN " << vguard << std::endl;
@@ -967,7 +971,7 @@ std::pair<VanGuard*, bool> StackItem::handle(Solver &S, RearGuard &rear, VanGuar
       if (rear.last_change_level == -1) { // this means that rear is an uninitialized root rear
         return std::pair<VanGuard*, bool>(vguard, true);
       }
-      if (S.enqueue(rear.get_tag(), vguard)) {
+      if (S.enqueue(rear.get_tag(), GClause_new(vguard))) {
         return std::pair<VanGuard*, bool>(NULL, false);
       } else {
         return std::pair<VanGuard*, bool>(vguard, true);
@@ -1608,7 +1612,7 @@ Place* VanGuard::on_exhaust(Solver &S) {
     return this;
   }
   if (verbosity >= 2) std::cout << "ON_EXHAUST " << this << " " << rear << " " << rear->get_tag() << std::endl;
-  if (S.enqueue(rear->get_tag(), this)) {
+  if (S.enqueue(rear->get_tag(), GClause_new(this))) {
     return NULL;
   } else {
     return this;
@@ -1616,21 +1620,21 @@ Place* VanGuard::on_exhaust(Solver &S) {
 }
 
 
-Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
+GClause VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) std::cout << "VAN_PROP " << this << " " << *this << " " << p << " " << get_tag() << std::endl;
   assert(get_tag() == ~p);
 
   if (!rear->enabled || S.value(rear->get_tag()) == l_True) {
     if (verbosity >= 2) std::cout << "VAN_DISABLED_REAR " << rear << std::endl;
     keep_watch = true;
-    return NULL;
+    return GClause_NULL;
   }
 
 #ifdef MY_DEBUG
   watch_ix = -1;
 #endif
 
-  if (!enabled) return NULL;
+  if (!enabled) return GClause_NULL;
 
   int visit_level = last_change_level;
   make_snapshot(S, S.decisionLevel());
@@ -1639,7 +1643,9 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
 
   Lit out_lit = get_tag();
   if (verbosity >= 2) printf("OUT_LIT " L_LIT "\n", L_lit(out_lit));
-  return full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
+  Place *confl = full_multimove_on_propagate(S, move_on_propagate(S, out_lit, false));
+  if (confl == NULL) return GClause_NULL;
+  else return GClause_new(confl);
 }
 
 
@@ -1935,7 +1941,7 @@ void RearGuard::on_accept_rear(Solver &S, int level) {
 }
 
 
-Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
+GClause RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
   if (verbosity >= 2) std::cout << "REAR_PROP " << this << " " << *this << " " << p << " " << last_change_level << std::endl;
   assert(get_tag() == ~p);
 
@@ -1945,7 +1951,9 @@ Reason* RearGuard::propagate(Solver &S, Lit p, bool& keep_watch) {
   watch_ix = -1;
 #endif
 
-  return jump(S, p);
+  Place *confl = jump(S, p);
+  if (confl == NULL) return GClause_NULL;
+  else return GClause_new(confl);
 }
 
 

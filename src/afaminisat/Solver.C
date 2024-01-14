@@ -50,7 +50,7 @@ Var Solver::newVar(bool pure)
     index = nVars();
     watches  .push();          // (list for positive literal)
     watches  .push();          // (list for negative literal)
-    reason   .push(NULL);
+    reason   .push(GClause_NULL);
     assigns  .push(toInt(l_Undef));
     level    .push(-1);
     activity .push(0);
@@ -114,7 +114,7 @@ void Solver::record(const vec<Lit>& clause)
     if (verbosity >= 2) {
       printf("RECORD %p %p\n", c, c ? c->getSpecificPtr2() : NULL);
     }
-    check(enqueue(clause[0], c));
+    check(enqueue(clause[0], GClause_new(c)));
     if (c != NULL) learnts.push(c);
 }
 
@@ -170,7 +170,7 @@ bool Solver::onSatConflict(const vector<int>& cell) {
 |  Effect:
 |    Will undo part of the trail, upto but not beyond the assumption of the current decision level.
 |________________________________________________________________________________________________@*/
-bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
+bool Solver::analyze(GClause confl, vec<Lit>& out_learnt, int& out_btlevel)
 {
     vec<char>&  seen = analyze_seen;
     int         pathC    = 0;
@@ -187,10 +187,13 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
     out_btlevel = 0;
 
     p_reason.clear();
+
+    assert(!confl.isLit());
     if (verbosity >= 2) {
-      printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl, confl->getSpecificPtr());
+      printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl.clause(), confl.clause()->getSpecificPtr());
     }
-    confl->calcReason(*this, p, p_reason);
+    confl.clause()->calcReason(*this, p, p_reason);
+
     int decLevel = decisionLevel();
     if (decLevel <= root_level) return false;
 
@@ -226,7 +229,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
             if (seen[var(p)]) {
               seen[var(p)] = 0;
 
-              if (confl == NULL) {
+              if (confl == GClause_NULL) {
                 if (out_learnt[0] == lit_Undef) {
                   if (verbosity >= 2) printf("ASSERTING " L_LIT " %d\n", L_lit(~p), out_learnt.size());
                   out_learnt[0] = ~p;
@@ -246,11 +249,16 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
                 out_btlevel_final = out_btlevel;
               }
 
-              p_reason.clear();
-              if (verbosity >= 2) {
-                printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl, confl->getSpecificPtr());
+              if (confl.isLit()) {
+                p_reason.sz = 1;
+                p_reason[0] = confl.lit();
+              } else {
+                p_reason.clear();
+                if (verbosity >= 2) {
+                  printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl.clause(), confl.clause()->getSpecificPtr());
+                }
+                confl.clause()->calcReason(*this, p, p_reason);
               }
-              confl->calcReason(*this, p, p_reason);
               --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
               break;
@@ -258,7 +266,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
             --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
-            if (confl == NULL) {
+            if (confl == GClause_NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
               pathC = 0;
               int max_level = out_btlevel;
@@ -281,7 +289,7 @@ bool Solver::analyze(Reason* confl, vec<Lit>& out_learnt, int& out_btlevel)
                 }
               }
 
-              out_learnt.shrink(pathC);
+              out_learnt.sz -= pathC;
               out_learnt[0] = lit_Undef;
 
               trail_index = trail_lim[max_level].first - 1;
@@ -303,7 +311,7 @@ resolved:
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-    out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
+    out_learnt.sz = out_learnt_final_size;
     out_btlevel = out_btlevel_final;
 #pragma GCC diagnostic pop
 
@@ -316,16 +324,22 @@ resolved:
     if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
 
     {
+      vec<Lit> c;
       int i, j;
       for (i = j = 1; i < out_learnt.size(); i++) {
           Lit p = out_learnt[i];
-          Reason *r = reason[var(p)];
-          if (r == NULL) {
+          GClause r = reason[var(p)];
+          if (r == GClause_NULL) {
               out_learnt[j++] = out_learnt[i];
+          } else if (r.isLit()) {
+            int rvar = var(r.lit());
+            if (!seen[rvar] && level[rvar] != 0){
+              out_learnt[j++] = out_learnt[i];
+            } else if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
           } else {
-              vec<Lit> c;
+              c.clear();
               assert(value(p) == l_False);
-              r->calcReason(*this, ~p, c);
+              r.clause()->calcReason(*this, ~p, c);
               for (int k = 0; k < c.size(); k++)
                   if (!seen[var(c[k])] && level[var(c[k])] != 0){
                       out_learnt[j++] = out_learnt[i];
@@ -336,7 +350,7 @@ resolved:
     continue2: ;
       }
 
-      out_learnt.shrink(i - j);
+      out_learnt.sz = j;
     }
 
     for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
@@ -388,17 +402,15 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
             }
         }
 
-        Reason* confl;
-
         // Select next clause to look at:
         while (true) {
             p = trail[trail_index];
-            confl = reason[var(p)];
+            GClause confl = reason[var(p)];
 
             if (seen[var(p)]) {
               seen[var(p)] = 0;
 
-              if (confl == NULL) {
+              if (confl == GClause_NULL) {
                 if (out_learnt[0] == lit_Undef) {
                   if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
                   out_learnt[0] = ~p;
@@ -419,11 +431,16 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                 out_btlevel_final = out_btlevel;
               }
 
-              p_reason.clear();
-              if (verbosity >= 2) {
-                printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl, confl->getSpecificPtr());
+              if (confl.isLit()) {
+                p_reason.sz = 1;
+                p_reason[0] = confl.lit();
+              } else {
+                p_reason.clear();
+                if (verbosity >= 2) {
+                  printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl.clause(), confl.clause()->getSpecificPtr());
+                }
+                confl.clause()->calcReason(*this, p, p_reason);
               }
-              confl->calcReason(*this, p, p_reason);
 
               if (verbosity >= 2) {
                 printf("REASON " L_LIT ":", L_lit(p));
@@ -439,7 +456,7 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
 
             --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
 
-            if (confl == NULL) {
+            if (confl == GClause_NULL) {
               if (verbosity >= 2) printf("OLD_LEVEL\n");
               pathC = 0;
               int max_level = out_btlevel;
@@ -462,13 +479,12 @@ bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_bt
                 }
               }
 
-              out_learnt.shrink(pathC);
+              out_learnt.sz -= pathC;
               out_learnt[0] = lit_Undef;
 
-              int foo = trail_lim[max_level].first - 1;
               trail_index = trail_lim[max_level].first - 1;
-              decLevel = max_level;
               cancelUntil(max_level);
+              decLevel = max_level;
             }
         }
     }
@@ -485,7 +501,7 @@ resolved:
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-    out_learnt.shrink(out_learnt.size() - out_learnt_final_size);
+    out_learnt.sz = out_learnt_final_size;
     out_btlevel = out_btlevel_final;
 #pragma GCC diagnostic pop
 
@@ -498,27 +514,33 @@ resolved:
     if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
 
     {
+      vec<Lit> c;
       int i, j;
-      for (i = j = 1; i < out_learnt.size(); ++i) {
+      for (i = j = 1; i < out_learnt.size(); i++) {
           Lit p = out_learnt[i];
-          Reason *r = reason[var(p)];
-          if (r == NULL) {
+          GClause r = reason[var(p)];
+          if (r == GClause_NULL) {
               out_learnt[j++] = out_learnt[i];
+          } else if (r.isLit()) {
+            int rvar = var(r.lit());
+            if (!seen[rvar] && level[rvar] != 0){
+              out_learnt[j++] = out_learnt[i];
+            } else if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
           } else {
-              vec<Lit> c;
+              c.clear();
               assert(value(p) == l_False);
-              r->calcReason(*this, ~p, c);
+              r.clause()->calcReason(*this, ~p, c);
               for (int k = 0; k < c.size(); k++)
                   if (!seen[var(c[k])] && level[var(c[k])] != 0){
                       out_learnt[j++] = out_learnt[i];
                       goto continue2;
                   }
-              if (verbosity >= 2) std::cout << "OMIT " << p << " " << out_learnt.size() << std::endl;
+              if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
           }
     continue2: ;
       }
 
-      out_learnt.shrink(i - j);
+      out_learnt.sz = j;
     }
 
     for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
@@ -551,7 +573,7 @@ resolved:
 |  Output:
 |    TRUE if fact was enqueued without conflict, FALSE otherwise.
 |________________________________________________________________________________________________@*/
-bool Solver::enqueue(Lit p, Reason* from)
+bool Solver::enqueue(Lit p, GClause from)
 {
    if (value(p) != l_Undef){
         if (value(p) == l_False){
@@ -588,10 +610,10 @@ bool Solver::enqueue(Lit p, Reason* from)
 |    Post-conditions:
 |      * the propagation queue is empty, even if there was a conflict.
 |________________________________________________________________________________________________@*/
-Reason* Solver::propagate(void)
+GClause Solver::propagate(void)
 {
     if (verbosity >= 2) printf("PROPAGATE %d\n", propQ.size());
-    Reason* confl = NULL;
+    GClause confl = GClause_NULL;
     while (propQ.size() > 0){
         stats.propagations++;
         Lit           p  = propQ.dequeue();        // 'p' is enqueued fact to propagate.
@@ -599,15 +621,15 @@ Reason* Solver::propagate(void)
         if (verbosity >= 2) printf("WS_LEN %d " L_LIT "\n", ws.size(), L_lit(p));
         bool          keep_watch;
         Constr        **i, **j;
-        for (i = j = (Constr**)ws; confl == NULL && i < (Constr**)ws + ws.size(); ++i){
+        for (i = j = (Constr**)ws; confl == GClause_NULL && i < (Constr**)ws + ws.size(); ++i){
             stats.inspects++;
             keep_watch = false;
             if (verbosity >= 2) {
               printf("PROP_IX %ld %p %p\n", i - (Constr**)ws, (*i), (*i)->getSpecificPtr2());
               std::cout << std::flush;
             }
-            Reason *confl2 = (*i)->propagate(*this, p, keep_watch);
-            if (confl2) {
+            GClause confl2 = (*i)->propagate(*this, p, keep_watch);
+            if (confl2 != GClause_NULL) {
                 confl = confl2;
                 if (verbosity >= 2)
                   printf("CONFLICT_DETECTED\n");
@@ -623,7 +645,7 @@ Reason* Solver::propagate(void)
 
         Constr **end = (Constr**)ws + ws.size();
 
-        if (confl == NULL) {
+        if (confl == GClause_NULL) {
           // Copy the remaining watches:
           while (i < end) {
               if (verbosity >= 2) printf("MOVE_WATCH_PROP1 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
@@ -638,7 +660,7 @@ Reason* Solver::propagate(void)
           }
         }
 
-        ws.shrink(i - j);
+        ws.sz = j - ws;
     }
 
     return confl;
@@ -672,7 +694,7 @@ void Solver::reduceDB(void)
         else
             learnts[j++] = learnts[i];
     }
-    learnts.shrink(i - j);
+    learnts.sz = j;
 }
 
 
@@ -689,7 +711,7 @@ void Solver::simplifyDB(void)
     if (!ok) return;    // GUARD (public method)
     assert(decisionLevel() == 0);
 
-    if (propagate() != NULL){
+    if (propagate() != GClause_NULL){
         ok = false;
         return; }
     if (nAssigns() == last_simplify)
@@ -707,7 +729,7 @@ void Solver::simplifyDB(void)
             else
                 cs[j++] = cs[i];
         }
-        cs.shrink(cs.size()-j);
+        cs.sz = j;
     }
 }
 
@@ -750,8 +772,8 @@ lbool Solver::search()
             throw Cancelled();
           }
         }
-        Reason* confl = propagate();
-        if (confl != NULL){
+        GClause confl = propagate();
+        if (confl != GClause_NULL){
             // CONFLICT
 
             if (verbosity >= 2) printf(L_IND "**CONFLICT**\n", L_ind);
@@ -852,7 +874,7 @@ bool Solver::solve(const vec<Lit>& assumps)
           return false;
       }
       ++root_level;
-      if (propagate() != NULL) {
+      if (propagate() != GClause_NULL) {
           propQ.clear();
           cancelUntil(0);
           return false;

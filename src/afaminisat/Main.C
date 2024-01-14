@@ -41,7 +41,7 @@ using std::string;
 namespace chrono = std::chrono;
 
 #ifdef MY_DEBUG
-int verbosity = -4;
+int verbosity = 4;
 const int VERBOSE_FROM = -1;
 #endif
 const bool write_debug_dots = false;

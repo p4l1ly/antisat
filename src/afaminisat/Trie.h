@@ -149,7 +149,7 @@ struct RearGuard : public WatchedPlace {
   void on_accept_van(Solver &S, Lit old_tag);
 
   Place* jump(Solver &S, Lit old_tag);
-  Reason* propagate(Solver& S, Lit p, bool& keep_watch);
+  GClause propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
@@ -184,7 +184,7 @@ struct VanGuard : public WatchedPlace {
   bool on_accept(Solver &S, bool untangle = true);
   Place* on_exhaust(Solver &S);
   Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-  Reason* propagate(Solver& S, Lit p, bool& keep_watch);
+  GClause propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S, int level);
 
@@ -325,7 +325,7 @@ public:
 
 struct RemovedWatch : public Constr {
   void remove    (Solver& S, bool just_dealloc = false) { };
-  Reason* propagate (Solver& S, Lit p, bool& keep_watch) { return NULL; };
+  GClause propagate (Solver& S, Lit p, bool& keep_watch) { return GClause_NULL; };
   bool simplify(Solver& S) { return false; };
   void moveWatch(int i, Lit p) {};
   void *getSpecificPtr2() { return this; }

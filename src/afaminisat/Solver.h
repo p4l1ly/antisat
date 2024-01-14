@@ -94,7 +94,7 @@ public:
     vec<char>           assigns;        // The current assignments (lbool:s stored as char:s).
     vec<Lit>            trail;          // List of assignments made. 
     vec<std::pair<int, int>>            trail_lim;      // Separator indices for different decision levels in 'trail'.
-    vec<Reason*>        reason;         // 'reason[var]' is the clause that implied the variables current value, or 'NULL' if none.
+    vec<GClause>        reason;         // 'reason[var]' is the clause that implied the variables current value, or 'NULL' if none.
     vec<int>            level;          // 'level[var]' is the decision level at which assignment was made.
     int                 root_level;     // Level of first proper decision.
     int                 last_simplify;  // Number of top-level assignments at last 'simplifyDB()'.
@@ -121,10 +121,10 @@ public:
     void        cancelUntil  (int level);
     void        record       (const vec<Lit>& clause);
 
-    bool        analyze      (Reason* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    bool        analyze      (GClause confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
     bool        analyze2     (const vector<int>&, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
-    bool        enqueue      (Lit fact, Reason* from = NULL);
-    Reason*     propagate    (void);
+    bool        enqueue      (Lit fact, GClause from = GClause_NULL);
+    GClause     propagate    (void);
     void        reduceDB     (void);
     lbool       search       ();
 
@@ -235,7 +235,7 @@ inline void Solver::undoOne(void)
     if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND "unbind(" L_LIT ")\n", L_ind, L_lit(p)); }
     Var     x  = var(trail.last()); trail.pop();
     assigns[x] = toInt(l_Undef);
-    reason [x] = NULL;
+    reason [x] = GClause_NULL;
 }
 
 //=================================================================================================

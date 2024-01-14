@@ -190,7 +190,9 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
 
 
 bool Clause::locked(const Solver& S) const {
-    return (const Clause *)S.reason[var(data[0])] == this; }
+    GClause r = S.reason[var(data[0])];
+    return !r.isLit() && r.clause() == this;
+}
 
 
 void Clause::remove(Solver& S, bool just_dealloc)
@@ -230,7 +232,7 @@ bool Clause::simplify(Solver& S)
 
 
 // 'p' is the literal that became TRUE
-Reason *Clause::propagate(Solver& S, Lit p, bool& keep_watch)
+GClause Clause::propagate(Solver& S, Lit p, bool& keep_watch)
 {
     // Make sure the false literal is data[1]:
     Lit     false_lit = ~p;
@@ -241,7 +243,7 @@ Reason *Clause::propagate(Solver& S, Lit p, bool& keep_watch)
     // If 0th watch is true, then clause is already satisfied.
     if (S.value(data[0]) == l_True){
         keep_watch = true;
-        return NULL; }
+        return GClause_NULL; }
 
     // Look for new watch:
     for (int i = 2; i < size(); i++){
@@ -249,12 +251,19 @@ Reason *Clause::propagate(Solver& S, Lit p, bool& keep_watch)
             data[1] = data[i], data[i] = false_lit;
             if (verbosity >= 2) printf("WATCHES_PUSH4 " L_LIT " %d %p %d\n", L_lit(~data[1]), S.watches[index(~data[1])].size(), this, S.value(~data[1]).toInt());
             S.watches[index(~data[1])].push(this);
-            return NULL; } }
+            return GClause_NULL; } }
 
     // Clause is unit under assignment:
     keep_watch = true;
-    if (S.enqueue(data[0], this)) return NULL;
-    return this;
+
+    if (size() == 2) {
+      if (S.enqueue(data[0], GClause_new(~data[1]))) return GClause_NULL;
+      return GClause_new(this);
+    } else {
+      GClause r = GClause_new(this);
+      if (S.enqueue(data[0], r)) return GClause_NULL;
+      return r;
+    }
 }
 
 
@@ -344,7 +353,7 @@ bool UpwardClause_new(Solver& S, Lit output_, const vec<Lit>& ps_, UpwardClause*
 
 inline void UpwardClause::moveWatch(int i, Lit p) { }
 
-Reason* UpwardClause::propagate(Solver& S, Lit p, bool& keep_watch) {
+GClause UpwardClause::propagate(Solver& S, Lit p, bool& keep_watch) {
   // Make sure the false literal is data[0]:
   Lit     false_lit = ~p;
   assert(data[0] == false_lit);
@@ -352,7 +361,7 @@ Reason* UpwardClause::propagate(Solver& S, Lit p, bool& keep_watch) {
   // If 0th watch is true, then clause is already satisfied.
   if (S.value(output) == l_True){
       keep_watch = true;
-      return NULL; }
+      return GClause_NULL; }
 
   // Look for new watch:
   for (int i = 1; i < size; i++){
@@ -360,12 +369,18 @@ Reason* UpwardClause::propagate(Solver& S, Lit p, bool& keep_watch) {
           data[0] = data[i], data[i] = false_lit;
           if (verbosity >= 2) printf("WATCHES_PUSH6 " L_LIT " %d %p %d\n", L_lit(~data[0]), S.watches[index(~data[0])].size(), this, S.value(~data[0]).toInt());
           S.watches[index(~data[0])].push(this);
-          return NULL; } }
+          return GClause_NULL; } }
 
   // Clause is unit under assignment:
   keep_watch = true;
-  if (S.enqueue(output, this)) return NULL;
-  return this;
+  if (size == 1) {
+    if (S.enqueue(output, GClause_new(~data[0]))) return GClause_NULL;
+    return GClause_new(this);
+  } else {
+    GClause r = GClause_new(this);
+    if (S.enqueue(output, r)) return GClause_NULL;
+    return r;
+  }
 }
 
 void UpwardClause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {

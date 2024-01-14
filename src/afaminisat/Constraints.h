@@ -25,6 +25,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include "SolverTypes.h"
 #include "SupQ.h"
+#include "Global.h"
 
 
 //=================================================================================================
@@ -46,9 +47,28 @@ struct Reason {
     virtual ~Reason(void) { };  // (not used, just to keep the compiler happy)
 };
 
+// Either a pointer to a clause or a literal.
+class GClause {
+    void*   data;
+    GClause(void* d) : data(d) {}
+public:
+    friend GClause GClause_new(Lit p);
+    friend GClause GClause_new(Reason* c);
+
+    bool        isLit    () const { return ((uintp)data & 1) == 1; }
+    Lit         lit      () const { return toLit(((intp)data) >> 1); }
+    Reason*     clause   () const { return (Reason*)data; }
+    bool        operator == (GClause c) const { return data == c.data; }
+    bool        operator != (GClause c) const { return data != c.data; }
+};
+inline GClause GClause_new(Lit p)     { return GClause((void*)(((intp)index(p) << 1) + 1)); }
+inline GClause GClause_new(Reason* c) { assert(((uintp)c & 1) == 0); return GClause((void*)c); }
+
+#define GClause_NULL GClause_new((Clause*)NULL)
+
 struct Constr {
     virtual void remove    (Solver& S, bool just_dealloc = false) = 0;
-    virtual Reason* propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
+    virtual GClause propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
     virtual void moveWatch(int i, Lit p) = 0;
     virtual void *getSpecificPtr2() = 0;
@@ -87,7 +107,7 @@ public:
 
     // Constraint interface:
     void remove    (Solver& S, bool just_dealloc = false);
-    Reason* propagate (Solver& S, Lit p, bool& keep_watch);
+    GClause propagate (Solver& S, Lit p, bool& keep_watch);
     bool simplify  (Solver& S);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
     void moveWatch(int i, Lit p);
@@ -110,7 +130,7 @@ public:
 
     // Constraint interface:
     void remove    (Solver& S, bool just_dealloc = false) { }
-    Reason* propagate (Solver& S, Lit p, bool& keep_watch);
+    GClause propagate (Solver& S, Lit p, bool& keep_watch);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
     void moveWatch(int i, Lit p);
 };
