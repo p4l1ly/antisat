@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <utility>
 #include <fstream>
+#include <map>
 #include <stdint.h>
 
 #include "Constraints.h"
@@ -16,6 +17,7 @@ class Solver;
 using std::pair;
 using std::vector;
 using std::unordered_set;
+using std::map;
 
 //=================================================================================================
 
@@ -76,6 +78,9 @@ public:
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 
   void *getSpecificPtr() { return this; }
+
+  bool is_valid_accepting_rear();
+  bool is_best_accepting_rear(Trie &trie, Place aplace);
 };
 
 struct PlaceAttrs : Place {
@@ -124,7 +129,7 @@ struct RearGuard : public WatchedPlace {
   VanGuard *last_van;
 
   Place accepting_place;
-  int accepting_place_level;
+  int accepting_level;
 
   RearGuard(
     Place place,
@@ -140,7 +145,7 @@ struct RearGuard : public WatchedPlace {
   , accepting_place(NULL, 0, 0)
   { }
 
-  void on_accept_rear(Solver &S, int accepting_place_level);
+  void on_accept_rear(Solver &S, int accepting_level);
   void on_accept_van(Solver &S, Lit old_tag);
 
   Place* jump(Solver &S, Lit old_tag);
@@ -148,8 +153,6 @@ struct RearGuard : public WatchedPlace {
 
   void make_snapshot(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
-
-  bool is_best_accepting_rear(Trie &trie, Place aplace);
 
   void untangle(Trie &trie, Lit p);
   void entangle(Trie &trie);
@@ -202,7 +205,7 @@ struct Snapshot {
   vector<Place> cuts;
 
   Place accepting_place;
-  int accepting_place_level;
+  int accepting_level;
 
   Snapshot()
   : new_rears()
@@ -222,7 +225,7 @@ struct Snapshot {
   , van_snapshots(std::move(old.van_snapshots))
   , is_acc(old.is_acc)
   , accepting_place(old.accepting_place)
-  , accepting_place_level(old.accepting_place_level)
+  , accepting_level(old.accepting_level)
   , cuts(std::move(old.cuts))
   {}
 
@@ -371,14 +374,15 @@ public:
   std::vector<Snapshot> snapshots;
 
   Place accepting_place;
-  int accepting_place_level = -1;
+  int accepting_level = -1;
+  map<int, int> accepting_level_by_depth;
 
   unsigned on_sat_count = 0;
   vector<unsigned> my_zeroes_set;
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
-  void update_accepting_place(Solver &S, Place accepting_place_, int accepting_place_level_);
+  void update_accepting_place(Solver &S, Place accepting_place_, int start_level, int end_level);
 
   vector<Place> root_cuts;
 

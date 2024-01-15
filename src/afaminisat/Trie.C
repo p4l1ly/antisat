@@ -18,6 +18,9 @@ int ver_count = 0;
 RemovedWatch REMOVED_WATCH = {};
 Mode TRIE_MODE = branch_always;
 
+using std::endl;
+using std::cout;
+
 void check_duplicate_rears(Trie &trie, RearGuard &p) {
   ITER_LOGLIST(trie.root_new_rears, RearGuard, x, {
     assert(!x.enabled || !p.enabled || &x == &p || x.hor != p.hor || x.hor_ix != p.hor_ix || x.ver_ix != p.ver_ix);
@@ -384,7 +387,10 @@ void Trie::onSat(Solver &S) {
         << " " << accepting_place.get_depth_if_valid(*this) << std::endl;
     }
 
-    if (ignored_rear->is_best_accepting_rear(*this, aplace)) {
+    if (
+      ignored_rear->is_valid_accepting_rear()
+      && ignored_rear->is_best_accepting_rear(*this, aplace)
+    ) {
       if (verbosity >= 2) printf("ACCEPT_AT_IGNORED %p\n", ignored_rear);
       aplace = *ignored_rear;
     }
@@ -1315,17 +1321,23 @@ void Trie::undo(Solver& S) {
     if (!watch_unwatch) rguard.set_watch(S);
   }
 
-  if ((int)snapshot_count <= accepting_place_level - S.root_level) {
+  if ((int)snapshot_count <= accepting_level - S.root_level) {
     if (verbosity >= 2) {
       std::cout << "USE_ACCEPTING_SNAPSHOT "
         << accepting_place << "->" << snapshot.accepting_place
-        << " " << accepting_place_level
-        << "->" << snapshot.accepting_place_level
+        << " " << accepting_level
+        << "->" << snapshot.accepting_level
         << std::endl;
+
+      cout << "ALBD_ERASE_UNDO " << accepting_place.get_leftmost(*this).depth << endl;
+      for (auto x: accepting_level_by_depth) {
+        cout << "ALBD " << x.first << ":" << x.second << endl;
+      }
     }
 
+    accepting_level_by_depth.erase(accepting_place.get_leftmost(*this).depth);
     accepting_place = snapshot.accepting_place;
-    accepting_place_level = snapshot.accepting_place_level;
+    accepting_level = snapshot.accepting_level;
   }
 
   for (Place cut : snapshot.cuts) cut.cut_away();
@@ -1356,8 +1368,8 @@ Snapshot& Trie::new_snapshot() {
   snapshot->van_snapshots.clear();
   snapshot->cuts.clear();
   snapshot->accepting_place = accepting_place;
-  snapshot->accepting_place_level = accepting_place_level;
-  if (verbosity >= 2) std::cout << "NEW_SNAPSHOT2 " << snapshot->accepting_place << " " << snapshot->accepting_place_level << " " << snapshot << std::endl;
+  snapshot->accepting_level = accepting_level;
+  if (verbosity >= 2) std::cout << "NEW_SNAPSHOT2 " << snapshot->accepting_place << " " << snapshot->accepting_level << " " << snapshot << std::endl;
 
   return *snapshot;
 }
@@ -1404,6 +1416,8 @@ void Place::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
 }
 
 Place* Trie::reset(Solver &S) {
+  accepting_level_by_depth.clear();
+
   ITER_LOGLIST(root_new_rears, RearGuard, rguard, {
     if (verbosity >= 2) printf("ResettingRear %p\n", &rguard);
     if (rguard.enabled && !rguard.in_exhaust()) rguard.remove_watch(S, rguard.get_tag());
@@ -1435,7 +1449,7 @@ Place* Trie::reset(Solver &S) {
 
   active_var = 0;
   active_var_old = 0;
-  accepting_place_level = -1;
+  accepting_level = -1;
 
   if (verbosity >= 2) printf("RESET %p %p\n", &root_rguard, &root_vguard);
 
@@ -1624,50 +1638,84 @@ Reason* VanGuard::propagate(Solver& S, Lit p, bool& keep_watch) {
 }
 
 
-void Trie::update_accepting_place(Solver &S, Place place, int level) {
-  if (level > S.root_level) {
-    Place ap = accepting_place;
-    int apl = accepting_place_level;
+void Trie::update_accepting_place(Solver &S, Place place, int start_level, int end_level) {
+  Place *end_aplace;
+  int *end_alevel;
 
-    while (level < apl) {
+  if (end_level == S.decisionLevel() + 1) {
+    end_aplace = &accepting_place;
+    end_alevel = &accepting_level;
+  } else {
+    Snapshot &s = S.trie.snapshots[end_level - S.root_level - 1];
+    end_aplace = &s.accepting_place;
+    end_alevel = &s.accepting_level;
+  }
+
+  {
+    Place ap = *end_aplace;
+    int apl = *end_alevel;
+
+    while (true) {
+      if (start_level > apl) break;
+
+      if (verbosity >= 2) {
+        cout << "ALBD_ERASE_TRAVEL " << accepting_place.get_leftmost(*this).depth << endl;
+        for (auto x: accepting_level_by_depth) {
+          cout << "ALBD " << x.first << ":" << x.second << endl;
+        }
+      }
+
+      accepting_level_by_depth.erase(ap.get_leftmost(*this).depth);
+      if (start_level == apl || S.root_level >= apl) break;
+
       Snapshot &s = S.trie.snapshots[apl - S.root_level - 1];
 
       if (verbosity >= 2) {
         std::cout << "TRAVEL_ACCEPTING_SNAPSHOT "
           << ap << "->" << s.accepting_place
-          << " " << apl << "->" << s.accepting_place_level
+          << " " << apl << "->" << s.accepting_level
           << std::endl;
       }
 
       ap = s.accepting_place;
-      apl = s.accepting_place_level;
+      apl = s.accepting_level;
     }
 
-    if (apl < level) {
-      Snapshot &snapshot = S.trie.snapshots[level - S.root_level - 1];
+    if (apl < start_level && S.root_level < start_level) {
+      Snapshot &snapshot = S.trie.snapshots[start_level - S.root_level - 1];
 
       if (verbosity >= 2) {
         std::cout << "MAKE_ACCEPTING_SNAPSHOT "
           << snapshot.accepting_place << "->" << ap
-          << " " << snapshot.accepting_place_level << "->" << apl
+          << " " << snapshot.accepting_level << "->" << apl
           << std::endl;
       }
 
       snapshot.accepting_place = ap;
-      snapshot.accepting_place_level = apl;
+      snapshot.accepting_level = apl;
     }
   }
 
   if (verbosity >= 2) {
     std::cout << "UPDATE_ACCEPTING_PLACE "
-      << accepting_place << "->" << place
-      << " " << accepting_place_level << "->" << level
-      << " " << S.root_level
+      << *end_aplace << "->" << place
+      << " " << *end_alevel << "->" << start_level
+      << " " << start_level << " " << end_level
+      << " " << S.root_level << " " << S.decisionLevel()
       << std::endl;
   }
 
-  accepting_place = place;
-  accepting_place_level = level;
+  *end_aplace = place;
+  *end_alevel = start_level;
+
+  if (verbosity >= 2) {
+    cout << "ALBD_INSERT " << accepting_place.get_leftmost(*this).depth << ":" << start_level << endl;
+    for (auto x: accepting_level_by_depth) {
+      cout << "ALBD " << x.first << ":" << x.second << endl;
+    }
+  }
+
+  accepting_level_by_depth[place.get_leftmost(*this).depth] = start_level;
 }
 
 
@@ -1677,48 +1725,13 @@ void RearGuard::on_accept_van(Solver &S, Lit old_tag) {
   Trie &trie = S.trie;
   untangle(trie, old_tag);
 
-  int global_depth;
-  int depth;
-
-  // The guard is selected for onSat whenever it is at the end of its horizontal line and
-  //   - its depth is bigger than the old selected guard
-  //   - or it lies on the same horizontal line (including back_ptr) as the old selected guard.
-  // The latter can happen if the branch is added by onSat and it is important even if the
-  // RearGuard is reused, if the level changes.
   if (accepting_place.hor == NULL) return;
-  if (accepting_place.is_ver()) {
-    HorHead &horhead = accepting_place.deref_ver();
-    if (horhead.hor != NULL) return;
-    depth = horhead.depth;
-    global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth >= depth) return;
-  } else if (accepting_place.hor == &trie.root) {
-    global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth > 0) return;
-    if (accepting_place.hor->elems.size() != accepting_place.hor_ix + 1) return;
-    depth = 0;
-  } else {
-    if (accepting_place.hor->elems.size() != accepting_place.hor_ix + 1) return;
-    Place back = accepting_place.hor->back_ptr;
-    depth = back.deref_ver().depth;
-    global_depth = trie.accepting_place.get_depth_if_valid(trie);
-    if (global_depth > depth) return;
+  if (!accepting_place.is_valid_accepting_rear()) return;
+  if (!accepting_place.is_best_accepting_rear(trie, trie.accepting_place)) return;
 
-    if (global_depth == depth) {
-      Place old_accepting_place = trie.accepting_place;
-      if (old_accepting_place.is_ver()) {
-        if (
-          old_accepting_place.hor != back.hor ||
-          old_accepting_place.hor_ix != back.hor_ix
-        ) return;
-      }
-      else if (old_accepting_place.hor != accepting_place.hor) return;
-    }
-  }
-
+  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_VAN " << this << " " << accepting_place << " " << S.decisionLevel() << std::endl;
   int level = S.decisionLevel();
-  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_VAN " << this << " " << accepting_place << " " << level << std::endl;
-  trie.update_accepting_place(S, accepting_place, level);
+  trie.update_accepting_place(S, accepting_place, level, level + 1);
 }
 
 void RearGuard::untangle(Trie &trie, Lit old_tag) {
@@ -1834,7 +1847,13 @@ void RearGuard::entangle(Trie &trie) {
   }
 }
 
-bool RearGuard::is_best_accepting_rear(Trie &trie, Place aplace) {
+bool Place::is_valid_accepting_rear() {
+  if (is_ver()) { if (deref_ver().hor != NULL) return false; }
+  else if (hor->elems.size() != hor_ix + 1) return false;
+  return true;
+}
+
+bool Place::is_best_accepting_rear(Trie &trie, Place aplace) {
   int global_depth;
   int depth;
 
@@ -1846,44 +1865,68 @@ bool RearGuard::is_best_accepting_rear(Trie &trie, Place aplace) {
 
   if (is_ver()) {
     HorHead &horhead = deref_ver();
-    if (horhead.hor != NULL) {return false;}
     depth = horhead.depth;
     global_depth = aplace.get_depth_if_valid(trie);
-    if (global_depth >= depth) {return false;}
+    return global_depth < depth;
   } else if (hor == &trie.root) {
     global_depth = aplace.get_depth_if_valid(trie);
-    if (global_depth > 0) {return false;}
-    if (hor->elems.size() != hor_ix + 1) {return false;}
-    depth = 0;
+    return global_depth == 0;
   } else {
-    if (hor->elems.size() != hor_ix + 1) {return false;}
     Place back = hor->back_ptr;
     depth = back.deref_ver().depth;
     global_depth = aplace.get_depth_if_valid(trie);
-    if (global_depth > depth) {return false;}
-
+    if (global_depth > depth) return false;
     if (global_depth == depth) {
-      if (aplace.is_ver()) {
-        if (
-          aplace.hor != back.hor ||
-          aplace.hor_ix != back.hor_ix
-        ) {return false;}
-      }
-      else if (aplace.hor != hor) {return false;}
+      if (aplace.is_ver()) return aplace.hor == back.hor && aplace.hor_ix == back.hor_ix;
+      return aplace.hor == hor;
     }
+    return true;
   }
-
-  return true;
 }
 
 void RearGuard::on_accept_rear(Solver &S, int level) {
   enabled = false;
 
-  Trie &trie = S.trie;
-  if (!is_best_accepting_rear(trie, trie.accepting_place)) return;
+  if (!is_valid_accepting_rear()) return;
 
-  if (verbosity >= 2) std::cout << "DEEPEST_REAR_ACCEPT_REAR " << this << " " << *this << " " << level << std::endl;
-  trie.update_accepting_place(S, *this, level);
+  Trie &trie = S.trie;
+  int depth = get_leftmost(trie).depth;
+
+  if (verbosity >= 2) {
+    cout << "ALBDS" << endl;
+    for (auto x: trie.accepting_level_by_depth) {
+      cout << "ALBD " << x.first << ":" << x.second << endl;
+    }
+  }
+
+  auto ub = trie.accepting_level_by_depth.upper_bound(depth);
+  if (ub == trie.accepting_level_by_depth.end()) {
+    if (!is_best_accepting_rear(trie, trie.accepting_place)) return;
+    if (verbosity >= 2) {
+      std::cout << "DEEPEST_REAR_ACCEPT_REAR1 " << this << " " << *this << " " << depth
+        << " " << level << " " << S.decisionLevel() + 1 << std::endl;
+    }
+    trie.update_accepting_place(S, *this, level, S.decisionLevel() + 1);
+  } else {
+    int end_level = ub->second;
+    if (level >= end_level) return;
+    if (verbosity >= 2) {
+      cout << "REAR_ACCEPT_REAR2 " << this << " " << *this
+        << " " << level << " " << end_level
+        << " " << S.root_level << " " << S.decisionLevel() << endl;
+    }
+
+    if (end_level <= S.root_level) return;
+
+    Place aplace = trie.snapshots[end_level - S.root_level - 1].accepting_place;
+    if (!is_best_accepting_rear(trie, aplace)) return;
+
+    if (verbosity >= 2) {
+      std::cout << "DEEPEST_REAR_ACCEPT_REAR2 " << this << " " << *this << " " << depth
+        << " " << level << " " << end_level << std::endl;
+    }
+    trie.update_accepting_place(S, *this, level, end_level);
+  }
 }
 
 
