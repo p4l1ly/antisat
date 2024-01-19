@@ -36,11 +36,11 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #define L_IND    "%-*d"
 #define L_ind    3,decisionLevel()
 
-void check(bool expr);
-
 //=================================================================================================
 // Solver -- the main class:
 
+
+extern bool GUESS_WITH_TRIE;
 
 struct SolverStats {
     int64   starts, decisions, propagations, inspects, conflicts;
@@ -80,7 +80,6 @@ public:
     double              var_decay;      // INVERSE decay factor for variable activity: stores 1/decay. Use negative value for static variable order.
 
     vec<bool>           pures;          // The pure literals (undef === one).
-    vec<int>            output_map;    // The mask of output variables.
     vec<Lit>            outputs;        // The output literals.
     std::unordered_set<unsigned> finals;        // The output literals.
 
@@ -158,7 +157,7 @@ public:
       , cla_decay(1)
       , var_inc(1)
       , var_decay(1)
-      , order(assigns, activity, pures, output_map)
+      , order(assigns, activity, pures)
       , last_simplify(-1)
       , params(1, 1, 0)
       {
@@ -182,7 +181,7 @@ public:
 
     // Problem specification:
     //
-    Var     newVar (bool pure=false);
+    Var     newVar ();
     int     nVars  (void)  { return assigns.size(); }
     void    addUnit(Lit p) { if (ok) enqueue(p); }
 

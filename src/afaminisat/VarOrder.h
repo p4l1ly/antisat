@@ -35,8 +35,6 @@ class VarOrder: Undoable {
     const vec<char>&    assigns;       // var->val. Pointer to external assignment table.
     const vec<double>&  activity;      // var->act. Pointer to external activity table.
     const vec<bool>&    pures;
-    const vec<int>&     output_map;
-    double              random_seed;   // For the internal random number generator
     std::vector<Var> order;
     unsigned guess_line = -1;
     std::vector<unsigned> var_ixs;
@@ -62,17 +60,17 @@ public:
     unsigned update_count_since_last_stage = 0;
 
     VarOrder(
-        const vec<char>& ass, const vec<double>& act, const vec<bool>& pures_,
-        const vec<int>& outs
-    ) : assigns(ass), activity(act), pures(pures_), output_map(outs),
-        random_seed(91648253), order(), snapshots(), barriers(), var_ixs()
+        const vec<char>& ass, const vec<double>& act, const vec<bool>& pures_
+    ) : assigns(ass), activity(act), pures(pures_),
+        order(), snapshots(), barriers(), var_ixs()
     { }
 
     inline void newVar(void);
     inline void init(void);
     void update(Var x, Solver &S);                  // Called when variable increased in activity.
+    bool update0(int right, int right_ix, Solver &S);                  // Called when variable increased in activity.
     void undo(Solver &S);                    // Called when variable is unassigned and may be selected again.
-    Var select(double random_freq, Solver &S); // Selects a new, unassigned variable (or 'var_Undef' if none exists).
+    bool select(Solver &S); // Selects a new, unassigned variable (or 'var_Undef' if none exists).
     void new_stage() {
       if (
         bubble_move_count_since_last_stage < min_bubble_move_count_since_last_stage
@@ -93,8 +91,7 @@ public:
 void VarOrder::newVar(void)
 {
     int ix = assigns.size() - 1;
-    // printf("pure1 %d %d %d\n", ix, pures[ix], output_map[ix]);
-    if (!pures[ix] && output_map[ix] == -1) {
+    if (!pures[ix]) {
         order.push_back(ix);
     }
 }

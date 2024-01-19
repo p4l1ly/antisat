@@ -97,13 +97,11 @@ bool parse_cnfafa(Solver& S, int* acnt) {
   unordered_set<unsigned> upwardClausesSet;
   for (auto upward: upwardClauses) upwardClausesSet.insert(upward);
 
-  S.output_map.growTo(nVars, -1);
   S.trie.posq_output_map.resize(nVars, false);
 
   int i = 0;
   for (int output: outputs) {
     int var = abs(output) - 1;
-    S.output_map[var] = i;
     Lit lit = output > 0 ? Lit(var) : Lit(var, true);
     S.outputs.push(lit);
     ++i;
@@ -236,6 +234,11 @@ public:
 
     ModelCheckingImpl(char mode) : container_supq()
     {
+        switch (mode) {
+          case '0': TRIE_MODE = clauses; break;
+          default: TRIE_MODE = branch_always;
+        }
+
         short_unsat = !parse_cnfafa(S, &acnt);
         if (short_unsat) {
             return;
@@ -259,16 +262,13 @@ public:
             unique_outputs.push(S.outputs[i]);
           }
         }
-        short_sat = !S.trie.init(unique_outputs, S.finals, S);
-        if (short_sat) {
-          return;
+        if (TRIE_MODE == clauses) {
+          S.trie.init_clausal(unique_outputs, S);
+        } else {
+          short_sat = !S.trie.init(unique_outputs, S.finals, S);
+          if (short_sat) return;
         }
         S.order.init();
-
-        switch (mode) {
-          case '0': TRIE_MODE = clauses; break;
-          default: TRIE_MODE = branch_always;
-        }
 
         if (verbosity >= 2) {
             for (int x = 0; x < S.outputs.size(); x++) {

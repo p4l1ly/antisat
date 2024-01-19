@@ -388,6 +388,8 @@ public:
 
   Trie();
   bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits, Solver &S);
+  void init_clausal(const vec<Lit>& my_literals, Solver &S);
+  void init_sat(Solver &S);
 
   bool guess(Solver &S);
 
@@ -419,6 +421,9 @@ public:
     int leftmost_rear_visit_level,
     int leftmost_van_visit_level
   );
+
+  // manual creation
+  bool add_clause(vector<Lit> &lits, Solver &S);
 };
 
 

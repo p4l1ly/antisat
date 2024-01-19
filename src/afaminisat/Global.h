@@ -126,9 +126,10 @@ class vec {
     int cap;
 
     void     init(int size, const T& pad);
-    void     grow(int min_cap);
 
 public:
+    void     grow(int min_cap);
+
     int sz;
 
     // Types:

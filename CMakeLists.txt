@@ -7,6 +7,8 @@ project(
   LANGUAGES CXX
 )
 
+# find_package(LibLZMA REQUIRED)
+
 set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DMY_DEBUG")
@@ -23,14 +25,16 @@ add_executable(
 )
 set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
 
-# add_executable(
-#   test
-#   src/afaminisat/Test.C
-#   src/afaminisat/Solver.C
-#   src/afaminisat/Trie.C
-#   src/afaminisat/SupQ.C
-#   src/afaminisat/Constraints.C
-#   src/afaminisat/LogList.C
-#   src/afaminisat/VarOrder.C
-# )
-# set_property(TARGET test PROPERTY CXX_STANDARD 20)
+add_executable(
+  triesat
+  src/afaminisat/MainSat.C
+  src/afaminisat/Solver.C
+  src/afaminisat/Trie.C
+  src/afaminisat/SupQ.C
+  src/afaminisat/Constraints.C
+  src/afaminisat/LogList.C
+  src/afaminisat/VarOrder.C
+)
+set_property(TARGET triesat PROPERTY CXX_STANDARD 20)
+# target_include_directories(triesat PRIVATE ${LIBLZMA_INCLUDE_DIRS})
+# target_link_libraries(afaminisat PRIVATE ${LIBLZMA_LIBRARIES})

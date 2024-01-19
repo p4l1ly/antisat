@@ -32,6 +32,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 // Just like 'assert()' but expression will be evaluated in the release version as well.
 inline void check(bool expr) { assert(expr); }
 
+bool GUESS_WITH_TRIE = true;
+
 //=================================================================================================
 // Minor methods:
 
@@ -44,7 +46,7 @@ Solver::~Solver(void) {
 // Creates a new SAT variable in the solver. If 'decision_var' is cleared, variable will not be
 // used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
 //
-Var Solver::newVar(bool pure)
+Var Solver::newVar()
 {
     int     index;
     index = nVars();
@@ -808,15 +810,30 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
-            if (!trie.guess(*this)) {
-              Var next = order.select(params.random_var_freq, *this);
-
-              if (next == var_Undef){
-                  // Model found.
+            if (GUESS_WITH_TRIE) {
+              if (!trie.guess(*this)) {
+                if (!order.select(*this)) {
+                  printf("PRINTING_UNASSIGNED\n");
+                  for (int i = 0; i < nVars(); ++i) {
+                    if (assigns[i] == 0) {
+                      printf("UNASSIGNED %d\n", i);
+                    }
+                  }
                   return l_True;
+                }
               }
-
-              // check(assume(Lit(next, true)));
+            } else if (TRIE_MODE == branch_always) {
+              Snapshot &snapshot = trie.new_snapshot();
+              snapshot.is_acc = false;
+              if (!order.select(*this)) {
+                for (int i = 0; i < nVars(); ++i) {
+                  printf("ASSIGN %d %d\n", i + 1, assigns[i]);
+                }
+                return l_True;
+              }
+              undos.push_back(&trie);
+            } else {
+              if (!order.select(*this)) return l_True;
             }
         }
     }
@@ -856,7 +873,7 @@ void Solver::claRescaleActivity(void)
 bool Solver::solve(const vec<Lit>& assumps)
 {
     root_level = 0;
-    if (trie.root.elems.size() && trie.reset(*this)) return false;
+    if (!trie.root.elems.empty() && trie.reset(*this) != NULL) return false;
     simplifyDB();
     if (!ok) return false;
 

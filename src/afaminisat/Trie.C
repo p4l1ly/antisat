@@ -12,6 +12,8 @@
 #include "Trie.h"
 #include "Solver.h"
 
+inline void check(bool expr) { assert(expr); }
+
 int hor_head_count = 0;
 int hor_count = 0;
 int ver_count = 0;
@@ -153,6 +155,172 @@ void Place::cut_away() {
   hors.erase(hors.begin() + ver_ix, hors.end());
 }
 
+bool Trie::add_clause(vector<Lit> &clause, Solver &S) {
+  vector<lbool> mask;
+  mask.resize(S.nVars(), l_Undef);
+  vector<Lit> preprocessed_clause;
+
+  for (Lit lit: clause) {
+    lbool sval = S.value(lit);
+    if (sval == l_True) return true;
+    if (sval == l_False) continue;
+
+    lbool old_val = mask[var(lit)];
+    lbool new_val = sign(lit) ? l_False : l_True;
+
+    if (old_val == ~new_val) return true;
+    if (old_val == l_Undef) {
+      mask[var(lit)] = new_val;
+      preprocessed_clause.push_back(lit);
+    }
+  }
+
+  if (preprocessed_clause.size() == 0) return false;
+  if (preprocessed_clause.size() == 1) {
+    check(S.enqueue(preprocessed_clause[0]));
+    return true;
+  }
+
+  if (root.elems.empty()) {
+    int depth = 0;
+    VerHead &ver_head = root.elems.emplace_back(preprocessed_clause[0]);
+    auto iter = preprocessed_clause.begin();
+    ++iter;
+    for (; iter != preprocessed_clause.end(); ++iter) {
+      ver_head.hors.emplace_back(*iter, ++depth);
+    }
+    return true;
+  }
+
+  Place deepest_place(&root, 0, -1);
+  int max_depth = -1;
+
+  vector<StackItem> stack2;
+  stack2.emplace_back(&root, 0);
+
+  while (!stack2.empty()) {
+    StackItem stackitem = stack2.back();
+    Place place(stackitem.hor, stackitem.hor_ix, IX_NULL);
+    stack2.pop_back();
+
+    while (true) {
+      if (place.in_exhaust()) return true;
+      if (place.is_ver()) {
+        HorHead &horhead = place.deref_ver();
+        Lit tag = horhead.tag;
+        lbool mask_val = mask[var(tag)];
+        bool contained = mask_val != l_Undef && (mask_val == l_True) != sign(tag);
+
+        if (horhead.hor == NULL) {
+          if (contained) {
+            ++place.ver_ix;
+          } else {
+            if (horhead.depth > max_depth) {
+              max_depth = horhead.depth;
+              deepest_place = place;
+            }
+            break;
+          }
+        } else {
+          if (contained) { 
+            stack2.emplace_back(horhead.hor, 0);
+            ++place.ver_ix;
+          } else {
+            place.hor = horhead.hor;
+            place.hor_ix = 0;
+            place.ver_ix = IX_NULL;
+          }
+        }
+
+      } else {
+        VerHead &verhead = place.deref_hor();
+        Lit tag = verhead.tag;
+        lbool mask_val = mask[var(tag)];
+        bool contained = mask_val != l_Undef && (mask_val == l_False) == sign(tag);
+
+        if (place.hor->elems.size() == place.hor_ix + 1) {
+          if (contained) { 
+            ++place.ver_ix;
+          } else {
+            Place back = place.hor->back_ptr;
+            int my_depth;
+
+            if (back.hor == NULL) {
+              my_depth = 0;
+            } else {
+              my_depth = back.deref_ver().depth;
+            }
+
+            if (my_depth > max_depth) {
+              max_depth = my_depth;
+              deepest_place = place;
+            }
+            break;
+          }
+        } else {
+          if (contained) { 
+            stack2.emplace_back(place.hor, place.hor_ix + 1);
+            ++place.ver_ix;
+          } else {
+            ++place.hor_ix;
+          }
+        }
+      }
+    }
+  }
+
+  if (on_sat_count == std::numeric_limits<unsigned>::max()) {
+    on_sat_count = 0;
+    for (unsigned &x: my_zeroes_set) {
+      x = std::numeric_limits<unsigned>::max();
+    }
+  } else {
+    ++on_sat_count;
+  }
+
+  ITER_MY_ZEROES(deepest_place, x,
+    my_zeroes_set[index(x)] = on_sat_count;
+  )
+
+  vector<Lit> added_vars;
+  for (Lit lit: clause) {
+    if (my_zeroes_set[index(lit)] != on_sat_count) {
+      added_vars.emplace_back(lit);
+    }
+  }
+
+  if (added_vars.empty()) { deepest_place.cut_away(); return true; }
+
+  HorLine *extended_hor;
+  unsigned extended_hor_ix;
+
+  if (deepest_place.is_ver()) {
+    assert(deepest_place.deref_ver().hor == NULL);
+    // We create a new horizontal empty branch right to the current final place
+    // (which is vertical because least_ver_accept is set only when accepting at
+    // vertical places).
+    extended_hor = new HorLine{deepest_place};
+    if (verbosity >= -2) ++hor_count;
+    deepest_place.deref_ver().hor = extended_hor;
+    extended_hor_ix = 0;
+  } else {
+    extended_hor = deepest_place.hor;
+    extended_hor_ix = deepest_place.hor_ix + 1;
+    assert(extended_hor_ix == extended_hor->elems.size());
+  }
+
+  {
+    VerHead &ver_head = extended_hor->elems.emplace_back(added_vars[0]);
+    auto iter = added_vars.begin();
+    ++iter;
+    for (; iter != added_vars.end(); ++iter) {
+      ver_head.hors.emplace_back(*iter, ++max_depth);
+    }
+  }
+
+  return true;
+}
+
 inline void WatchedPlace::set_watch(Solver &S) {
   if (verbosity >= 2) {
     printf("WATCHING_TMP " L_LIT " %p\n", L_lit(get_tag()), this);
@@ -210,15 +378,43 @@ Trie::Trie()
 , root_leftmost(lit_Undef, 0, 0, 0, NULL, NULL, NULL)
 { }
 
+void Trie::init_sat(Solver &S) {
+  my_zeroes_set.resize(S.watches.size(), 0);
+}
+
+void Trie::init_clausal(const vec<Lit>& my_literals_, Solver &S) {
+  my_literals.reserve(my_literals_.size());
+  vector<bool> guessable_vars;
+  guessable_vars.resize(S.nVars(), false);
+  my_guessable_literals.reserve(my_literals_.size());
+  for (int i = 0; i < my_literals_.size(); ++i) {
+    Lit lit = my_literals_[i];
+    my_literals.push_back(lit);
+    if (!posq_output_map[var(lit)]) {
+      if (!guessable_vars[var(lit)]) {
+        my_guessable_literals.push_back(lit);
+        guessable_vars[var(lit)] = true;
+      }
+    }
+  }
+  back_ptrs.resize(my_literals_.size());
+}
+
 bool Trie::init(const vec<Lit>& my_literals_, const unordered_set<unsigned>& init_clause_omits, Solver &S) {
   my_zeroes_set.resize(S.watches.size(), 0);
 
   my_literals.reserve(my_literals_.size());
+  vector<bool> guessable_vars;
+  guessable_vars.resize(S.nVars(), false);
   my_guessable_literals.reserve(my_literals_.size());
   for (int i = 0; i < my_literals_.size(); ++i) {
-    my_literals.push_back(my_literals_[i]);
-    if (!posq_output_map[var(my_literals_[i])]) {
-      my_guessable_literals.push_back(my_literals_[i]);
+    Lit lit = my_literals_[i];
+    my_literals.push_back(lit);
+    if (!posq_output_map[var(lit)]) {
+      if (!guessable_vars[var(lit)]) {
+        my_guessable_literals.push_back(lit);
+        guessable_vars[var(lit)] = true;
+      }
     }
   }
   back_ptrs.resize(my_literals_.size());
@@ -928,7 +1124,7 @@ std::pair<VanGuard*, bool> StackItem::handle(Solver &S, RearGuard &rear, VanGuar
     vguard->next = NULL;
   }
 
-  hor->back_ptr.deref_ver().van_visit_van = vguard;
+  place.get_leftmost(trie).van_visit_van = vguard;
 
   if (verbosity >= 2) {
     std::cout << "HANDLE_GREATER_STACK " << PlaceAttrs(place, S) << std::endl;
@@ -1161,7 +1357,7 @@ void Trie::undo(Solver& S) {
   if (verbosity >= 2) printf("UNDO %d %d %d %p\n", S.decisionLevel(), S.root_level, snapshot_count, &get_last_snapshot());
   if (active_var > my_guessable_literals.size()) {
     if (verbosity >= 2) {
-      printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(S.outputs[active_var_old]));
+      printf("ACTIVE_VAR_UNDO " L_LIT "\n", L_lit(my_guessable_literals[active_var_old]));
       std::cout << std::flush;
     }
     active_var = active_var_old;
@@ -1172,7 +1368,7 @@ void Trie::undo(Solver& S) {
   if (snapshot.is_acc) {
     active_var--;
     if (verbosity >= 2) {
-      printf("ACC_UNDO " L_LIT "\n", L_lit(S.outputs[active_var]));
+      printf("ACC_UNDO " L_LIT "\n", L_lit(my_guessable_literals[active_var]));
       std::cout << std::flush;
     }
     active_var = back_ptrs[active_var];
