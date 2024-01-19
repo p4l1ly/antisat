@@ -68,19 +68,12 @@ public:
   bool ver_is_singleton() const;
   bool is_ver() const;
   bool in_exhaust() const;
-  HorHead &get_leftmost(Trie &trie) const;
-  void set_van_visit_level(int level, VanGuard &van);
-  void set_rear_visit_level(int level, RearGuard &rear, Trie &trie);
-  int get_depth_if_valid(Trie &trie) const;
 
   friend std::ostream& operator<<(std::ostream& os, Place const &p);
 
   void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
 
   void *getSpecificPtr() { return this; }
-
-  bool is_valid_accepting_rear();
-  bool is_best_accepting_rear(Trie &trie, Place aplace);
 };
 
 struct PlaceAttrs : Place {
@@ -112,7 +105,6 @@ struct RearSnapshot {
   RearGuard *ix;
   Place place;
   int last_change_level;
-  Place accepting_place;
 };
 
 struct VanSnapshot {
@@ -125,11 +117,7 @@ struct VanSnapshot {
 struct RearGuard : public WatchedPlace {
   bool enabled;
   int last_change_level;
-  RearGuard *previous, *next;
   VanGuard *last_van;
-
-  Place accepting_place;
-  int accepting_level;
 
   RearGuard(
     Place place,
@@ -138,31 +126,21 @@ struct RearGuard : public WatchedPlace {
   )
   : WatchedPlace(place)
   , last_change_level(last_change_level_)
-  , previous(NULL)
-  , next(NULL)
   , enabled(enabled_)
   , last_van(NULL)
-  , accepting_place(NULL, 0, 0)
   { }
-
-  void on_accept_rear(Solver &S, int accepting_level);
-  void on_accept_van(Solver &S, Lit old_tag);
 
   Place* jump(Solver &S, Lit old_tag);
   GClause propagate(Solver& S, Lit p, bool& keep_watch);
 
   void make_snapshot(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
-
-  void untangle(Trie &trie, Lit p);
-  void entangle(Trie &trie);
-  void retangle(Trie &trie, Lit old_tag, Lit new_tag);
 };
 
 struct VanGuard : public WatchedPlace {
-  RearGuard *rear;
   bool enabled;
   int last_change_level;
+  RearGuard *rear;
   VanGuard *previous, *next;
 
   VanGuard(Place place, RearGuard* rear_guard_, int last_change_level_, bool enabled_)
@@ -181,7 +159,8 @@ struct VanGuard : public WatchedPlace {
     }
   }
 
-  bool on_accept(Solver &S, bool untangle = true);
+  void untangle();
+
   Place* on_exhaust(Solver &S);
   Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   GClause propagate(Solver& S, Lit p, bool& keep_watch);
@@ -197,25 +176,16 @@ struct VanGuard : public WatchedPlace {
 };
 
 struct Snapshot {
-  bool is_acc;
   LogList<RearGuard> new_rears;
   LogList<VanGuard> new_vans;
   vector<RearSnapshot> rear_snapshots;
   vector<VanSnapshot> van_snapshots;
-  vector<Place> cuts;
-
-  Place accepting_place;
-  int accepting_level;
 
   Snapshot()
   : new_rears()
   , new_vans()
   , rear_snapshots()
   , van_snapshots()
-  , cuts()
-  // IX_NULL in hor_ix means no change. If hor==NULL and hor_ix==0, it means that
-  // trie.accepting_place should be cleared.
-  , accepting_place(NULL, IX_NULL, 0)
   {}
 
   Snapshot(Snapshot&& old) noexcept
@@ -223,10 +193,6 @@ struct Snapshot {
   , new_vans(std::move(old.new_vans))
   , rear_snapshots(std::move(old.rear_snapshots))
   , van_snapshots(std::move(old.van_snapshots))
-  , is_acc(old.is_acc)
-  , accepting_place(old.accepting_place)
-  , accepting_level(old.accepting_level)
-  , cuts(std::move(old.cuts))
   {}
 
   Snapshot(Snapshot& old) = delete;
@@ -244,47 +210,11 @@ public:
   Lit tag;
   HorLine *hor;
 
-  int depth;
-  bool is_under_cut = false;
-  int van_visit_level;
-  int rear_visit_level;
-  RearGuard *van_visit_rear;
-  VanGuard *van_visit_van;
-  RearGuard *rear_visit_rear;
-
   HorHead(
-    Lit tag_,
-    int depth_,
-    int van_visit_level_,
-    int rear_visit_level_,
-    RearGuard *van_visit_rear_,
-    VanGuard *van_visit_van_,
-    RearGuard *rear_visit_rear_
+    Lit tag_
   )
   : tag(tag_)
   , hor(NULL)
-  , depth(depth_)
-  , van_visit_level(van_visit_level_)
-  , rear_visit_level(rear_visit_level_)
-  , van_visit_rear(van_visit_rear_)
-  , van_visit_van(van_visit_van_)
-  , rear_visit_rear(rear_visit_rear_)
-  {
-    if (verbosity >= -2) hor_head_count++;
-  }
-
-  HorHead(
-    Lit tag_,
-    int depth_
-  )
-  : tag(tag_)
-  , hor(NULL)
-  , depth(depth_)
-  , van_visit_level(0)
-  , rear_visit_level(0)
-  , van_visit_rear(NULL)
-  , van_visit_van(NULL)
-  , rear_visit_rear(NULL)
   {
     if (verbosity >= -2) hor_head_count++;
   }
@@ -352,12 +282,6 @@ public:
   LogList<RearGuard> root_new_rears;
   LogList<VanGuard> root_new_vans;
   vector<StackItem> stack;
-  RearGuard *last_rear = NULL;
-  RearGuard *last_rear_ignored = NULL;
-
-  vector<Lit> my_literals;
-  vector<Lit> my_guessable_literals;
-  std::vector<bool> posq_output_map;
 
   // There is one back_ptr for each variable (= state of the analysed AFA).
   // If the trie is already in the accepting condition (all places have accepted),
@@ -365,36 +289,14 @@ public:
   // into a list (where the last element is the firstly guessed variable). When
   // undoing guesses, the list is popped, of course.
   // A back_ptr contains the index of the next list item + 1.
-  vector<unsigned> back_ptrs;
-
-  unsigned active_var = 0;
-  unsigned active_var_old = 0;
-
   unsigned snapshot_count = 0;
   std::vector<Snapshot> snapshots;
 
-  Place accepting_place;
-  int accepting_level = -1;
-  map<int, int> accepting_level_by_depth;
-
-  unsigned on_sat_count = 0;
-  vector<unsigned> my_zeroes_set;
-
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
-  void update_accepting_place(Solver &S, Place accepting_place_, int start_level, int end_level);
-
-  vector<Place> root_cuts;
 
   Trie();
-  bool init(const vec<Lit>& my_literals, const unordered_set<unsigned>& init_clause_omits, Solver &S);
-  void init_clausal(const vec<Lit>& my_literals, Solver &S);
-  void init_sat(Solver &S);
 
-  bool guess(Solver &S);
-
-  // Result: should the trie be cut at the active place's back_ptr?
-  void onSat(Solver &S);
   Place* reset(Solver &S);
 
   void undo(Solver& S);
@@ -403,27 +305,8 @@ public:
   void to_dot(Solver& S, const char *filename);
   void print_places();
 
-  // private
-  void onSatSnapshots(
-    unsigned i,
-    unsigned &last_i_rear,
-    unsigned &last_i_van,
-    HorLine *extended_hor,
-    unsigned extended_hor_ix,
-    int lvl,
-    Snapshot &snapshot,
-    VanGuard *vguard,
-    RearGuard *rguard,
-    VanSnapshot *&next_snapshot_van,
-    RearSnapshot *&next_snapshot_rear,
-    vector<std::pair<int, Lit>> &added_vars,
-    RearGuard *leftmost_van_visit_rear,
-    int leftmost_rear_visit_level,
-    int leftmost_van_visit_level
-  );
-
   // manual creation
-  bool add_clause(vector<Lit> &lits, Solver &S);
+  bool add_clause(vector<Lit> &lits, Solver &S, unsigned clause_count, vector<unsigned> sharing_set);
 };
 
 

@@ -155,6 +155,7 @@ bool VarOrder::update0(int right, int right_ix, Solver &S) {
   
   while (right_ix) {
     int left_barrier = barriers[right_ix - 1];
+    left = order[right_ix - 1];
 
     if (left_barrier == -1) {
       if (activity[left] >= max_left_activity) break;
@@ -168,7 +169,6 @@ bool VarOrder::update0(int right, int right_ix, Solver &S) {
       if (activity[left] > max_left_activity_barrier) break;
     }
 
-    left = order[right_ix - 1];
     ++bubble_move_count;
     ++global_bubble_move_count;
     ++bubble_move_count_since_last_stage;

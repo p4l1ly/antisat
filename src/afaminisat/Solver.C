@@ -810,21 +810,8 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
-            if (GUESS_WITH_TRIE) {
-              if (!trie.guess(*this)) {
-                if (!order.select(*this)) {
-                  printf("PRINTING_UNASSIGNED\n");
-                  for (int i = 0; i < nVars(); ++i) {
-                    if (assigns[i] == 0) {
-                      printf("UNASSIGNED %d\n", i);
-                    }
-                  }
-                  return l_True;
-                }
-              }
-            } else if (TRIE_MODE == branch_always) {
+            if (TRIE_MODE == branch_always) {
               Snapshot &snapshot = trie.new_snapshot();
-              snapshot.is_acc = false;
               if (!order.select(*this)) {
                 for (int i = 0; i < nVars(); ++i) {
                   printf("ASSIGN %d %d\n", i + 1, assigns[i]);
@@ -882,7 +869,7 @@ bool Solver::solve(const vec<Lit>& assumps)
     params.random_var_freq = 0.02;
 
     nof_conflicts = 100;
-    nof_learnts   = nConstrs() / 3;
+    nof_learnts   = nConstrs / 3;
 
     for (int i = 0; i < assumps.size(); i++) {
       if (!assume(assumps[i])) {
@@ -909,7 +896,7 @@ bool Solver::resume() {
     while (status == l_Undef){
         if (verbosity >= 1){
             printf("| %9d | %7d %8d | %7d %7d %8d %7.1f |\n",
-                (int)stats.conflicts, nConstrs(), (int)stats.clauses_literals,
+                (int)stats.conflicts, nConstrs, (int)stats.clauses_literals,
                 (int)nof_learnts, nLearnts(), (int)stats.learnts_literals,
                 (double)stats.learnts_literals/nLearnts());
             fflush(stdout);

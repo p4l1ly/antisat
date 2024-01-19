@@ -172,7 +172,7 @@ public:
     lbool   value(Lit p) { return sign(p) ? ~toLbool(assigns[var(p)]) : toLbool(assigns[var(p)]); }
 
     int     nAssigns(void) { return trail.size(); }
-    int     nConstrs(void) { return constrs.size(); }
+    int     nConstrs = 0;
     int     nLearnts(void) { return learnts.size(); }
 
     // Statistics: (read-only member variable)
@@ -196,7 +196,10 @@ public:
         Clause* c;
         ok = Clause_new(*this, ps, false, c);
         if (verbosity >= 2) printf("ADD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
-        if (c != NULL) constrs.push(c);
+        if (c != NULL) {
+          constrs.push(c);
+          ++nConstrs;
+        }
       }
     }
 
@@ -205,12 +208,16 @@ public:
         UpwardClause* c;
         ok = UpwardClause_new(*this, out, ps, c);
         if (verbosity >= 2) printf("ADD_UPWARD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
-        if (c != NULL) constrs.push(c);
+        if (c != NULL) {
+          constrs.push(c);
+          ++nConstrs;
+        }
       }
     }
 
     void addConstr(Constr *c) {
       constrs.push(c);
+      ++nConstrs;
     }
 
     bool onSatConflict(const vector<int>& cell);
