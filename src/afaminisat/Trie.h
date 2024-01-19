@@ -46,8 +46,7 @@ enum MultimoveEnd {
 };
 
 
-struct RearGuard;
-struct VanGuard;
+struct Guard;
 class Trie;
 
 struct Place : public Reason {
@@ -102,62 +101,34 @@ public:
 };
 
 struct RearSnapshot {
-  RearGuard *ix;
+  Guard *ix;
   Place place;
   int last_change_level;
 };
 
 struct VanSnapshot {
-  VanGuard *ix;
+  Guard *ix;
   Place place;
   int last_change_level;
-  RearGuard *rear;
+  Guard *rear;
 };
 
-struct RearGuard : public WatchedPlace {
+struct Guard : public WatchedPlace {
+  bool is_van;
   bool enabled;
   int last_change_level;
-  VanGuard *last_van;
+  Guard *dual;
+  Guard *previous, *next;
 
-  RearGuard(
-    Place place,
-    int last_change_level_,
-    bool enabled_
-  )
+  Guard(bool is_van_, Place place, Guard* dual_, int last_change_level_, bool enabled_)
   : WatchedPlace(place)
-  , last_change_level(last_change_level_)
-  , enabled(enabled_)
-  , last_van(NULL)
-  { }
-
-  Place* jump(Solver &S, Lit old_tag);
-  GClause propagate(Solver& S, Lit p, bool& keep_watch);
-
-  void make_snapshot(Solver &S, int level);
-  void *getSpecificPtr2() { return this; }
-};
-
-struct VanGuard : public WatchedPlace {
-  bool enabled;
-  int last_change_level;
-  RearGuard *rear;
-  VanGuard *previous, *next;
-
-  VanGuard(Place place, RearGuard* rear_guard_, int last_change_level_, bool enabled_)
-  : WatchedPlace(place)
-  , rear(rear_guard_)
+  , is_van(is_van_)
+  , dual(dual_)
   , last_change_level(last_change_level_)
   , enabled(enabled_)
   , previous(NULL)
   , next(NULL)
-  {
-    if (enabled_) {
-      VanGuard *pre = rear->last_van;
-      if (pre) pre->next = this;
-      previous = pre;
-      rear->last_van = this;
-    }
-  }
+  { }
 
   void untangle();
 
@@ -165,7 +136,10 @@ struct VanGuard : public WatchedPlace {
   Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
   GClause propagate(Solver& S, Lit p, bool& keep_watch);
 
-  void make_snapshot(Solver &S, int level);
+  Place* jump(Solver &S, Lit old_tag);
+
+  void make_rear_snapshot(Solver &S, int level);
+  void make_van_snapshot(Solver &S, int level);
 
   void branch(Solver &S);
   WhatToDo after_hors_change(Solver &S);
@@ -175,9 +149,10 @@ struct VanGuard : public WatchedPlace {
   void *getSpecificPtr2() { return this; }
 };
 
+
 struct Snapshot {
-  LogList<RearGuard> new_rears;
-  LogList<VanGuard> new_vans;
+  LogList<Guard> new_rears;
+  LogList<Guard> new_vans;
   vector<RearSnapshot> rear_snapshots;
   vector<VanSnapshot> van_snapshots;
 
@@ -270,7 +245,7 @@ extern Mode TRIE_MODE;
 struct StackItem {
   HorLine* hor;
   unsigned hor_ix;
-  std::pair<VanGuard*, bool> handle(Solver &S, RearGuard &rear, VanGuard *reusable);
+  std::pair<Guard*, bool> handle(Solver &S, Guard &rear, Guard *reusable);
 };
 
 class Trie : public Undoable {
@@ -279,8 +254,8 @@ public:
   HorLine root;
   HorHead root_leftmost;
 
-  LogList<RearGuard> root_new_rears;
-  LogList<VanGuard> root_new_vans;
+  LogList<Guard> root_new_rears;
+  LogList<Guard> root_new_vans;
   vector<StackItem> stack;
 
   // There is one back_ptr for each variable (= state of the analysed AFA).
