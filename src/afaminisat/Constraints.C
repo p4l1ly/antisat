@@ -31,6 +31,7 @@ using std::swap;
 //=================================================================================================
 // Helpers:
 
+RemovedWatch REMOVED_WATCH;
 
 // TODO O(n)
 void removeWatch(vec<Constr*>& ws, Constr* elem)
@@ -274,6 +275,9 @@ void Clause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason)
 {
     assert(p == lit_Undef || p == data[0]);
 
+    if (p == lit_Undef) out_reason.grow(size());
+    else out_reason.grow(size() - 1);
+
     for (int i = ((p == lit_Undef) ? 0 : 1); i < size(); i++) {
         if (verbosity >= 2 && S.value(data[i]) != l_False) {
           printf(
@@ -385,6 +389,9 @@ GClause UpwardClause::propagate(Solver& S, Lit p, bool& keep_watch) {
 
 void UpwardClause::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
   assert(p == lit_Undef || p == output);
+
+  if (p == lit_Undef) out_reason.grow(size + 1);
+  else out_reason.grow(size);
 
   if (p == lit_Undef) {
     if (verbosity >= 2 && S.value(output) != l_False) {

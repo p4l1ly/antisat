@@ -33,6 +33,31 @@ pair<uint32_t, uint32_t> _LogList_stage_ix(uint32_t ix);
   } \
 }
 
+#define ITER_LOGLIST_BACK(self, T, x, fn) { \
+  if ((self)._size != 0) { \
+    pair<uint32_t, uint32_t> stageix = _LogList_stage_ix((self)._size); \
+    if (stageix.second != 0) { \
+      T* stage = (self)._stages[stageix.first]; \
+      for (unsigned __j = stageix.second; __j;) { \
+        --__j; \
+        T& x = stage[__j]; \
+        fn \
+      } \
+    } \
+    if (stageix.first != 0) { \
+      for (unsigned __i = stageix.first; __i;) { \
+        --__i; \
+        T* stage = (self)._stages[__i]; \
+        for (unsigned __j = 1 << __i; __j;) { \
+          --__j; \
+          T& x = stage[__j]; \
+          fn \
+        } \
+      } \
+    } \
+  } \
+}
+
 template<class T>
 class LogList {
 public:

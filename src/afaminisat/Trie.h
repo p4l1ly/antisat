@@ -21,22 +21,18 @@ using std::map;
 
 //=================================================================================================
 
-class VerHead;
-class HorHead;
-struct HorLine;
-
-extern int hor_head_count;
-extern int hor_count;
-extern int ver_count;
-
+struct Head;
 const unsigned IX_NULL = std::numeric_limits<unsigned>::max();
 
 
 enum WhatToDo {
-  WATCH = -3,
-  DONE = -2,
-  AGAIN = -1,
-  EXHAUST = 0,
+  WATCH,
+  DONE,
+  EXHAUST,
+  RIGHT_VER,
+  RIGHT_HOR,
+  DOWN_VER,
+  DOWN_HOR
 };
 
 enum MultimoveEnd {
@@ -46,217 +42,197 @@ enum MultimoveEnd {
 };
 
 
-struct Guard;
 class Trie;
 
-struct Place : public Reason {
-public:
-  HorLine *hor;
-  unsigned hor_ix;
-  unsigned ver_ix;
-
-  Place(HorLine *hor_, unsigned hor_ix_, unsigned ver_ix_)
-  : hor(hor_), hor_ix(hor_ix_), ver_ix(ver_ix_)
-  {}
-
-  void cut_away();
-  HorHead &deref_ver() const;
-  VerHead &deref_hor() const;
-  Lit get_tag() const;
-  bool ver_is_last() const;
-  bool ver_is_singleton() const;
-  bool is_ver() const;
-  bool in_exhaust() const;
-
-  friend std::ostream& operator<<(std::ostream& os, Place const &p);
-
-  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
-
-  void *getSpecificPtr() { return this; }
-};
-
-struct PlaceAttrs : Place {
+struct HeadAttrs {
+  Head *head;
   Solver &S;
-  PlaceAttrs(Place p, Solver &_S) : Place(p), S(_S) { };
-  friend std::ostream& operator<<(std::ostream& os, PlaceAttrs const &p);
+  HeadAttrs(Head *p, Solver &_S) : head(p), S(_S) { };
+  friend std::ostream& operator<<(std::ostream& os, HeadAttrs const &p);
 };
 
-struct WatchedPlace : public Place, public Constr {
-public:
-
-#ifdef MY_DEBUG
-  int watch_ix = -1;
-#else
-  int watch_ix;
-#endif
-
-  WatchedPlace(Place place);
-
-  void set_watch(Solver &S);
-  void remove_watch(Solver &S, Lit old_tag);
-
-  void remove    (Solver& S, bool just_dealloc = false) { };
-  bool simplify  (Solver& S) { return false; };
-  void moveWatch(int i, Lit p);
+struct DotHead {
+  Head *head;
+  Solver &S;
+  DotHead(Head *p, Solver &_S) : head(p), S(_S) { };
+  friend std::ostream& operator<<(std::ostream& os, DotHead const &p);
 };
 
-struct RearSnapshot {
-  Guard *ix;
-  Place place;
+struct MinusSnapshot {
+  Head *place;
+};
+
+struct PlusSnapshot {
+  Head *place;
   int last_change_level;
+  Head *dual;  // Rears have no duals in snapshots, so this implies is_van.
+  MinusSnapshot *minus_snapshot;
 };
-
-struct VanSnapshot {
-  Guard *ix;
-  Place place;
-  int last_change_level;
-  Guard *rear;
-};
-
-struct Guard : public WatchedPlace {
-  bool is_van;
-  bool enabled;
-  int last_change_level;
-  Guard *dual;
-  Guard *previous, *next;
-
-  Guard(bool is_van_, Place place, Guard* dual_, int last_change_level_, bool enabled_)
-  : WatchedPlace(place)
-  , is_van(is_van_)
-  , dual(dual_)
-  , last_change_level(last_change_level_)
-  , enabled(enabled_)
-  , previous(NULL)
-  , next(NULL)
-  { }
-
-  void untangle();
-
-  Place* on_exhaust(Solver &S);
-  Place* full_multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-  GClause propagate(Solver& S, Lit p, bool& keep_watch);
-
-  Place* jump(Solver &S, Lit old_tag);
-
-  void make_rear_snapshot(Solver &S, int level);
-  void make_van_snapshot(Solver &S, int level);
-
-  void branch(Solver &S);
-  WhatToDo after_hors_change(Solver &S);
-  WhatToDo after_vers_change(Solver &S);
-  WhatToDo move_on_propagate(Solver &S, Lit out_lit, bool do_branch);
-  MultimoveEnd multimove_on_propagate(Solver &S, WhatToDo what_to_do);
-  void *getSpecificPtr2() { return this; }
-};
-
 
 struct Snapshot {
-  LogList<Guard> new_rears;
-  LogList<Guard> new_vans;
-  vector<RearSnapshot> rear_snapshots;
-  vector<VanSnapshot> van_snapshots;
+  LogList<PlusSnapshot> plus_snapshots;
+  LogList<MinusSnapshot> minus_snapshots;
 
   Snapshot()
-  : new_rears()
-  , new_vans()
-  , rear_snapshots()
-  , van_snapshots()
+  : plus_snapshots()
+  , minus_snapshots()
   {}
 
   Snapshot(Snapshot&& old) noexcept
-  : new_rears(std::move(old.new_rears))
-  , new_vans(std::move(old.new_vans))
-  , rear_snapshots(std::move(old.rear_snapshots))
-  , van_snapshots(std::move(old.van_snapshots))
+  : plus_snapshots(std::move(old.plus_snapshots))
+  , minus_snapshots(std::move(old.minus_snapshots))
   {}
 
   Snapshot(Snapshot& old) = delete;
 };
 
 
-struct HorLine {
-  Place back_ptr;
-  vector<VerHead> elems;
+enum GuardType { DANGLING_GUARD, VAN_GUARD, REAR_GUARD };
+
+struct Guard {
+  GuardType guard_type;
+  int last_change_level;
+  Head *dual;
+  Head *previous, *next;
+  MinusSnapshot *minus_snapshot;
+
+  void init(
+    GuardType guard_type_,
+    Head* dual_,
+    int last_change_level_,
+    MinusSnapshot *msnap_
+  ) {
+    guard_type = guard_type_;
+    dual = dual_;
+    last_change_level = last_change_level_;
+    previous = NULL;
+    next = NULL;
+    minus_snapshot = msnap_;
+  }
+
+  void untangle();
 };
 
 
-class HorHead {
+class MultimoveCtx {
 public:
-  Lit tag;
-  HorLine *hor;
+  vec<char> &assigns;
+  vector<pair<Head*, WhatToDo>> stack;
 
-  HorHead(
-    Lit tag_
-  )
+  MultimoveCtx(vec<char> &assigns_) : assigns(assigns_) {}
+
+  pair<Head*, WhatToDo> move_down_ver(Head* x);
+  pair<Head*, WhatToDo> move_down_hor(Head* x);
+  pair<Head*, WhatToDo> move_right_ver(Head* x);
+  pair<Head*, WhatToDo> move_right_hor(Head* x);
+
+  pair<Head*, WhatToDo> move_right(Head* x);
+  pair<Head*, WhatToDo> move_down(Head* x);
+
+  void branch_ver(Head* x);
+  void branch_hor(Head* x);
+
+  WhatToDo after_right(Head* x);
+  WhatToDo after_down(Head* x);
+
+  pair<Head *, MultimoveEnd> multimove(pair<Head *, WhatToDo> move);
+  pair<Head *, MultimoveEnd> first(pair<Head *, WhatToDo> move);
+  pair<Head *, MultimoveEnd> next();
+};
+
+
+struct Head : public Reason, public Constr {
+public:
+  // Constant fields.
+  Lit tag;
+  LogList<Head> dual_heads;
+  bool is_ver;
+  Head *next;
+  Head *dual_next;
+  Head *above;
+  Head *leftmost;
+  unsigned depth;
+
+  // Dynamic fields.
+  bool watching = false;
+
+  // Guard's fields.
+  Guard guard;
+
+  Head(Lit tag_)
   : tag(tag_)
-  , hor(NULL)
+  , dual_heads()
+  , is_ver(false)
+  , next(NULL)
+  , dual_next(NULL)
+  , above(NULL)
+  , leftmost(NULL)
+  , depth(0)
+  , watching(false)
+  , guard()
   {
-    if (verbosity >= -2) hor_head_count++;
   }
 
-  HorHead& operator=(const HorHead&) {
-    assert(false);
+  Head(Head&& old) noexcept
+  : tag(old.tag)
+  , dual_heads(std::move(old.dual_heads))
+  , is_ver(old.is_ver)
+  , next(old.next)
+  , dual_next(old.dual_next)
+  , above(old.above)
+  , leftmost(old.leftmost)
+  , depth(old.depth)
+  , watching(old.watching)
+  , guard(old.guard)
+  {
+  }
+
+  Head& operator=(const Head&) {
+    exit(1);
     return *this;
   }
 
-  ~HorHead() {
-    if (verbosity >= -2) hor_head_count--;
-    if (hor) {
-      if (verbosity >= -2) hor_count--;
-      delete hor;
-    }
-  }
-};
+  friend std::ostream& operator<<(std::ostream& os, Head const &p);
+  void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
+  void *getSpecificPtr() { return this; }
 
+  void set_watch(Solver &S);
 
-class VerHead {
-public:
-  Lit tag;
-  vector<HorHead> hors;
-
-  VerHead(Lit tag_) : tag(tag_), hors() {
-    if (verbosity >= -2) ver_count++;
-  }
-  VerHead(VerHead&& old) noexcept
-  : tag(old.tag), hors(std::move(old.hors)) {
-    if (verbosity >= -2) ver_count++;
-  }
-
-  ~VerHead() {
-    if (verbosity >= -2) ver_count--;
-  }
-};
-
-
-struct RemovedWatch : public Constr {
   void remove    (Solver& S, bool just_dealloc = false) { };
-  GClause propagate (Solver& S, Lit p, bool& keep_watch) { return GClause_NULL; };
-  bool simplify(Solver& S) { return false; };
-  void moveWatch(int i, Lit p) {};
+  bool simplify  (Solver& S) { return false; };
+
+
+  Head* full_multimove_on_propagate(
+    Solver &S,
+    WhatToDo what_to_do,
+    MinusSnapshot *msnap,
+    Head *rear,
+    Head *gprev,
+    Head *gnext
+  );
+  GClause propagate(Solver& S, Lit p, bool& keep_watch);
+
+  Head* jump(Solver &S);
+
+  void make_rear_psnap(Solver &S);
+  void make_van_psnap(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
+  MinusSnapshot *save_to_msnap(Trie &trie, MinusSnapshot *msnap);
 };
 
 
 enum Mode { clauses, branch_always };
-
-extern RemovedWatch REMOVED_WATCH;
 extern Mode TRIE_MODE;
-
-struct StackItem {
-  HorLine* hor;
-  unsigned hor_ix;
-  std::pair<Guard*, bool> handle(Solver &S, Guard &rear, Guard *reusable);
-};
 
 class Trie : public Undoable {
 public:
   // the underlying automaton
-  HorLine root;
-  HorHead root_leftmost;
+  Head root;
 
-  LogList<Guard> root_new_rears;
-  LogList<Guard> root_new_vans;
-  vector<StackItem> stack;
+  LogList<MinusSnapshot> root_minus_snapshots;
+
+  MultimoveCtx multimove_ctx;
+  MultimoveCtx multimove_ctx2;
 
   // There is one back_ptr for each variable (= state of the analysed AFA).
   // If the trie is already in the accepting condition (all places have accepted),
@@ -270,39 +246,19 @@ public:
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
 
-  Trie();
+  Trie(vec<char> &assigns) : root(lit_Undef), multimove_ctx(assigns), multimove_ctx2(assigns) {}
 
-  Place* reset(Solver &S);
+  Head* reset(Solver &S);
 
   void undo(Solver& S);
 
   // debugging
   void to_dot(Solver& S, const char *filename);
-  void print_places();
+  void print_guards(Solver& S);
 
   // manual creation
   bool add_clause(vector<Lit> &lits, Solver &S, unsigned clause_count, vector<unsigned> sharing_set);
 };
-
-
-#define ITER_MY_ZEROES(place, x, fn) { \
-  unsigned __hix = ((place).hor_ix); \
-  int __vix = ((place).ver_ix); \
-  for (HorLine *__hor = ((place).hor); __hor;) { \
-    VerHead &__ver = __hor->elems[__hix]; \
-    if (__vix >= 0) { \
-      Lit x = __ver.tag; \
-      {fn} \
-      for (unsigned __i = 0; __i < __vix; __i++) { \
-        Lit x = __ver.hors[__i].tag; \
-        {fn} \
-      } \
-    } \
-    __hix = __hor->back_ptr.hor_ix; \
-    __vix = __hor->back_ptr.ver_ix; \
-    __hor = __hor->back_ptr.hor; \
-  } \
-}
 
 //=================================================================================================
 #endif

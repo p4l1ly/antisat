@@ -70,7 +70,6 @@ struct Constr {
     virtual void remove    (Solver& S, bool just_dealloc = false) = 0;
     virtual GClause propagate (Solver& S, Lit p, bool& keep_watch) = 0;    // ('keep_watch' is set to FALSE beftore call to this method)
     virtual bool simplify  (Solver& S) { return false; };
-    virtual void moveWatch(int i, Lit p) = 0;
     virtual void *getSpecificPtr2() = 0;
 
     virtual ~Constr(void) { };  // (not used, just to keep the compiler happy)
@@ -133,6 +132,13 @@ public:
     GClause propagate (Solver& S, Lit p, bool& keep_watch);
     void calcReason(Solver& S, Lit p, vec<Lit>& out_reason);
     void moveWatch(int i, Lit p);
+};
+
+struct RemovedWatch : public Constr {
+  void remove    (Solver& S, bool just_dealloc = false) { }
+  GClause propagate (Solver& S, Lit p, bool& keep_watch) { return GClause_NULL; }
+  bool simplify(Solver& S) { return false; }
+  void *getSpecificPtr2() { return this; };
 };
 
 #endif

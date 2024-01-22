@@ -160,6 +160,7 @@ public:
       , order(assigns, activity, pures)
       , last_simplify(-1)
       , params(1, 1, 0)
+      , trie(assigns)
       {
         runningMutex.lock();
     }

@@ -638,7 +638,6 @@ GClause Solver::propagate(void)
                 propQ.clear();
             } if (keep_watch) {
                 if (verbosity >= 2) printf("MOVE_WATCH_PROP0 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
-                (*i)->moveWatch(j - (Constr**)ws, p);
                 *j++ = *i;
             } else if (verbosity >= 2) {
               printf("REMOVE_WATCH_PROP " L_LIT " %p\n", L_lit(p), *i);
@@ -651,13 +650,11 @@ GClause Solver::propagate(void)
           // Copy the remaining watches:
           while (i < end) {
               if (verbosity >= 2) printf("MOVE_WATCH_PROP1 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
-              (*i)->moveWatch(j - (Constr**)ws, p);
               *j++ = *i++;
           }
         } else {
           while (i < end) {
               if (verbosity >= 2) printf("MOVE_WATCH_PROP2 %ld " L_LIT " %p\n", j - (Constr**)ws, L_lit(p), *i);
-              (*i)->moveWatch(j - (Constr**)ws, p);
               *j++ = *i++;
           }
         }
@@ -860,7 +857,7 @@ void Solver::claRescaleActivity(void)
 bool Solver::solve(const vec<Lit>& assumps)
 {
     root_level = 0;
-    if (!trie.root.elems.empty() && trie.reset(*this) != NULL) return false;
+    if (trie.root.dual_next && trie.reset(*this) != NULL) return false;
     simplifyDB();
     if (!ok) return false;
 
