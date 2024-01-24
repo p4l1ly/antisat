@@ -123,8 +123,7 @@ public:
     void        cancelUntil  (int level);
     void        record       (const vec<Lit>& clause);
 
-    bool        analyze      (GClause confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
-    bool        analyze2     (const vector<int>&, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    bool        analyze     (vec<Lit>&, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
     bool        enqueue      (Lit fact, GClause from = GClause_NULL);
     GClause     propagate    (void);
     void        reduceDB     (void);

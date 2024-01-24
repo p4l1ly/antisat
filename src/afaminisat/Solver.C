@@ -142,7 +142,13 @@ bool Solver::onSatConflict(const vector<int>& cell) {
       return false;
   }
 
-  if (!analyze2(cell, learnt_clause, backtrack_level)) {
+
+  vec<Lit> p_reason;
+  for (int i: cell) {
+      p_reason.push(~outputs[i]);
+  }
+
+  if (!analyze(p_reason, learnt_clause, backtrack_level)) {
       if (verbosity >= 2) printf("DECLEVEL2\n");
       return false;
   }
@@ -172,217 +178,16 @@ bool Solver::onSatConflict(const vector<int>& cell) {
 |  Effect:
 |    Will undo part of the trail, upto but not beyond the assumption of the current decision level.
 |________________________________________________________________________________________________@*/
-bool Solver::analyze(GClause confl, vec<Lit>& out_learnt, int& out_btlevel)
+bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
 {
     vec<char>&  seen = analyze_seen;
     int         pathC    = 0;
     Lit         p = lit_Undef;
-    vec<Lit>    p_reason;
-    seen.growTo(nVars(), 0);
-    int out_learnt_final_size;
-    int out_btlevel_final;
-    int trail_index = trail.size() - 1;
-
-    // Generate conflict clause:
-    //
-    out_learnt.push(lit_Undef);      // (leave room for the asserting literal)
-    out_btlevel = 0;
-
-    p_reason.clear();
-
-    assert(!confl.isLit());
-    if (verbosity >= 2) {
-      printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl.clause(), confl.clause()->getSpecificPtr());
-    }
-    confl.clause()->calcReason(*this, p, p_reason);
-
-    int decLevel = decisionLevel();
-    if (decLevel <= root_level) return false;
-
-    while (true) {
-        if (verbosity >= 2) {
-          printf("REASON " L_LIT ":", L_lit(p));
-          for (int i = 0; i < p_reason.size(); i++) {
-            printf(" " L_LIT, L_lit(p_reason[i]));
-          }
-          printf("\n");
-        }
-
-        for (int j = 0; j < p_reason.size(); j++){
-            Lit q = p_reason[j];
-            if (!seen[var(q)] && level[var(q)] > 0){
-                seen[var(q)] = 1;
-                varBumpActivity(q);
-                if (level[var(q)] == decLevel)
-                    pathC++;
-                else{
-                    if (verbosity >= 2) printf("PUSH " L_LIT " %d %d\n", L_lit(~q), level[var(q)], decisionLevel());
-                    out_learnt.push(~q),
-                    out_btlevel = max(out_btlevel, level[var(q)]);
-                }
-            }
-        }
-
-        // Select next clause to look at:
-        while (true) {
-            p = trail[trail_index];
-            confl = reason[var(p)];
-
-            if (seen[var(p)]) {
-              seen[var(p)] = 0;
-
-              if (confl == GClause_NULL) {
-                if (out_learnt[0] == lit_Undef) {
-                  if (verbosity >= 2) printf("ASSERTING " L_LIT " %d\n", L_lit(~p), out_learnt.size());
-                  out_learnt[0] = ~p;
-                  out_learnt_final_size = out_learnt.size();
-                  out_btlevel_final = out_btlevel;
-                }
-                --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
-                goto resolved;
-              }
-
-              pathC--;
-
-              if (pathC == 0 && out_learnt[0] == lit_Undef) {
-                if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
-                out_learnt[0] = ~p;
-                out_learnt_final_size = out_learnt.size();
-                out_btlevel_final = out_btlevel;
-              }
-
-              if (confl.isLit()) {
-                p_reason.sz = 1;
-                p_reason[0] = confl.lit();
-              } else {
-                p_reason.clear();
-                if (verbosity >= 2) {
-                  printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl.clause(), confl.clause()->getSpecificPtr());
-                }
-                confl.clause()->calcReason(*this, p, p_reason);
-              }
-              --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
-
-              break;
-            }
-
-            --trail_index; if (trail_lim[decLevel - 1].first == trail_index + 1) --decLevel;
-
-            if (confl == GClause_NULL) {
-              if (verbosity >= 2) printf("OLD_LEVEL\n");
-              pathC = 0;
-              int max_level = out_btlevel;
-              out_btlevel = 0;
-
-              if (max_level <= root_level) {
-                for (int j = 1; j < out_learnt.size(); j++) seen[var(out_learnt[j])] = 0;
-                return false;
-              }
-
-              for (int j = 1; j < out_learnt.size(); j++) {
-                Lit lit = out_learnt[j];
-                int lvl = level[var(lit)];
-                if (lvl == max_level) {
-                  pathC++;
-                }
-                else {
-                  out_btlevel = max(out_btlevel, lvl);
-                  if (pathC) out_learnt[j - pathC] = lit;
-                }
-              }
-
-              out_learnt.sz -= pathC;
-              out_learnt[0] = lit_Undef;
-
-              trail_index = trail_lim[max_level].first - 1;
-              cancelUntil(max_level);
-              decLevel = max_level;
-            }
-        }
-    }
-
-resolved:
-
-    out_learnt.copyTo(analyze_toclear);
-
-    if (verbosity >= 2){
-        printf(L_IND "Learnt0 ", L_ind);
-        printClause(out_learnt);
-        printf(" at level %d\n", out_btlevel);
-    }
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-    out_learnt.sz = out_learnt_final_size;
-    out_btlevel = out_btlevel_final;
-#pragma GCC diagnostic pop
-
-    if (verbosity >= 2){
-        printf(L_IND "Learnt1 ", L_ind);
-        printClause(out_learnt);
-        printf(" at level %d\n", out_btlevel);
-    }
-
-    if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
-
-    {
-      vec<Lit> c;
-      int i, j;
-      for (i = j = 1; i < out_learnt.size(); i++) {
-          Lit p = out_learnt[i];
-          GClause r = reason[var(p)];
-          if (r == GClause_NULL) {
-              out_learnt[j++] = out_learnt[i];
-          } else if (r.isLit()) {
-            int rvar = var(r.lit());
-            if (!seen[rvar] && level[rvar] != 0){
-              out_learnt[j++] = out_learnt[i];
-            } else if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
-          } else {
-              c.clear();
-              assert(value(p) == l_False);
-              r.clause()->calcReason(*this, ~p, c);
-              for (int k = 0; k < c.size(); k++)
-                  if (!seen[var(c[k])] && level[var(c[k])] != 0){
-                      out_learnt[j++] = out_learnt[i];
-                      goto continue2;
-                  }
-              if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
-          }
-    continue2: ;
-      }
-
-      out_learnt.sz = j;
-    }
-
-    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
-
-    if (verbosity >= 2){
-        printf(L_IND "Learnt2 ", L_ind);
-        printClause(out_learnt);
-        printf(" at level %d\n", out_btlevel);
-    }
-
-    if (verbosity >= 2) printf("ANALYZED2\n");
-
-    return true;
-}
-
-bool Solver::analyze2(const vector<int>& cell, vec<Lit>& out_learnt, int& out_btlevel)
-{
-    vec<char>&  seen = analyze_seen;
-    int         pathC    = 0;
-    Lit         p = lit_Undef;
-    vec<Lit>    p_reason;
     int out_learnt_final_size;
     int out_btlevel_final;
     int trail_index = trail.size() - 1;
 
     seen.growTo(nVars(), 0);
-
-    for (int i: cell) {
-        p_reason.push(~outputs[i]);
-    }
 
     // Generate conflict clause:
     //
@@ -782,8 +587,17 @@ lbool Solver::search()
             int         backtrack_level;
             if (decisionLevel() <= root_level)
                 return l_False;
-            if (!analyze(confl, learnt_clause, backtrack_level))
+
+            vec<Lit> p_reason;
+            assert(!confl.isLit());
+            if (verbosity >= 2) {
+              printf("CALC_REASON " L_LIT " %p %p\n", L_lit(lit_Undef), confl.clause(), confl.clause()->getSpecificPtr());
+            }
+            confl.clause()->calcReason(*this, lit_Undef, p_reason);
+
+            if (!analyze(p_reason, learnt_clause, backtrack_level))
                 return l_False;
+
             cancelUntil(max(backtrack_level, root_level));
             record(learnt_clause);
             varDecayActivity(); claDecayActivity();
