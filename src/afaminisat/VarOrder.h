@@ -68,7 +68,7 @@ public:
     inline void newVar(void);
     inline void init(void);
     void update(Var x, Solver &S);                  // Called when variable increased in activity.
-    bool update0(int right, int right_ix, Solver &S);                  // Called when variable increased in activity.
+    bool update0(int right, int right_ix, Solver &S, int declevel);                  // Called when variable increased in activity.
     void undo(Solver &S);                    // Called when variable is unassigned and may be selected again.
     bool select(Solver &S); // Selects a new, unassigned variable (or 'var_Undef' if none exists).
     void new_stage() {

@@ -51,8 +51,10 @@ struct SolverStats {
 
 
 struct SearchParams {
-    double  var_decay, clause_decay, random_var_freq;    // (reasonable values are: 0.95, 0.999, 0.02)    
-    SearchParams(double v = 1, double c = 1, double r = 0) : var_decay(v), clause_decay(c), random_var_freq(r) { }
+    double  var_decay, clause_decay, random_var_freq, tolerance_decay;    // (reasonable values are: 0.95, 0.999, 0.02, 0.958)
+    SearchParams(double v = 1, double c = 1, double r = 0)
+    : var_decay(v), clause_decay(c), random_var_freq(r), tolerance_decay(v)
+    { }
 };
 
 #define Solver_RUNNING 0
@@ -78,6 +80,7 @@ public:
     vec<double>         activity;       // A heuristic measurement of the activity of a variable.
     double              var_inc;        // Amount to bump next variable with.
     double              var_decay;      // INVERSE decay factor for variable activity: stores 1/decay. Use negative value for static variable order.
+    double              tolerance_decay;
 
     vec<bool>           pures;          // The pure literals (undef === one).
     vec<Lit>            outputs;        // The output literals.
@@ -138,7 +141,7 @@ public:
     void    varDecayActivity(void) {
       if (var_decay >= 0) {
         var_inc *= var_decay;
-        order.tolerance *= var_decay;
+        order.tolerance *= tolerance_decay;
       }
     }
     void    varRescaleActivity(void);
