@@ -1,13 +1,13 @@
 How to improve performance further
 ==================================
 
-- DONE, VERY_GOOD_IMPACT VarOrder: tolerance grows slower than liveness step
+- DONE, SUSPICIOUSLY_GOOD_IMPACT VarOrder: tolerance grows slower than liveness step
 - Less memory jumping:
     - DONE LogLists are used in the trie, which can cause memory jumping.
       - DONE we can increase granularity of LogLists. AND MAYBE THIS (for snapshots)
       - WONT_DO we can put the first LogList array in directly into the structure.
-      - we can solidify the structure into one big array. AND MAYBE THIS (impossible for AFA, are
-        clauses solidified?)
+      - DONE we can solidify the structure into one big array. AND MAYBE THIS (impossible for AFA,
+        are clauses solidified?)
       - DONE we can use arrays for VerHeads, vectors for HorHeads and detect reallocation.
         - current solution is not compatible for antichains (dynamic adding of verheads), it would
           need the following modification: verhead->above points to the leftmost horhead and

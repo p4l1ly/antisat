@@ -195,6 +195,7 @@ public:
   { }
 
   Head& operator=(const Head&) {
+    assert(false);
     exit(1);
     return *this;
   }
@@ -227,6 +228,7 @@ public:
   MinusSnapshot *save_to_msnap(Trie &trie, MinusSnapshot *msnap);
 
   unsigned count();
+  Head* solidify();
 };
 
 
@@ -271,6 +273,7 @@ public:
 
   // debugging
   unsigned count();
+  Head* solidify();
   void to_dot(Solver& S, const char *filename);
   void print_guards(Solver& S);
 

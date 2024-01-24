@@ -169,6 +169,7 @@ bool run(char mode) {
   vector<Horline> horlines;
   vector<Head*> verlines;
   bool result = false;
+  Head *solid = NULL;
 
   {
     Solver S;
@@ -196,6 +197,8 @@ bool run(char mode) {
     }
     if (!parse_dimacs(S, horlines, verlines)) goto dealloc;
 
+    solid = S.trie.solidify();
+
     S.order.init();
 
     S.status = Solver_RUNNING;
@@ -217,6 +220,7 @@ bool run(char mode) {
   }
 
 dealloc:
+  if (solid != NULL) delete[] solid;
   for (Head *verline: verlines) delete[] verline;
   return result;
 }

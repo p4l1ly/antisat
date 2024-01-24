@@ -784,9 +784,57 @@ unsigned Head::count() {
   return result;
 }
 
+Head* Head::solidify() {
+  unsigned cnt = count();
+  Head *whole_mem = new Head[cnt];
+  Head *mem = whole_mem;
+
+  vector<pair<Head*, Head*>> stack;
+  stack.emplace_back((Head*)NULL, this);
+
+  while (!stack.empty()) {
+    pair<Head*, Head*> horline = stack.back();
+    stack.pop_back();
+
+    if (horline.first) horline.first->dual_next = mem;
+
+    Head *bef_hor = NULL;
+    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
+      new(mem) Head(std::move(*verhead));
+      if (mem->above) mem->above = horline.first->above;
+      if (bef_hor != NULL) bef_hor->next = mem;
+      bef_hor = mem;
+
+      if (mem->dual_next != NULL) mem->dual_next = mem + 1;
+      ++mem;
+
+      for (Head *horhead = verhead->dual_next; horhead; horhead = horhead->next) {
+        new(mem) Head(std::move(*horhead));
+        mem->above = mem - 1;
+
+        if (horhead->dual_next != NULL) stack.emplace_back(mem, horhead->dual_next);
+
+        if (mem->next) mem->next = mem + 1;
+        ++mem;
+      }
+    }
+  }
+
+  return whole_mem;
+}
+
 unsigned Trie::count() {
   if (root == NULL) return 0;
   else return root->count();
+}
+
+Head* Trie::solidify() {
+  if (root == NULL) return NULL;
+  else {
+    Head *solid = root->solidify();
+    root = &solid[0];
+    return solid;
+  }
 }
 
 void Trie::to_dot(Solver& S, const char *filename) {
