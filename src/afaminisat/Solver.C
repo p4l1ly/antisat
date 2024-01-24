@@ -161,6 +161,8 @@ bool Solver::onSatConflict(const vector<int>& cell) {
 }
 
 
+#ifdef NEW_ANALYZE
+
 /*_________________________________________________________________________________________________
 |
 |  analyze : (confl : Constr*) (out_learnt : vec<Lit>&) (out_btlevel : int&)  ->  [void]
@@ -219,7 +221,7 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
 
               if (confl == GClause_NULL) {
                 if (out_learnt[0] == lit_Undef) {
-                  if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
+                  if (verbosity >= 2) printf("ASSERTING1 " L_LIT "\n", L_lit(~p));
                   out_learnt[0] = ~p;
                   out_learnt_final_size = out_learnt.size();
                   out_btlevel_final = out_btlevel;
@@ -232,7 +234,7 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
               pathC--;
 
               if (pathC == 0 && out_learnt[0] == lit_Undef) {
-                if (verbosity >= 2) printf("ASSERTING " L_LIT "\n", L_lit(~p));
+                if (verbosity >= 2) printf("ASSERTING2 " L_LIT "\n", L_lit(~p));
                 out_learnt[0] = ~p;
                 out_learnt_final_size = out_learnt.size();
                 out_btlevel_final = out_btlevel;
@@ -334,15 +336,15 @@ resolved:
               out_learnt[j++] = out_learnt[i];
             } else if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
           } else {
-              c.clear();
-              assert(value(p) == l_False);
-              r.clause()->calcReason(*this, ~p, c);
-              for (int k = 0; k < c.size(); k++)
-                  if (!seen[var(c[k])] && level[var(c[k])] != 0){
-                      out_learnt[j++] = out_learnt[i];
-                      goto continue2;
-                  }
-              if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
+            c.clear();
+            assert(value(p) == l_False);
+            r.clause()->calcReason(*this, ~p, c);
+            for (int k = 0; k < c.size(); k++)
+                if (!seen[var(c[k])] && level[var(c[k])] != 0){
+                    out_learnt[j++] = out_learnt[i];
+                    goto continue2;
+                }
+            if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
           }
     continue2: ;
       }
@@ -363,6 +365,124 @@ resolved:
     return true;
 }
 
+#else
+
+bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
+{
+    vec<char>&     seen  = analyze_seen;
+    int            pathC = 0;
+    Lit            p     = lit_Undef;
+    seen.growTo(nVars(), 0);
+
+    // Generate conflict clause:
+    //
+    out_learnt.push();      // (leave room for the asserting literal)
+    out_btlevel = 0;
+    int index = trail.size()-1;
+
+    while(true) {
+        for (int j = 0; j < p_reason.size(); j++){
+            Lit q = p_reason[j];
+            if (!seen[var(q)] && level[var(q)] > 0){
+                varBumpActivity(q);
+                seen[var(q)] = 1;
+                if (level[var(q)] == decisionLevel())
+                    pathC++;
+                else{
+                    assert(value(q) == l_True);
+                    out_learnt.push(~q);
+                    out_btlevel = max(out_btlevel, level[var(q)]);
+                }
+            }
+        }
+
+        // Select next clause to look at:
+        while (!seen[var(trail[index--])]);
+        p     = trail[index+1];
+        p_reason.clear();
+
+        seen[var(p)] = 0;
+
+        GClause confl = reason[var(p)];
+
+        if ((--pathC) == 0) break;
+
+        if (confl.isLit()) {
+          p_reason.sz = 1;
+          p_reason[0] = confl.lit();
+        } else {
+          p_reason.clear();
+          if (verbosity >= 2) {
+            printf("CALC_REASON " L_LIT " %p %p\n", L_lit(p), confl.clause(), confl.clause()->getSpecificPtr());
+          }
+          confl.clause()->calcReason(*this, p, p_reason);
+        }
+
+        if (verbosity >= 2) {
+          printf("REASON " L_LIT ":", L_lit(p));
+          for (int i = 0; i < p_reason.size(); i++) {
+            printf(" " L_LIT, L_lit(p_reason[i]));
+          }
+          printf("\n");
+        }
+
+        assert(pathC == 0 || confl != GClause_NULL);
+    }
+    out_learnt[0] = ~p;
+    out_learnt.copyTo(analyze_toclear);
+
+    if (verbosity >= 2){
+        printf(L_IND "Learnt1 ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
+
+    if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
+
+    {
+      vec<Lit> c;
+      int i, j;
+      for (i = j = 1; i < out_learnt.size(); i++) {
+          Lit p = out_learnt[i];
+          GClause r = reason[var(p)];
+          if (r == GClause_NULL) {
+              out_learnt[j++] = out_learnt[i];
+          } else if (r.isLit()) {
+            int rvar = var(r.lit());
+            if (!seen[rvar] && level[rvar] != 0){
+              out_learnt[j++] = out_learnt[i];
+            } else if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
+          } else {
+            c.clear();
+            assert(value(p) == l_False);
+            r.clause()->calcReason(*this, ~p, c);
+            for (int k = 0; k < c.size(); k++)
+                if (!seen[var(c[k])] && level[var(c[k])] != 0){
+                    out_learnt[j++] = out_learnt[i];
+                    goto continue2;
+                }
+            if (verbosity >= 2) std::cout << "OMIT " << p << std::endl;
+          }
+    continue2: ;
+      }
+
+      out_learnt.sz = j;
+    }
+
+    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
+
+    if (verbosity >= 2){
+        printf(L_IND "Learnt2 ", L_ind);
+        printClause(out_learnt);
+        printf(" at level %d\n", out_btlevel);
+    }
+
+    if (verbosity >= 2) printf("ANALYZED2\n");
+
+    return true;
+}
+
+#endif
 
 /*_________________________________________________________________________________________________
 |
