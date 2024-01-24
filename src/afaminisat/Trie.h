@@ -145,12 +145,11 @@ struct Head : public Reason, public Constr {
 public:
   // Constant fields.
   Lit tag;
-  LogList<Head> dual_heads;
   bool is_ver;
   Head *next;
   Head *dual_next;
   Head *above;
-  Head *leftmost;
+  unsigned external;
   unsigned depth;
 
   // Dynamic fields.
@@ -159,33 +158,41 @@ public:
   // Guard's fields.
   Guard guard;
 
+  Head()
+  : tag(lit_Undef)
+  , is_ver(true)
+  , next(NULL)
+  , dual_next(NULL)
+  , above(NULL)
+  , external(0)
+  , depth(0)
+  , watching(false)
+  , guard()
+  { }
+
   Head(Lit tag_)
   : tag(tag_)
-  , dual_heads()
   , is_ver(false)
   , next(NULL)
   , dual_next(NULL)
   , above(NULL)
-  , leftmost(NULL)
+  , external(0)
   , depth(0)
   , watching(false)
   , guard()
-  {
-  }
+  { }
 
   Head(Head&& old) noexcept
   : tag(old.tag)
-  , dual_heads(std::move(old.dual_heads))
   , is_ver(old.is_ver)
   , next(old.next)
   , dual_next(old.dual_next)
   , above(old.above)
-  , leftmost(old.leftmost)
+  , external(old.external)
   , depth(old.depth)
   , watching(old.watching)
   , guard(old.guard)
-  {
-  }
+  { }
 
   Head& operator=(const Head&) {
     exit(1);
@@ -218,16 +225,26 @@ public:
   void make_van_psnap(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
   MinusSnapshot *save_to_msnap(Trie &trie, MinusSnapshot *msnap);
+
+  unsigned count();
 };
 
 
 enum Mode { clauses, branch_always };
 extern Mode TRIE_MODE;
 
+struct Horline {
+  Head** ptr_to_first;
+  Head* above;
+  vector<Head> elems;
+
+  Horline(Head** ptr_to_first_, Head *above_) : ptr_to_first(ptr_to_first_), above(above_) {}
+};
+
 class Trie : public Undoable {
 public:
   // the underlying automaton
-  Head root;
+  Head* root;
 
   LogList<MinusSnapshot> root_minus_snapshots;
 
@@ -246,18 +263,26 @@ public:
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
 
-  Trie(vec<char> &assigns) : root(lit_Undef), multimove_ctx(assigns), multimove_ctx2(assigns) {}
+  Trie(vec<char> &assigns) : root(NULL), multimove_ctx(assigns), multimove_ctx2(assigns) {}
 
   Head* reset(Solver &S);
 
   void undo(Solver& S);
 
   // debugging
+  unsigned count();
   void to_dot(Solver& S, const char *filename);
   void print_guards(Solver& S);
 
   // manual creation
-  bool add_clause(vector<Lit> &lits, Solver &S, unsigned clause_count, vector<unsigned> sharing_set);
+  bool add_clause(
+    vector<Lit> &lits,
+    Solver &S,
+    unsigned clause_count,
+    vector<unsigned> sharing_set,
+    vector<Horline> &horlines,
+    vector<Head*> &verlines
+  );
 };
 
 //=================================================================================================

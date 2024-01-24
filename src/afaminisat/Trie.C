@@ -23,7 +23,9 @@ bool Trie::add_clause(
     vector<Lit> &clause,
     Solver &S,
     unsigned clause_count,
-    vector<unsigned> sharing_set
+    vector<unsigned> sharing_set,
+    vector<Horline> &horlines,
+    vector<Head*> &verlines
 ) {
   vec<char> mask;
   mask.growTo(S.nVars(), 0);
@@ -50,27 +52,26 @@ bool Trie::add_clause(
     return true;
   }
 
-  if (root.dual_next == NULL) {
-    Head &verhead = root.dual_heads.emplace_back(preprocessed_clause[0]);
-    verhead.is_ver = false;
-    verhead.next = NULL;
-    verhead.above = NULL;
-    verhead.leftmost = &root;
-    unsigned depth = verhead.depth = 0;
-    root.dual_next = &verhead;
+  if (root == NULL) {
+    Horline &horline = horlines.emplace_back(&root, (Head*)NULL);
+    Head &verhead = horline.elems.emplace_back(preprocessed_clause[0]);
 
-    auto iter = preprocessed_clause.begin();
-    ++iter;
+    unsigned depth = 0;
+    root = &verhead;
+
+    Head *verline = verlines.emplace_back(new Head[preprocessed_clause.size() - 1]);
+
     Head *above = &verhead;
-    for (; iter != preprocessed_clause.end(); ++iter) {
-      Head &horhead = verhead.dual_heads.emplace_back(*iter);
-      horhead.is_ver = true;
-      horhead.next = NULL;
+    for (unsigned i = 1; i != preprocessed_clause.size(); ++i) {
+      Head &horhead = verline[i - 1];
+      horhead.tag = preprocessed_clause[i];
       horhead.above = above;
-      horhead.depth = ++depth;
-      horhead.leftmost = &horhead;
-      if (above->depth == verhead.depth) above->dual_next = &horhead;
+
+      if (i == 1) verhead.dual_next = &horhead;
       else above->next = &horhead;
+
+      horhead.depth = ++depth;
+
       above = &horhead;
     }
     return true;
@@ -80,8 +81,7 @@ bool Trie::add_clause(
   int max_depth = -1;
 
   MultimoveCtx ctx(mask);
-  Head *topleft = root.dual_next;
-  pair<Head*, MultimoveEnd> move = ctx.first(pair(topleft, ctx.after_right(topleft)));
+  pair<Head*, MultimoveEnd> move = ctx.first(pair(root, ctx.after_right(root)));
 
   while (move.first != NULL) {
     switch (move.second) {
@@ -102,10 +102,15 @@ bool Trie::add_clause(
     move = ctx.next();
   }
 
-  Head *zero_iter = deepest_place->above;
-  while (zero_iter != NULL) {
-    sharing_set[index(zero_iter->tag)] = clause_count;
-    zero_iter = zero_iter->above;
+  {
+    Head *zero_iter = deepest_place;
+    while (true) {
+      if (zero_iter->is_ver) zero_iter = zero_iter->above;
+      else zero_iter = horlines[zero_iter->external].above;
+
+      if (zero_iter == NULL) break;
+      sharing_set[index(zero_iter->tag)] = clause_count;
+    }
   }
 
   vector<Lit> added_vars;
@@ -116,34 +121,70 @@ bool Trie::add_clause(
   }
 
   if (added_vars.empty()) { 
-    if (deepest_place->above->is_ver) deepest_place->above->next = NULL;
-    else deepest_place->above->dual_next = NULL;
+    Head *above = deepest_place;
+    if (above->is_ver) above = above->above;
+    else above = horlines[above->external].above;
+
+    if (above->is_ver) above->next = NULL;
+    else above->dual_next = NULL;
+
     return true;
   }
 
   {
-    Head &verhead = deepest_place->leftmost->dual_heads.emplace_back(added_vars[0]);
+    Head *verheadptr;
+    int horline_ix;
 
-    verhead.is_ver = false;
+    if (deepest_place->is_ver) {
+      horline_ix = horlines.size();
+      deepest_place->external = horline_ix;
+      Horline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place->above);
+      verheadptr = &horline.elems.emplace_back(added_vars[0]);
+    } else {
+      horline_ix = deepest_place->external;
+      Horline &horline = horlines[horline_ix];
+      Head *ptr0 = &horline.elems[0];
+      verheadptr = &horline.elems.emplace_back(added_vars[0]);
+
+      Head *next;
+      if ((next = &horline.elems[0]) != ptr0) {
+        deepest_place = verheadptr;
+        --deepest_place;
+
+        *horline.ptr_to_first = next;
+
+        while(true) {
+          Head *dual_next = next->dual_next;
+          if (dual_next != NULL) {
+            dual_next->above = next;
+            if (dual_next->dual_next != NULL) horlines[dual_next->external].above = next;
+          }
+          Head *prev = next++;
+          if (next == verheadptr) break;
+          prev->next = next;
+        }
+      }
+    }
+    Head &verhead = *verheadptr;
+
     verhead.next = NULL;
-    verhead.above = deepest_place->above;
-    verhead.leftmost = deepest_place->leftmost;
+    verhead.external = horline_ix;
     unsigned depth = verhead.depth = deepest_place->depth;
-    if (deepest_place->is_ver) deepest_place->dual_next = &verhead;
-    else deepest_place->next = &verhead;
+    if (deepest_place->is_ver) deepest_place->dual_next = verheadptr;
+    else deepest_place->next = verheadptr;
 
-    auto iter = added_vars.begin();
-    ++iter;
-    Head *above = &verhead;
-    for (; iter != added_vars.end(); ++iter) {
-      Head &horhead = verhead.dual_heads.emplace_back(*iter);
-      horhead.is_ver = true;
-      horhead.next = NULL;
+    Head *verline = verlines.emplace_back(new Head[added_vars.size() - 1]);
+
+    Head *above = verheadptr;
+    for (unsigned i = 1; i != added_vars.size(); ++i) {
+      Head &horhead = verline[i - 1];
+      horhead.tag = added_vars[i];
       horhead.above = above;
-      horhead.depth = ++depth;
-      horhead.leftmost = &horhead;
-      if (above->depth == verhead.depth) above->dual_next = &horhead;
+
+      if (i == 1) verhead.dual_next = &horhead;
       else above->next = &horhead;
+
+      horhead.depth = ++depth;
       above = &horhead;
     }
   }
@@ -679,8 +720,7 @@ Head* Trie::reset(Solver &S) {
   });
   root_minus_snapshots.clear_nodestroy();
 
-  Head *topleft = root.dual_next;
-  pair<Head*, WhatToDo> move0 = pair(topleft, multimove_ctx2.after_right(topleft));
+  pair<Head*, WhatToDo> move0 = pair(root, multimove_ctx2.after_right(root));
   pair<Head*, MultimoveEnd> move = multimove_ctx2.first(move0);
   while (move.first != NULL) {
     Head *vanptr = move.first;
@@ -722,47 +762,72 @@ Head* Trie::reset(Solver &S) {
   return NULL;
 }
 
+unsigned Head::count() {
+  unsigned result = 0;
+
+  vector<pair<Head*, Head*>> stack;
+  stack.emplace_back((Head*)NULL, this);
+
+  while (!stack.empty()) {
+    pair<Head*, Head*> horline = stack.back();
+    stack.pop_back();
+
+    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
+      ++result;
+      for (Head *horhead2 = verhead->dual_next; horhead2; horhead2 = horhead2->next) {
+        ++result;
+        if (horhead2->dual_next != NULL) stack.emplace_back(horhead2, horhead2->dual_next);
+      }
+    }
+  }
+
+  return result;
+}
+
+unsigned Trie::count() {
+  if (root == NULL) return 0;
+  else return root->count();
+}
+
 void Trie::to_dot(Solver& S, const char *filename) {
   std::ofstream file;
   file.open(filename);
   file << "strict graph {\n";
 
-  vector<Head*> stack;
-  if (root.dual_next != NULL) stack.push_back(&root);
+  vector<pair<Head*, Head*>> stack;
+  if (root != NULL) stack.emplace_back((Head*)NULL, root);
 
   while (!stack.empty()) {
-    Head& horhead = *stack.back();
+    pair<Head*, Head*> horline = stack.back();
     stack.pop_back();
 
     // Pose the line horizontally.
     file << "subgraph { rank=same";
-    if (&horhead != &root) {
-      file << "; \"" << &horhead << '"';
-    }
-    for (Head *verhead = horhead.dual_next; verhead; verhead = verhead->next) {
+    if (horline.first) file << "; \"" << horline.first << '"';
+    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
       file << "; \"" << verhead << '"';
     }
     file << " };\n";
 
     // Connect the horizontal line and make it infinitely flexible.
-    file << DotHead(horhead.dual_next, S) << ";\n";
-    if (&horhead != &root) {
-      file << '"' << &horhead << "\" -- \"" << horhead.dual_next << "\" [constraint=false];\n";
+    file << DotHead(horline.second, S) << ";\n";
+    if (horline.first) {
+      file << '"' << horline.first << "\" -- \"" << horline.second << "\" [constraint=false];\n";
     }
 
-    for (Head *verhead = horhead.dual_next; verhead; verhead = verhead->next) {
+    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
       if (verhead->next == NULL) break;
       file << DotHead(verhead->next, S) << ";\n";
       file << '"' << verhead << "\" -- \"" << verhead->next << "\" [constraint=false];\n";
     }
 
     // Draw the vertical lines and recur into branching horizontal lines.
-    for (Head *verhead = horhead.dual_next; verhead; verhead = verhead->next) {
+    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
       for (Head *horhead2 = verhead->dual_next; horhead2; horhead2 = horhead2->next) {
         file << DotHead(horhead2, S) << ";\n";
         file << '"' << horhead2->above << "\" -- \"" << horhead2 << "\";\n";
         if (horhead2->dual_next != NULL) {
-          stack.push_back(horhead2);
+          stack.emplace_back(horhead2, horhead2->dual_next);
         }
       }
     }

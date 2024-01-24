@@ -62,7 +62,11 @@ std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
   return std::pair(false, std::vector<int>());
 }
 
-bool parse_dimacs(Solver& S) {
+bool parse_dimacs(
+  Solver& S,
+  vector<Horline> &horlines,
+  vector<Head*> &verlines
+) {
   std::string line;
   bool found_p = false;
   int nVars;
@@ -116,7 +120,7 @@ bool parse_dimacs(Solver& S) {
           cout << endl;
         }
 
-        if (!S.trie.add_clause(lits, S, S.nConstrs, sharing_set)) return false;
+        if (!S.trie.add_clause(lits, S, S.nConstrs, sharing_set, horlines, verlines)) return false;
         ++S.nConstrs;
         lits.clear();
         --nClauses;
@@ -124,6 +128,14 @@ bool parse_dimacs(Solver& S) {
         lits.emplace_back(abs(n) - 1, n < 0);
       }
     }
+
+    for (Horline &horline: horlines) {
+      for (Head &verhead: horline.elems) {
+        verhead.above = horline.above;
+      }
+    }
+
+    cout << "TRIE_SIZE " << S.trie.count() << endl;
   }
 
   return true;
@@ -154,7 +166,12 @@ static void SIGINT_handler(int signum) {
 
 
 bool run(char mode) {
-  Solver S;
+  vector<Horline> horlines;
+  vector<Head*> verlines;
+  bool result = false;
+
+  {
+    Solver S;
     switch (mode) {
       case '0':
         TRIE_MODE = clauses;
@@ -177,7 +194,8 @@ bool run(char mode) {
         exit(1);
         break;
     }
-    if (!parse_dimacs(S)) return false;
+    if (!parse_dimacs(S, horlines, verlines)) goto dealloc;
+
     S.order.init();
 
     S.status = Solver_RUNNING;
@@ -195,9 +213,12 @@ bool run(char mode) {
       if (verbosity >= 2) S.trie.print_guards(S);
       bool result = S.resume();
       printStats(S.stats, cpuTime());
-      return result;
     }
-    return false;
+  }
+
+dealloc:
+  for (Head *verline: verlines) delete[] verline;
+  return result;
 }
 
 int main(int argc, char** argv) {

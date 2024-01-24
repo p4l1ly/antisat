@@ -5,9 +5,13 @@
 #include <utility>
 #include <vector>
 #include <stdint.h>
+#include <cassert>
 
 using std::pair;
 using std::vector;
+
+// First array will have size 2^GRANULARITY, second 2*(2^GRANULARITY), etc.
+#define GRANULARITY 3
 
 pair<uint32_t, uint32_t> _LogList_stage_ix(uint32_t ix);
 
@@ -17,7 +21,7 @@ pair<uint32_t, uint32_t> _LogList_stage_ix(uint32_t ix);
     if (stageix.first != 0) { \
       for (unsigned __i = 0; __i < stageix.first; ++__i) { \
         T* stage = (self)._stages[__i]; \
-        for (unsigned j = 0; j < (1 << __i); ++j) { \
+        for (unsigned j = 0; j < (1 << GRANULARITY) << __i; ++j) { \
           T& x = stage[j]; \
           fn \
         } \
@@ -48,7 +52,7 @@ pair<uint32_t, uint32_t> _LogList_stage_ix(uint32_t ix);
       for (unsigned __i = stageix.first; __i;) { \
         --__i; \
         T* stage = (self)._stages[__i]; \
-        for (unsigned __j = 1 << __i; __j;) { \
+        for (unsigned __j = (1 << GRANULARITY) << __i; __j;) { \
           --__j; \
           T& x = stage[__j]; \
           fn \
@@ -89,7 +93,8 @@ public:
   T& emplace_back(Args&&... args) {
     pair<uint32_t, uint32_t> stageix = _LogList_stage_ix(_size);
     if (_stages.size() == stageix.first) {
-      _stages.push_back(static_cast<T*>(::operator new(sizeof(T) * (1 << stageix.first))));
+      assert(_size + (1 << GRANULARITY) == (1 << GRANULARITY) << stageix.first);
+      _stages.push_back(static_cast<T*>(::operator new(sizeof(T) * ((1 << GRANULARITY) << stageix.first))));
     }
     T& ref = _stages[stageix.first][stageix.second];
     ++_size;
