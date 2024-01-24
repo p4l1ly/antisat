@@ -199,7 +199,9 @@ bool run(char mode) {
 
     solid = S.trie.solidify();
 
+#ifdef NEW_VARORDER
     S.order.init();
+#endif
 
     S.status = Solver_RUNNING;
     S.tic = chrono::steady_clock::now();

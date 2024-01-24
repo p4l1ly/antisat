@@ -17,11 +17,11 @@ How to improve performance further
 
 - DONE, GOOD_IMPACT Sort literals in input clauses from the most frequent (globally) to the least frequent one
 
-- Switch VarOrder
+- DONE Switch VarOrder
 - DONE Try to merge analyze and analyze2
 - DONE (NEW_ANALYZE has  4 times worse result at the first benchmark, randomness?). Switch analyze
 
-- Try to run original MiniSAT (v1.12 and v1.14)
+- DONE, they're faster Try to run original MiniSAT (v1.12 and v1.14)
 - Try to run at least one external high end SAT solver
 
 

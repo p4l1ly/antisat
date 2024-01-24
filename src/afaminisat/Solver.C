@@ -320,6 +320,7 @@ resolved:
         printf(" at level %d\n", out_btlevel);
     }
 
+#ifdef STRENGTHENCC
     if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
 
     {
@@ -352,15 +353,16 @@ resolved:
       out_learnt.sz = j;
     }
 
-    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
-
     if (verbosity >= 2){
         printf(L_IND "Learnt2 ", L_ind);
         printClause(out_learnt);
         printf(" at level %d\n", out_btlevel);
     }
+#endif
 
-    if (verbosity >= 2) printf("ANALYZED2\n");
+    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
+
+    if (verbosity >= 2) printf("ANALYZED\n");
 
     return true;
 }
@@ -437,6 +439,7 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
         printf(" at level %d\n", out_btlevel);
     }
 
+#ifdef STRENGTHENCC
     if (verbosity >= 2) std::cout << "strengthenCC" << std::endl;
 
     {
@@ -469,13 +472,14 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
       out_learnt.sz = j;
     }
 
-    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
-
     if (verbosity >= 2){
         printf(L_IND "Learnt2 ", L_ind);
         printClause(out_learnt);
         printf(" at level %d\n", out_btlevel);
     }
+#endif
+
+    for (int j = 0; j < analyze_toclear.size(); j++) seen[var(analyze_toclear[j])] = 0;    // ('seen[]' is now cleared)
 
     if (verbosity >= 2) printf("ANALYZED2\n");
 
@@ -742,18 +746,27 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
+#ifdef NEW_VARORDER
             if (TRIE_MODE == branch_always) {
               Snapshot &snapshot = trie.new_snapshot();
-              if (!order.select(*this)) {
-                for (int i = 0; i < nVars(); ++i) {
-                  printf("ASSIGN %d %d\n", i + 1, assigns[i]);
-                }
-                return l_True;
-              }
+              if (!order.select(*this)) return l_True;
               undos.push_back(&trie);
             } else {
               if (!order.select(*this)) return l_True;
             }
+#else
+            if (TRIE_MODE == branch_always) {
+              Snapshot &snapshot = trie.new_snapshot();
+              Var next = order.select(params.random_var_freq);
+              if (next == var_Undef) return l_True;
+              check(assume(Lit(next, true)));
+              undos.push_back(&trie);
+            } else {
+              Var next = order.select(params.random_var_freq);
+              if (next == var_Undef) return l_True;
+              check(assume(Lit(next, true)));
+            }
+#endif
         }
     }
 }
@@ -766,7 +779,9 @@ void Solver::varRescaleActivity(void)
     for (int i = 0; i < nVars(); i++)
         activity[i] *= 1e-100;
     var_inc *= 1e-100;
+#ifdef NEW_VARORDER
     order.tolerance *= 1e-100;
+#endif
 }
 
 
@@ -839,7 +854,9 @@ bool Solver::resume() {
         nof_learnts   *= 1.1;
     }
 
+#ifdef NEW_VARORDER
     order.new_stage();
+#endif
 
     return status == l_True;
 }

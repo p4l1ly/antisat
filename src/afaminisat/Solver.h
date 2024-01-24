@@ -30,7 +30,13 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "SolverTypes.h"
 #include "Constraints.h"
 #include "Queue.h"
+
+#ifdef NEW_VARORDER
 #include "VarOrder.h"
+#else
+#include "old_varorder/VarOrder.h"
+#endif
+
 #include "Trie.h"
 
 #define L_IND    "%-*d"
@@ -134,13 +140,19 @@ public:
     void    varBumpActivity(Lit p) {
         if (var_decay < 0) return;     // (negative decay means static variable order -- don't bump)
         if ( (activity[var(p)] += var_inc) > 1e100 ) varRescaleActivity();
+#ifdef NEW_VARORDER
         order.update(var(p), *this);
+#else
+        order.update(var(p));
+#endif
     }
 
     void    varDecayActivity(void) {
       if (var_decay >= 0) {
         var_inc *= var_decay;
+#ifdef NEW_VARORDER
         order.tolerance *= tolerance_decay;
+#endif
       }
     }
     void    varRescaleActivity(void);
@@ -245,6 +257,9 @@ inline void Solver::undoOne(void)
     Var     x  = var(trail.last()); trail.pop();
     assigns[x] = toInt(l_Undef);
     reason [x] = GClause_NULL;
+#ifndef NEW_VARORDER
+    order.undo(x);
+#endif
 }
 
 //=================================================================================================
