@@ -812,7 +812,7 @@ bool Solver::solve(const vec<Lit>& assumps)
     if (!ok) return false;
 
     params.var_decay = 0.95;
-    params.tolerance_decay = 0.95;  // should be slightly higher or equal to var_decay
+    params.tolerance_decay = 0.958;  // should be slightly higher or equal to var_decay
     params.clause_decay = 0.999;
     params.random_var_freq = 0.02;
 

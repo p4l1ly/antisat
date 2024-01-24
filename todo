@@ -19,19 +19,25 @@ How to improve performance further
 
 - DONE Switch VarOrder
 - DONE Try to merge analyze and analyze2
-- DONE (NEW_ANALYZE has  4 times worse result at the first benchmark, randomness?). Switch analyze
+- DONE (NEW_ANALYZE has 4 times worse result at the first benchmark, randomness?). Switch analyze
 
-- DONE, they're faster Try to run original MiniSAT (v1.12 and v1.14)
-- Try to run at least one external high end SAT solver
+- DONE Try to run original MiniSAT (v1.12 and v1.14)
+- DONE Try to run at least one external high end SAT solver (SBVA Cadical, CryptoMiniSAT)
 
+cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | python3 presort_clauses.py | ./build/triesat 0
+cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | python3 presort_clauses.py | ./build/triesat 1
+cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | ../MiniSat_v1.12b/minisat
+cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | ../MiniSat_v1.14/minisat
+cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | ../cadical/build/cadical
+cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | ../cryptominisat/build/cryptominisat5
+(cd ../SBVA; ./sbva_wrapped ../cadical/build/cadical ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz foo.out)
+
+- VarOrder: prefer watched variables?
 
 Then
 ====
 
 - Reapply AFA stuff. Turn features on/off
 - second VarOrder for outputs
-- VarOrder: prefer watched variables?
-
-- Adapt one incremental SAT solver for antichain.
 
 - Try to run at least one external incremental SAT solver
