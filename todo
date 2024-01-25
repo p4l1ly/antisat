@@ -32,12 +32,19 @@ cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.
 cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | ../cryptominisat/build/cryptominisat5
 (cd ../SBVA; ./sbva_wrapped ../cadical/build/cadical ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz foo.out)
 
-- VarOrder: prefer watched variables?
+- VarOrder: prefer watched variables? 1 - 2d
+- novan? 1d
 
 Then
 ====
 
-- Reapply AFA stuff. Turn features on/off
-- second VarOrder for outputs
+- Reapply AFA stuff. 3d
+- second VarOrder for outputs 1h
 
-- Try to run at least one external incremental SAT solver
+- Try to run at least one external incremental SAT solver - without maximization of outputs (we
+  should be much better because of this) - CryptoMiniSAT 3h
+
+- switch various features on/off - posq outputs, purity, directedness (directed boolean operators,
+  directed clauses) 3h
+
+- Compare thoroughly in all settings with all AFA model checkers and the selected SAT solvers. 1d

@@ -26,6 +26,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 class Solver;
 
+using std::vector;
+using std::pair;
+
 //=================================================================================================
 
 extern unsigned global_bubble_move_count;
@@ -36,10 +39,10 @@ class VarOrder: Undoable {
     const vec<double>&  activity;      // var->act. Pointer to external activity table.
     const vec<bool>&    pures;
     std::vector<Var> order;
-    unsigned guess_line = -1;
+    unsigned guess_line = 0;
     std::vector<unsigned> var_ixs;
     std::vector<unsigned> snapshots;
-    std::vector<int> barriers;
+    std::vector<pair<int, int>> barriers;
     const unsigned max_bubble_moves = 5;
     // const double tolerance_decrease = 0.9999995;
 
@@ -105,7 +108,7 @@ void VarOrder::init() {
   for (Var var: order) var_ixs[var] = i++;
 
   snapshots.reserve(order.size());
-  barriers.resize(order.size(), -1);
+  barriers.resize(order.size(), pair(-1, -1));
 }
 
 //=================================================================================================
