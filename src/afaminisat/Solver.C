@@ -749,10 +749,16 @@ lbool Solver::search()
 #ifdef NEW_VARORDER
             if (TRIE_MODE == branch_always) {
               Snapshot &snapshot = trie.new_snapshot();
-              if (!order.select(*this)) return l_True;
+              if (!order.select(*this)) {
+                for (int i = 0; i < nVars(); ++i) printf("%d := %d\n", i, assigns[i]);
+                return l_True;
+              }
               undos.push_back(&trie);
             } else {
-              if (!order.select(*this)) return l_True;
+              if (!order.select(*this)) {
+                for (int i = 0; i < nVars(); ++i) printf("%d := %d\n", i, assigns[i]);
+                return l_True;
+              }
             }
 #else
             if (TRIE_MODE == branch_always) {

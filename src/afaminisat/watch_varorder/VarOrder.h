@@ -17,12 +17,12 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#ifndef VarOrder_h
-#define VarOrder_h
+#ifndef WatchVarOrder_h
+#define WatchVarOrder_h
 
-#include "SolverTypes.h"
+#include "../SolverTypes.h"
 #include <vector>
-#include "Constraints.h"
+#include "../Constraints.h"
 
 class Solver;
 
@@ -34,7 +34,14 @@ using std::pair;
 extern unsigned global_bubble_move_count;
 extern unsigned global_bubble_move_count_undo;
 
-class VarOrder: Undoable {
+struct WatchInfo {
+  unsigned pos_watch_count;
+  unsigned neg_watch_count;
+  bool skipped;
+  bool enqueued;
+};
+
+class WatchVarOrder: Undoable {
     const vec<char>&    assigns;       // var->val. Pointer to external assignment table.
     const vec<double>&  activity;      // var->act. Pointer to external activity table.
     const vec<bool>&    pures;
@@ -43,14 +50,12 @@ class VarOrder: Undoable {
     std::vector<unsigned> var_ixs;
     std::vector<unsigned> snapshots;
     std::vector<pair<int, int>> barriers;
+    std::vector<WatchInfo> watch_infos;
+    std::vector<int> skipped_candidates;
     const unsigned max_bubble_moves = 5;
-    // const double tolerance_decrease = 0.9999995;
 
     const double tolerance_decrease = 1.0;
     const double tolerance_increase = 1.05;
-    //
-    // const double tolerance_decrease = 1.0;
-    // const double tolerance_increase = 1.0;
 
     const unsigned min_bubble_move_count_since_last_stage = 1;
     const unsigned min_update_count_since_last_stage = 5;
@@ -62,10 +67,9 @@ public:
     unsigned bubble_move_count_since_last_stage = 0;
     unsigned update_count_since_last_stage = 0;
 
-    VarOrder(
+    WatchVarOrder(
         const vec<char>& ass, const vec<double>& act, const vec<bool>& pures_
-    ) : assigns(ass), activity(act), pures(pures_),
-        order(), snapshots(), barriers(), var_ixs()
+    ) : assigns(ass), activity(act), pures(pures_)
     { }
 
     inline void newVar(void);
@@ -88,10 +92,12 @@ public:
       bubble_move_count_since_last_stage = 0;
       update_count_since_last_stage = 0;
     }
+    void watch(Lit lit);
+    void unwatch(Lit lit);
 };
 
 
-void VarOrder::newVar(void)
+void WatchVarOrder::newVar(void)
 {
     int ix = assigns.size() - 1;
     if (!pures[ix]) {
@@ -100,15 +106,17 @@ void VarOrder::newVar(void)
 }
 
 
-void VarOrder::init() {
+void WatchVarOrder::init() {
   if (order.empty()) return;
 
-  var_ixs.resize(assigns.size(), -1);
+  var_ixs.resize(order.size(), -1);
   unsigned i = 0;
   for (Var var: order) var_ixs[var] = i++;
 
   snapshots.reserve(order.size());
   barriers.resize(order.size(), pair(-1, -1));
+
+  watch_infos.resize(order.size());
 }
 
 //=================================================================================================

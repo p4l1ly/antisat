@@ -205,6 +205,7 @@ public:
   void *getSpecificPtr() { return this; }
 
   void set_watch(Solver &S);
+  void unset_watch(Solver &S);
 
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };

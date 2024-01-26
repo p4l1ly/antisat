@@ -1,7 +1,7 @@
 How to improve performance further
 ==================================
 
-- DONE, SUSPICIOUSLY_GOOD_IMPACT VarOrder: tolerance grows slower than liveness step
+- DONE, VERY_GOOD_IMPACT VarOrder: tolerance grows slower than liveness step
 - Less memory jumping:
     - DONE LogLists are used in the trie, which can cause memory jumping.
       - DONE we can increase granularity of LogLists. AND MAYBE THIS (for snapshots)
@@ -32,7 +32,8 @@ cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.
 cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz | unxz | ../cryptominisat/build/cryptominisat5
 (cd ../SBVA; ./sbva_wrapped ../cadical/build/cadical ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz foo.out)
 
-- VarOrder: prefer watched variables? 1 - 2d
+- DONE, VERY_GOOD_IMPACT VarOrder: prefer watched variables? 1 - 2d
+- VarOrder: finish skipped variables (useful for antichain) 3h
 - novan? 1d
 
 Then

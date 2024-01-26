@@ -32,7 +32,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Queue.h"
 
 #ifdef NEW_VARORDER
-#include "VarOrder.h"
+// #include "VarOrder.h"
+#include "watch_varorder/VarOrder.h"
 #else
 #include "old_varorder/VarOrder.h"
 #endif
@@ -68,8 +69,7 @@ struct SearchParams {
 #define Solver_CANCELLED 2
 #define Solver_INIT 3
 
-class Cancelled {
-};
+class Cancelled {};
 
 class Solver {
 public:
@@ -92,7 +92,12 @@ public:
     vec<Lit>            outputs;        // The output literals.
     std::unordered_set<unsigned> finals;        // The output literals.
 
+#ifdef NEW_VARORDER
+    // VarOrder            order;          // Keeps track of the decision variable order.
+    WatchVarOrder       order;          // Keeps track of the decision variable order.
+#else
     VarOrder            order;          // Keeps track of the decision variable order.
+#endif
 
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
     std::vector<Undoable*> undos;

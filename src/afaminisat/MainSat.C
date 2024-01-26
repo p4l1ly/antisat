@@ -216,7 +216,7 @@ bool run(char mode) {
     if (S.solve(empty_vec)) {
       if (verbosity >= -3) printf("SOLVING_RESUME\n");
       if (verbosity >= 2) S.trie.print_guards(S);
-      bool result = S.resume();
+      result = S.resume();
       printStats(S.stats, cpuTime());
     }
   }

@@ -192,12 +192,11 @@ bool Trie::add_clause(
 }
 
 inline void Head::set_watch(Solver &S) {
-  if (verbosity >= 2) cout << "WATCHING " << HeadAttrs(this, S) << endl;
-  vec<Constr*> &watches = S.watches[index(~tag)];
+  if (watching) return;
 
-#ifdef MY_DEBUG
-  assert(!watching);
-#endif
+  if (verbosity >= 2) cout << "WATCHING " << HeadAttrs(this, S) << endl;
+
+  vec<Constr*> &watches = S.watches[index(~tag)];
 
   watching = true;
   watches.push(this);
@@ -393,7 +392,7 @@ Head* Head::full_multimove_on_propagate(
           x->guard.next = gnext;
         }
 
-        if (!x->watching) x->set_watch(S);
+        x->set_watch(S);
         found_watch = true;
         break;
       }
@@ -490,6 +489,10 @@ Head* Head::jump(Solver &S) {
         van.guard.last_change_level = level;
         van.guard.minus_snapshot = van.save_to_msnap(trie, msnap);
         msnap = NULL;
+
+#ifdef NEW_VARORDER
+        S.order.watch(lit);
+#endif
       }
     }
   }
@@ -524,7 +527,8 @@ void Trie::undo(Solver& S) {
 
   ITER_LOGLIST_BACK(snapshot.minus_snapshots, MinusSnapshot, msnap, {
     if (msnap.place != NULL) {
-      Guard &guard = msnap.place->guard;
+      Head &place = *msnap.place;
+      Guard &guard = place.guard;
       if (verbosity >= 2) {
         cout << "UNDO_MINUS"
           << " " << HeadAttrs(msnap.place, S)
@@ -533,8 +537,13 @@ void Trie::undo(Solver& S) {
           << " " << guard.next
           << endl;
       }
-      assert(msnap.place->watching);
-      if (guard.guard_type == REAR_GUARD) guard.guard_type = DANGLING_GUARD;
+      assert(place.watching);
+      if (guard.guard_type == REAR_GUARD) {
+#ifdef NEW_VARORDER
+        S.order.unwatch(place.tag);
+#endif
+        guard.guard_type = DANGLING_GUARD;
+      }
       else if (guard.guard_type == VAN_GUARD) guard.untangle();
     }
   })
@@ -555,6 +564,9 @@ void Trie::undo(Solver& S) {
     Head *place = psnap.place;
     Guard &guard = place->guard;
     if (psnap.dual == NULL) {
+#ifdef NEW_VARORDER
+      S.order.watch(place->tag);
+#endif
       assert(guard.guard_type == REAR_GUARD);
     } else {
       assert(psnap.dual->watching);
@@ -570,12 +582,12 @@ void Trie::undo(Solver& S) {
     }
     guard.minus_snapshot = psnap.minus_snapshot;
     guard.last_change_level = psnap.last_change_level;
-    if (!place->watching) place->set_watch(S);
+
+    place->set_watch(S);
   })
 
   --snapshot_count;
 }
-
 
 Snapshot& Trie::new_snapshot() {
   unsigned ix = snapshot_count;
@@ -697,6 +709,10 @@ GClause Head::propagate(Solver& S, Lit p, bool& keep_watch) {
       if (verbosity >= 2) cout << "REAR_PROP " << HeadAttrs(this, S) << endl;
       watching = false;
 
+#ifdef NEW_VARORDER
+      S.order.unwatch(tag);
+#endif
+
       Head *confl = jump(S);
       make_rear_psnap(S);
       if (confl == NULL) return GClause_NULL;
@@ -747,7 +763,11 @@ Head* Trie::reset(Solver &S) {
           van.guard.guard_type = REAR_GUARD;
           van.guard.last_change_level = 0;
           van.guard.minus_snapshot = van.save_to_msnap(*this, NULL);
-          if (!van.watching) van.set_watch(S);
+
+#ifdef NEW_VARORDER
+          S.order.watch(van.tag);
+#endif
+          van.set_watch(S);
         }
 
         break;
