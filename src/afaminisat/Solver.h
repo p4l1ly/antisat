@@ -34,6 +34,11 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #ifdef NEW_VARORDER
 // #include "VarOrder.h"
 #include "watch_varorder/VarOrder.h"
+
+#ifdef FINISH_VARORDER
+#include "finish_varorder/VarOrder.h"
+#endif
+
 #else
 #include "old_varorder/VarOrder.h"
 #endif
@@ -95,6 +100,10 @@ public:
 #ifdef NEW_VARORDER
     // VarOrder            order;          // Keeps track of the decision variable order.
     WatchVarOrder       order;          // Keeps track of the decision variable order.
+#ifdef FINISH_VARORDER
+    FinishVarOrder finish_varorder;
+#endif
+
 #else
     VarOrder            order;          // Keeps track of the decision variable order.
 #endif
@@ -180,6 +189,9 @@ public:
       , last_simplify(-1)
       , params(1, 1, 0)
       , trie(assigns)
+#ifdef FINISH_VARORDER
+      , finish_varorder(assigns)
+#endif
       {
         runningMutex.lock();
     }

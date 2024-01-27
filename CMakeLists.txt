@@ -16,6 +16,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DMY_DEBUG")
 option(NEW_VARORDER "use new varorder" OFF)
 option(NEW_ANALYZE "use new analyze function" OFF)
 option(STRENGTHENCC "use strengthenCC" OFF)
+option(FINISH_VARORDER "finally, finish all variables skipped by watch varorder" OFF)
 
 # add_executable(
 #   afaminisat
@@ -42,6 +43,11 @@ if (NEW_VARORDER)
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DNEW_VARORDER")
   # set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/VarOrder.C")
   set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/watch_varorder/VarOrder.C")
+  if (FINISH_VARORDER)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFINISH_VARORDER")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFINISH_VARORDER")
+    set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/finish_varorder/VarOrder.C")
+  endif()
 endif()
 
 if (NEW_ANALYZE)

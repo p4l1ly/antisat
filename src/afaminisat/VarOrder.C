@@ -31,7 +31,7 @@ void VarOrder::undo(Solver &S) {
 
 #ifdef MY_DEBUG
   for (int i = 0; snapshots.back() != -1 && i < snapshots.back(); ++i) {
-    if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+    if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
   }
 #endif
 
@@ -70,7 +70,7 @@ void VarOrder::undo(Solver &S) {
 
 #ifdef MY_DEBUG
   for (int i = 0; i < guess_line; ++i) {
-    if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+    if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
   }
 #endif
 }
@@ -82,7 +82,7 @@ bool VarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
     for (int i = 0; i < guess_line; ++i) {
-      if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+      if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
     }
 #endif
 
@@ -111,7 +111,7 @@ bool VarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
         for (int i = 0; i < guess_line; ++i) {
-          if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+          if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
         }
 #endif
 
@@ -126,7 +126,7 @@ bool VarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
     for (int i = 0; i < guess_line; ++i) {
-      if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+      if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
     }
 #endif
 
@@ -146,24 +146,24 @@ void VarOrder::update(Var right, Solver &S) {
 
 
 bool VarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
+  const int level = S.level[right];
+
   if (verbosity >= -3) printf(
     "VARORDER_UPDATE0 %d %d %d %d,%d\n",
-    right, right_ix, S.level[right], barriers[right_ix].first, barriers[right_ix].second
+    right, right_ix, level, barriers[right_ix].first, barriers[right_ix].second
   );
 
 #ifdef MY_DEBUG
     for (int i = 0; i < guess_line; ++i) {
-      if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+      if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
     }
 #endif
 
   assert(order[right_ix] == right);
-  const int level = S.level[right];
   const double right_activity = activity[right];
   const double max_left_activity = right_activity - tolerance;
   const double max_left_activity_barrier = right_activity + tolerance;
   int bubble_move_count = 0;
-  bool delete_barrier = true;
 
   int left = -1;
 
@@ -184,6 +184,7 @@ bool VarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
   while (right_ix) {
     pair<int, int> left_barrier = barriers[right_ix - 1];
     assert(left_barrier.first <= left_barrier.second);
+    assert((left_barrier.second == -1) == (left_barrier.first == -1));
 
     left = order[right_ix - 1];
 
@@ -214,45 +215,87 @@ bool VarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
         if (verbosity >= -4) printf("KEEP_BARRIER\n");
         barriers[right_ix] = pair(-1, -1);
         --right_ix;
-        delete_barrier = false;
         break;
-      } else {
-        assert(declevel - left_barrier.second > 0);
-        if (declevel - left_barrier.second == 1) {
-          assert(guess_line == right_ix - 1);
-          if (verbosity >= -4) printf("MOVING_GUESS_LINE2 %d %d\n", guess_line, level);
-          ++guess_line;
-        } else {
-          assert(declevel - left_barrier.second - 1 <= snapshots.size());
-          unsigned snapshot_ix = snapshots.size() - declevel + left_barrier.second + 1;
-          if (verbosity >= -4) {
-            printf("MOVING_SNAPSHOT1 %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level);
-            std::cout << std::flush;
-          }
-          assert(snapshots[snapshot_ix] == right_ix - 1);
-          ++snapshots[snapshot_ix];
-        }
       }
 
       if (left_barrier.first < level) {
         if (verbosity >= -4) printf("SPLIT_BARRIER\n");
-        barriers[right_ix] = pair(level, left_barrier.second);
         barriers[right_ix - 1] = pair(left_barrier.first, level - 1);
         unsigned snapshot_ix = snapshots.size() - declevel + level;
-        if (verbosity >= -4) {
-          printf(
-            "UPDATING_SNAPSHOT %d %d %d %d\n",
-            snapshot_ix, snapshots[snapshot_ix], level, right_ix - 1
-          );
-          std::cout << std::flush;
-        }
         snapshots[snapshot_ix] = right_ix - 1;
+
+        unsigned new_barrier_first = level;
+
+        for (unsigned i = right_ix; i < order.size(); ++i) {
+          int ivar = order[i];
+          int ilevel = assigns[ivar] == 0 ? std::numeric_limits<int>::max() : S.level[ivar];
+          if (verbosity >= 2) {
+            std::cout << "VARORDER_IVAR"
+              << " " << i
+              << " " << ivar
+              << " " << ilevel
+              << " " << barriers[i].first
+              << "," << barriers[i].second
+              << std::endl;
+          }
+          assert (
+            barriers[i].first == -1
+            || barriers[i].first == left_barrier.second + 1
+               && barriers[i].first < ilevel
+          );
+
+          if (new_barrier_first < ilevel) {
+            if (left_barrier.second < ilevel) {
+              if (barriers[i].second == -1) {
+                barriers[i] = pair(new_barrier_first, left_barrier.second);
+
+                if (declevel - left_barrier.second == 1) {
+                  if (verbosity >= -4) printf("SET_GUESS_LINE %d %d %d\n", guess_line, level, i);
+                  guess_line = i;
+                } else {
+                  unsigned snapshot_ix = snapshots.size() - declevel + left_barrier.second + 1;
+                  if (verbosity >= -4) {
+                    printf("SET_SNAPSHOT1 %d %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level, i);
+                  }
+                  snapshots[snapshot_ix] = i;
+                }
+              } else barriers[i].first = new_barrier_first;
+              break;
+            } else {
+              barriers[i] = pair(new_barrier_first, ilevel - 1);
+              unsigned snapshot_ix = snapshots.size() - declevel + ilevel;
+              if (verbosity >= -4) {
+                printf("SET_SNAPSHOT2 %d %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level, i);
+              }
+              snapshots[snapshot_ix] = i;
+              new_barrier_first = ilevel;
+            }
+          };
+        }
+
         --right_ix;
-        delete_barrier = false;
         break;
       }
+
+      assert(declevel - left_barrier.second > 0);
+      if (declevel - left_barrier.second == 1) {
+        assert(guess_line == right_ix - 1);
+        if (verbosity >= -4) printf("MOVING_GUESS_LINE2 %d %d\n", guess_line, level);
+        ++guess_line;
+      } else {
+        assert(declevel - left_barrier.second - 1 <= snapshots.size());
+        unsigned snapshot_ix = snapshots.size() - declevel + left_barrier.second + 1;
+        if (verbosity >= -4) {
+          printf("MOVING_SNAPSHOT1 %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level);
+          std::cout << std::flush;
+        }
+        assert(snapshots[snapshot_ix] == right_ix - 1);
+        ++snapshots[snapshot_ix];
+      }
+
     }
 
+    barriers[right_ix - 1] = pair(-1, -1);
     barriers[right_ix] = left_barrier;
     --right_ix;
   }
@@ -261,7 +304,6 @@ after_bubbling:
   if (bubble_move_count) {
     order[right_ix] = right;
     var_ixs[right] = right_ix;
-    if (delete_barrier) barriers[right_ix] = pair(-1, -1);
     if (bubble_move_count > max_bubble_moves) {
       if (verbosity >= -3) {
         printf(
@@ -289,7 +331,7 @@ after_bubbling:
 
 #ifdef MY_DEBUG
   for (int i = 0; i < guess_line; ++i) {
-    if (S.assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
+    if (assigns[order[i]] == 0) { printf("NOOO %d %d\n", i, order[i]); assert(false); }
   }
 #endif
 

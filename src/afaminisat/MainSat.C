@@ -201,6 +201,11 @@ bool run(char mode) {
 
 #ifdef NEW_VARORDER
     S.order.init();
+
+#ifdef FINISH_VARORDER
+    S.finish_varorder.init();
+#endif
+
 #endif
 
     S.status = Solver_RUNNING;

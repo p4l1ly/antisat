@@ -2,6 +2,10 @@
 #include "VarOrder.h"
 #include "../Solver.h"
 
+#ifdef FINISH_VARORDER
+#include "../finish_varorder/VarOrder.h"
+#endif
+
 inline void check(bool expr) { assert(expr); }
 
 unsigned global_bubble_move_count = 0;
@@ -31,7 +35,7 @@ void WatchVarOrder::undo(Solver &S) {
 
 #ifdef MY_DEBUG
   for (int i = 0; i < guess_line; ++i) {
-    if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+    if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
       printf("NOOO %d %d\n", i, order[i]); assert(false);
     }
   }
@@ -79,7 +83,7 @@ void WatchVarOrder::undo(Solver &S) {
 
 #ifdef MY_DEBUG
   for (int i = 0; i < guess_line; ++i) {
-    if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+    if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
       printf("NOOO %d %d\n", i, order[i]); assert(false);
     }
   }
@@ -93,7 +97,7 @@ bool WatchVarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
     for (int i = 0; i < guess_line; ++i) {
-      if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+      if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
         printf("NOOO %d %d\n", i, order[i]); assert(false);
       }
     }
@@ -143,7 +147,7 @@ bool WatchVarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
       for (int i = 0; i < guess_line; ++i) {
-        if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+        if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
           printf("NOOO %d %d\n", i, order[i]); assert(false);
         }
       }
@@ -168,6 +172,10 @@ bool WatchVarOrder::select(Solver &S)
               << std::endl;
           }
           watch_info.skipped = true;
+
+#ifdef FINISH_VARORDER
+          S.finish_varorder.skip(next, level);
+#endif
         } else {
           if (guess_line != order.size()) {
             pair<int, int> &barrier = barriers[guess_line];
@@ -188,7 +196,7 @@ bool WatchVarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
           for (int i = 0; i < guess_line; ++i) {
-            if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+            if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
               printf("NOOO %d %d\n", i, order[i]); assert(false);
             }
           }
@@ -206,7 +214,7 @@ bool WatchVarOrder::select(Solver &S)
 
 #ifdef MY_DEBUG
     for (int i = 0; i < guess_line; ++i) {
-      if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+      if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
         printf("NOOO %d %d\n", i, order[i]); assert(false);
       }
     }
@@ -228,7 +236,7 @@ void WatchVarOrder::update(Var right, Solver &S) {
 
 
 bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
-  const int level = S.assigns[right] == 0 ? std::numeric_limits<int>::max() : S.level[right];
+  const int level = assigns[right] == 0 ? std::numeric_limits<int>::max() : S.level[right];
 
   if (verbosity >= -3) printf(
     "VARORDER_UPDATE0 %d %d %d %d,%d\n",
@@ -237,7 +245,7 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
 
 #ifdef MY_DEBUG
   for (int i = 0; i < guess_line; ++i) {
-    if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+    if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
       printf("NOOO %d %d\n", i, order[i]); assert(false);
     }
   }
@@ -314,7 +322,7 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
 
         for (unsigned i = right_ix; i < order.size(); ++i) {
           int ivar = order[i];
-          int ilevel = S.assigns[ivar] == 0 ? std::numeric_limits<int>::max() : S.level[ivar];
+          int ilevel = assigns[ivar] == 0 ? std::numeric_limits<int>::max() : S.level[ivar];
           if (verbosity >= 2) {
             std::cout << "VARORDER_IVAR"
               << " " << i
@@ -415,7 +423,7 @@ after_bubbling:
 
 #ifdef MY_DEBUG
   for (int i = 0; i < guess_line; ++i) {
-    if (!watch_infos[order[i]].skipped && S.assigns[order[i]] == 0) {
+    if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
       printf("NOOO %d %d\n", i, order[i]); assert(false);
     }
   }
