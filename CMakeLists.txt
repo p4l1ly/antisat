@@ -17,6 +17,7 @@ option(NEW_VARORDER "use new varorder" OFF)
 option(NEW_ANALYZE "use new analyze function" OFF)
 option(STRENGTHENCC "use strengthenCC" OFF)
 option(FINISH_VARORDER "finally, finish all variables skipped by watch varorder" OFF)
+option(ALL_SOLO "don't use rear/van guards but only solo guards (limited unit propagation)" OFF)
 
 # add_executable(
 #   afaminisat
@@ -53,6 +54,11 @@ endif()
 if (NEW_ANALYZE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNEW_ANALYZE")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DNEW_ANALYZE")
+endif()
+
+if (ALL_SOLO)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DALL_SOLO")
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DALL_SOLO")
 endif()
 
 add_executable(

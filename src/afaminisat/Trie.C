@@ -120,7 +120,7 @@ bool Trie::add_clause(
     }
   }
 
-  if (added_vars.empty()) { 
+  if (added_vars.empty()) {
     Head *above = deepest_place;
     if (above->is_ver) above = above->above;
     else above = horlines[above->external].above;
@@ -339,6 +339,44 @@ pair<Head *, MultimoveEnd> MultimoveCtx::next() {
   return first(move);
 }
 
+pair<Head *, MultimoveEnd> MultimoveCtx::first_solo(pair<Head*, WhatToDo> move, Solver &S) {
+again:
+  pair<Head *, MultimoveEnd> result = multimove(move);
+  switch (result.second) {
+    case MultimoveEnd::E_WATCH: {
+      Head *y = result.first;
+      Head *nxt;
+      Head *below;
+      if (y->is_ver) {
+        nxt = y->dual_next;
+        below = y->next;
+      } else {
+        nxt = y->next;
+        below = y->dual_next;
+      }
+
+      if (below == NULL) {
+        check(S.enqueue(y->tag, GClause_new(y)));
+        if (nxt == NULL) return pair(y, MultimoveEnd::E_DONE);
+        move = pair(nxt, after_right(nxt));
+        goto again;
+      }
+
+      if (nxt != NULL) stack.emplace_back(nxt, after_right(nxt));
+      return result;
+    }
+    case MultimoveEnd::E_EXHAUST: stack.clear();
+    default: return result;
+  }
+}
+
+pair<Head *, MultimoveEnd> MultimoveCtx::next_solo(Solver &S) {
+  if (stack.empty()) return pair((Head*)NULL, MultimoveEnd::E_DONE);
+  auto move = stack.back();
+  stack.pop_back();
+  return first_solo(move, S);
+}
+
 MinusSnapshot *Head::save_to_msnap(Trie &trie, MinusSnapshot *msnap) {
   if (verbosity >= 2) {
     cout << "SAVE_TO_MSNAP"
@@ -390,14 +428,14 @@ Head* Head::full_multimove_on_propagate(
           else rear->guard.dual = x;
           x->guard.previous = gprev;
           x->guard.next = gnext;
+          found_watch = true;
         }
 
         x->set_watch(S);
-        found_watch = true;
         break;
       }
       case MultimoveEnd::E_DONE: break;
-      case MultimoveEnd::E_EXHAUST: 
+      case MultimoveEnd::E_EXHAUST:
         if (verbosity >= 2) {
           cout << "ON_EXHAUST"
             << " " << HeadAttrs(x, S)
@@ -426,6 +464,48 @@ Head* Head::full_multimove_on_propagate(
     else rear->guard.dual = gprev;
   }
 
+  return NULL;
+}
+
+Head* Head::full_multimove_on_propagate_solo(
+  Solver &S,
+  WhatToDo what_to_do,
+  MinusSnapshot *msnap  // NULL if a reusable snapshot does not exist.
+) {
+  Trie &trie = S.trie;
+  int level = S.decisionLevel();
+
+  pair<Head*, MultimoveEnd> move = trie.multimove_ctx.first_solo(pair(this, what_to_do), S);
+  while (move.first != NULL) {
+    Head *x = move.first;
+    switch (move.second) {
+      case MultimoveEnd::E_WATCH: {
+        x->guard.init(SOLO_GUARD, NULL, level, x->save_to_msnap(trie, msnap));
+        msnap = NULL;
+        x->set_watch(S);
+
+#ifdef NEW_VARORDER
+        S.order.watch(x->tag);
+#endif
+
+        break;
+      }
+      case MultimoveEnd::E_DONE: break;
+      case MultimoveEnd::E_EXHAUST:
+        if (verbosity >= 2) cout << "ON_EXHAUST_SOLO " << HeadAttrs(x, S) << endl;
+        if (msnap) {
+          if (verbosity >= 2) printf("CLEAR_MSNAP\n");
+          msnap->place = NULL;
+        }
+        return x;
+    }
+    move = trie.multimove_ctx.next_solo(S);
+  }
+
+  if (msnap) {
+    if (verbosity >= 2) printf("CLEAR_MSNAP\n");
+    msnap->place = NULL;
+  }
   return NULL;
 }
 
@@ -511,6 +591,31 @@ void Guard::untangle() {
   else next->guard.previous = previous;
 }
 
+void MinusSnapshot::undo(Solver &S) {
+  if (place != NULL) {
+    Guard &guard = place->guard;
+    if (verbosity >= 2) {
+      cout << "UNDO_MINUS"
+        << " " << HeadAttrs(place, S)
+        << " " << guard.dual
+        << " " << guard.previous
+        << " " << guard.next
+        << endl;
+    }
+    assert(place->watching);
+    switch (guard.guard_type) {
+    case VAN_GUARD: guard.untangle(); break;
+#ifdef NEW_VARORDER
+    case REAR_GUARD:
+    case SOLO_GUARD:
+      S.order.unwatch(place->tag);
+#endif
+    default:;
+    }
+    guard.guard_type = DANGLING_GUARD;
+  }
+}
+
 void Trie::undo(Solver& S) {
   Snapshot &snapshot = get_last_snapshot();
 
@@ -526,26 +631,7 @@ void Trie::undo(Solver& S) {
   }
 
   ITER_LOGLIST_BACK(snapshot.minus_snapshots, MinusSnapshot, msnap, {
-    if (msnap.place != NULL) {
-      Head &place = *msnap.place;
-      Guard &guard = place.guard;
-      if (verbosity >= 2) {
-        cout << "UNDO_MINUS"
-          << " " << HeadAttrs(msnap.place, S)
-          << " " << guard.dual
-          << " " << guard.previous
-          << " " << guard.next
-          << endl;
-      }
-      assert(place.watching);
-      if (guard.guard_type == REAR_GUARD) {
-#ifdef NEW_VARORDER
-        S.order.unwatch(place.tag);
-#endif
-        guard.guard_type = DANGLING_GUARD;
-      }
-      else if (guard.guard_type == VAN_GUARD) guard.untangle();
-    }
+    msnap.undo(S);
   })
 
   ITER_LOGLIST_BACK(snapshot.plus_snapshots, PlusSnapshot, psnap, {
@@ -567,7 +653,7 @@ void Trie::undo(Solver& S) {
 #ifdef NEW_VARORDER
       S.order.watch(place->tag);
 #endif
-      assert(guard.guard_type == REAR_GUARD);
+      assert(guard.guard_type == REAR_GUARD || guard.guard_type == SOLO_GUARD);
     } else {
       assert(psnap.dual->watching);
       assert(psnap.dual->guard.guard_type == REAR_GUARD);
@@ -718,6 +804,27 @@ GClause Head::propagate(Solver& S, Lit p, bool& keep_watch) {
       if (confl == NULL) return GClause_NULL;
       else return GClause_new(confl);
     }
+
+    case SOLO_GUARD: {
+      if (verbosity >= 2) {
+        cout << "SOLO_PROP" << " " << HeadAttrs(this, S) << endl;
+      }
+
+#ifdef NEW_VARORDER
+      S.order.unwatch(tag);
+#endif
+
+      watching = false;
+
+      int level = S.decisionLevel();
+      MinusSnapshot *msnap = guard.last_change_level == level ? guard.minus_snapshot : NULL;
+      make_rear_psnap(S);
+
+      pair<Head*, WhatToDo> move = S.trie.multimove_ctx.move_down(this);
+      Head *confl = move.first->full_multimove_on_propagate_solo(S, move.second, msnap);
+      if (confl == NULL) return GClause_NULL;
+      else return GClause_new(confl);
+    }
   }
 
   assert(false);
@@ -726,22 +833,20 @@ GClause Head::propagate(Solver& S, Lit p, bool& keep_watch) {
 
 Head* Trie::reset(Solver &S) {
   ITER_LOGLIST_BACK(root_minus_snapshots, MinusSnapshot, msnap, {
-    if (verbosity >= 2) cout << "UNDO_MINUS0 " << HeadAttrs(msnap.place, S) << endl;
-    Guard &guard = msnap.place->guard;
-    if (guard.guard_type == REAR_GUARD) guard.guard_type = DANGLING_GUARD;
-    else {
-      assert(guard.guard_type == VAN_GUARD);
-      guard.untangle();
-    }
+    msnap.undo(S);
   });
   root_minus_snapshots.clear_nodestroy();
 
+#ifdef ALL_SOLO
+  root->full_multimove_on_propagate_solo(S, multimove_ctx.after_right(root), NULL);
+#else
   pair<Head*, WhatToDo> move0 = pair(root, multimove_ctx2.after_right(root));
   pair<Head*, MultimoveEnd> move = multimove_ctx2.first(move0);
   while (move.first != NULL) {
     Head *vanptr = move.first;
     switch (move.second) {
       case MultimoveEnd::E_WATCH: {
+        if (verbosity >= 2) cout << "RESET_MOVE_DOWN " << HeadAttrs(vanptr, S) << endl;
         Head &van = *vanptr;
         pair<Head*, WhatToDo> move2 = multimove_ctx.move_down(vanptr);
         if (move2.second == WhatToDo::EXHAUST) {
@@ -778,6 +883,7 @@ Head* Trie::reset(Solver &S) {
 
     move = multimove_ctx2.next();
   }
+#endif
 
   return NULL;
 }

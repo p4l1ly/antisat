@@ -33,17 +33,19 @@ cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.
 (cd ../SBVA; ./sbva_wrapped ../cadical/build/cadical ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz foo.out)
 
 - DONE, VERY_GOOD_IMPACT VarOrder: prefer watched variables? 1 - 2d
-- VarOrder: finish skipped variables (useful for antichain) 3h
-- novan? 1d
+- DONE VarOrder: finish skipped variables (useful for antichain) 3h
+- DONE novan (SoloGuard) 1d
+- WatchVarOrder: clauses can watch/unwatch too 1h
 
 Then
 ====
 
-- Reapply AFA stuff. 3d
-- second VarOrder for outputs 1h
+- Reapply AFA stuff. 2d
+    - track accepting place
+    - onSat
 
 - Try to run at least one external incremental SAT solver - without maximization of outputs (we
-  should be much better because of this) - CryptoMiniSAT 3h
+  should be much better because of this nonmaximization) - CryptoMiniSAT 3h
 
 - switch various features on/off - posq outputs, purity, directedness (directed boolean operators,
   directed clauses) 3h

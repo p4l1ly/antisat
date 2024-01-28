@@ -60,6 +60,8 @@ struct DotHead {
 
 struct MinusSnapshot {
   Head *place;
+
+  void undo(Solver &S);
 };
 
 struct PlusSnapshot {
@@ -87,7 +89,7 @@ struct Snapshot {
 };
 
 
-enum GuardType { DANGLING_GUARD, VAN_GUARD, REAR_GUARD };
+enum GuardType { DANGLING_GUARD, VAN_GUARD, REAR_GUARD, SOLO_GUARD };
 
 struct Guard {
   GuardType guard_type;
@@ -138,6 +140,8 @@ public:
   pair<Head *, MultimoveEnd> multimove(pair<Head *, WhatToDo> move);
   pair<Head *, MultimoveEnd> first(pair<Head *, WhatToDo> move);
   pair<Head *, MultimoveEnd> next();
+  pair<Head *, MultimoveEnd> first_solo(pair<Head *, WhatToDo> move, Solver &S);
+  pair<Head *, MultimoveEnd> next_solo(Solver &S);
 };
 
 
@@ -218,6 +222,11 @@ public:
     Head *rear,
     Head *gprev,
     Head *gnext
+  );
+  Head* full_multimove_on_propagate_solo(
+    Solver &S,
+    WhatToDo what_to_do,
+    MinusSnapshot *msnap
   );
   GClause propagate(Solver& S, Lit p, bool& keep_watch);
 
