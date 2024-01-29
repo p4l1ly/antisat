@@ -1,0 +1,5 @@
+( variableCount = 0,
+  outputs = [
+    (var = 1, positive = true),
+    (var = 1, positive = true) ],
+  clauses = [ ] )
