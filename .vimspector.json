@@ -6,7 +6,7 @@
         "type":    "cppdbg",
         "request": "launch",
         "program": "${workspaceRoot}/build/afaminisat",
-        "args": ["1", "./test/inclusion-unsat-1.afasat"],
+        "args": ["./test/c5.cnf"],
         "MIMode": "gdb",
         "setupCommands": [
           {

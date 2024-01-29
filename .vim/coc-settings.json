@@ -3,7 +3,16 @@
     "ccls": {
       "initializationOptions": {
         "clang": {
-          "extraArgs": ["-std=c++20"]
+          "extraArgs": [
+            "-std=c++20",
+            "-DUSE_TRIE",
+            "-DWATCH_VARORDER",
+            "-DSAT_TRIE_WATCH",
+            "-DTRIE_FOR_INPUT",
+            "-DNEW_ANALYZE",
+            "-DSOLIDIFY",
+            "-DAFA"
+          ]
         }
       }
     }

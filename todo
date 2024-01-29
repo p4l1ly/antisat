@@ -5,7 +5,7 @@ How to improve performance further
 - Less memory jumping:
     - DONE LogLists are used in the trie, which can cause memory jumping.
       - DONE we can increase granularity of LogLists. AND MAYBE THIS (for snapshots)
-      - WONT_DO we can put the first LogList array in directly into the structure.
+      - WONT_DO we can put the first LogList array directly into the structure.
       - DONE we can solidify the structure into one big array. AND MAYBE THIS (impossible for AFA,
         are clauses solidified?)
       - DONE we can use arrays for VerHeads, vectors for HorHeads and detect reallocation.
@@ -42,11 +42,13 @@ Then
 
 - Reapply AFA stuff. 2d
     - DONE mark indirect "above" or use ifdef AFA
-    - track deepest rightmost rear/solo
+    - DONE track deepest rightmost rear/solo. for each rear, track deepest rightmost accepted van
     - onSat
+    - Main, CMakeLists
 
-- Try to run at least one external incremental SAT solver - without maximization of outputs (we
-  should be much better because of this nonmaximization) - CryptoMiniSAT 3h
+- Try to run at least one external incremental SAT solver - CryptoMiniSAT
+    - without maximization of outputs (we should be much better because of this nonmaximization)
+    - with MaxSAT
 
 - switch various features on/off - posq outputs, purity, directedness (directed boolean operators,
   directed clauses) 3h

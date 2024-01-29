@@ -432,7 +432,19 @@ Head* Head::full_multimove_on_propagate(
         x->set_watch(S);
         break;
       }
-      case MultimoveEnd::E_DONE: break;
+      case MultimoveEnd::E_DONE:
+#ifdef AFA
+        if (x->right() == NULL) {
+          if (
+            rear->guard.deepest_rightmost_van == NULL ||
+            rear->guard.deepest_rightmost_van->right() ||
+            x->depth > rear->guard.deepest_rightmost_van->depth
+          ) {
+            rear->guard.deepest_rightmost_van = x;
+          }
+        }
+#endif
+        break;
       case MultimoveEnd::E_EXHAUST:
         if (verbosity >= 2) {
           cout << "ON_EXHAUST"
@@ -484,9 +496,17 @@ Head* Head::full_multimove_on_propagate_solo(
 
         S.watch_on(x->tag);
 
+#ifdef AFA
+        trie.deepest_rightmost_candidate(x);
+#endif
+
         break;
       }
-      case MultimoveEnd::E_DONE: break;
+      case MultimoveEnd::E_DONE:
+#ifdef AFA
+        trie.deepest_rightmost_candidate(x);
+#endif
+        break;
       case MultimoveEnd::E_EXHAUST:
         if (verbosity >= 2) cout << "ON_EXHAUST_SOLO " << HeadAttrs(x, S) << endl;
         if (msnap) {
@@ -504,6 +524,19 @@ Head* Head::full_multimove_on_propagate_solo(
   }
   return NULL;
 }
+
+#ifdef AFA
+void Trie::deepest_rightmost_candidate(Head *rear) {
+  if (rear->right() == NULL) {
+    if (
+      deepest_rightmost_rear->right() ||
+      rear->depth > deepest_rightmost_rear->depth
+    ) {
+      deepest_rightmost_rear = rear;
+    }
+  }
+}
+#endif
 
 Head* Head::jump(Solver &S) {
   Trie &trie = S.trie;
@@ -537,6 +570,9 @@ Head* Head::jump(Solver &S) {
       if (van.guard.last_change_level == level) van.guard.minus_snapshot->place = NULL;
       van.make_van_psnap(S, S.level[var(lit)]);
       van.guard.guard_type = DANGLING_GUARD;
+#ifdef AFA
+      trie.deepest_rightmost_candidate(&van);
+#endif
     } else {
       MinusSnapshot *van_msnap =
         van.guard.last_change_level == level ? van.guard.minus_snapshot : NULL;
@@ -549,9 +585,15 @@ Head* Head::jump(Solver &S) {
         van.guard.guard_type = DANGLING_GUARD;
         if (msnap) msnap->place = NULL;
         if (!S.enqueue(lit, GClause_new(move.first))) return move.first;
+#ifdef AFA
+        trie.deepest_rightmost_candidate(&van);
+#endif
       } else {
         Head *van2 = move.first;
         van.guard.dual = van2;
+#ifdef AFA
+        van.guard.deepest_rightmost_van = NULL;
+#endif
         Head* conflict = van2->full_multimove_on_propagate(
           S, move.second, van_msnap, &van, NULL, NULL
         );
@@ -567,6 +609,9 @@ Head* Head::jump(Solver &S) {
         msnap = NULL;
 
         S.watch_on(lit);
+#ifdef AFA
+        trie.deepest_rightmost_candidate(&van);
+#endif
       }
     }
   }
@@ -574,6 +619,9 @@ Head* Head::jump(Solver &S) {
   // All vans have accepted. We have an empty van list, we don't watch, nor continue anywhere =>
   // we remove the msnap.
   if (msnap) msnap->place = NULL;
+#ifdef AFA
+  if (guard.deepest_rightmost_van) trie.deepest_rightmost_candidate(guard.deepest_rightmost_van);
+#endif
 
   return NULL;
 }
@@ -642,14 +690,20 @@ void Trie::undo(Solver& S) {
     Head *place = psnap.place;
     Guard &guard = place->guard;
     if (psnap.dual == NULL) {
-      S.watch_on(place->tag);
       assert(guard.guard_type == REAR_GUARD || guard.guard_type == SOLO_GUARD);
+      S.watch_on(place->tag);
+#ifdef AFA
+      deepest_rightmost_rear = psnap.deepest_rightmost_guard;
+#endif
     } else {
       assert(psnap.dual->watching);
       assert(psnap.dual->guard.guard_type == REAR_GUARD);
 
       guard.guard_type = VAN_GUARD;
       guard.dual = psnap.dual;
+#ifdef AFA
+      guard.dual->guard.deepest_rightmost_van = psnap.deepest_rightmost_guard;
+#endif
 
       guard.previous = psnap.dual->guard.dual;
       if (guard.previous) guard.previous->guard.next = place;
@@ -727,7 +781,12 @@ void Head::make_rear_psnap(Solver &S) {
     cout << "MAKE_REAR_PSNAP " << level << " " << HeadAttrs(this, S) << endl;
   }
 
-  snapshot.plus_snapshots.emplace_back(this, guard.last_change_level, (Head*)NULL, guard.minus_snapshot);
+  snapshot.plus_snapshots.emplace_back(
+    this, guard.last_change_level, (Head*)NULL, guard.minus_snapshot
+#ifdef AFA
+    , S.trie.deepest_rightmost_rear
+#endif
+  );
   guard.last_change_level = level;
 }
 
@@ -739,7 +798,12 @@ void Head::make_van_psnap(Solver &S, int level) {
   if (verbosity >= 2) {
     cout << "MAKE_VAN_PSNAP " << level << " " << HeadAttrs(this, S) << endl;
   }
-  snapshot.plus_snapshots.emplace_back(this, guard.last_change_level, guard.dual, guard.minus_snapshot);
+  snapshot.plus_snapshots.emplace_back(
+    this, guard.last_change_level, guard.dual, guard.minus_snapshot
+#ifdef AFA
+    , guard.dual->guard.deepest_rightmost_van
+#endif
+  );
   guard.last_change_level = level;
 }
 
@@ -853,6 +917,9 @@ Head* Trie::reset(Solver &S) {
         } else {
           Head *van2 = move2.first;
           van.guard.dual = van2;
+#ifdef AFA
+          van.guard.deepest_rightmost_van = NULL;
+#endif
           Head* conflict = van2->full_multimove_on_propagate(
             S, move2.second, NULL, vanptr, NULL, NULL
           );
@@ -871,7 +938,16 @@ Head* Trie::reset(Solver &S) {
 
         break;
       }
-      case MultimoveEnd::E_DONE: break;
+      case MultimoveEnd::E_DONE: {
+#ifdef AFA
+        if (vanptr->right() == NULL) {
+          if (vanptr->depth > deepest_rightmost_rear->depth) {
+            deepest_rightmost_rear = vanptr;
+          }
+        }
+#endif
+        break;
+      }
       case MultimoveEnd::E_EXHAUST: return vanptr;
     }
 

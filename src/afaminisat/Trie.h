@@ -69,6 +69,10 @@ struct PlusSnapshot {
   int last_change_level;
   Head *dual;  // Rears have no duals in snapshots, so this implies is_van.
   MinusSnapshot *minus_snapshot;
+
+#ifdef AFA
+  Head *deepest_rightmost_guard;
+#endif
 };
 
 struct Snapshot {
@@ -90,6 +94,10 @@ struct Snapshot {
 
 
 enum GuardType { DANGLING_GUARD, VAN_GUARD, REAR_GUARD, SOLO_GUARD };
+
+#ifdef AFA
+#define deepest_rightmost_van previous
+#endif
 
 struct Guard {
   GuardType guard_type;
@@ -214,6 +222,7 @@ public:
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
 
+  inline Head* right() { return is_ver ? dual_next : next; }
 
   Head* full_multimove_on_propagate(
     Solver &S,
@@ -251,27 +260,25 @@ struct Horline {
 
 class Trie : public Undoable {
 public:
-  // the underlying automaton
-  Head* root;
+  Head* root = NULL;
 
   LogList<MinusSnapshot> root_minus_snapshots;
 
   MultimoveCtx multimove_ctx;
   MultimoveCtx multimove_ctx2;
 
-  // There is one back_ptr for each variable (= state of the analysed AFA).
-  // If the trie is already in the accepting condition (all places have accepted),
-  // undef-valued variables get guessed to 1 and these pointers connect them
-  // into a list (where the last element is the firstly guessed variable). When
-  // undoing guesses, the list is popped, of course.
-  // A back_ptr contains the index of the next list item + 1.
   unsigned snapshot_count = 0;
   std::vector<Snapshot> snapshots;
+
+#ifdef AFA
+  Head* deepest_rightmost_rear = NULL;
+  void deepest_rightmost_candidate(Head *rear);
+#endif
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
   Snapshot& new_snapshot();
 
-  Trie(vec<char> &assigns) : root(NULL), multimove_ctx(assigns), multimove_ctx2(assigns) {}
+  Trie(vec<char> &assigns) : multimove_ctx(assigns), multimove_ctx2(assigns) {}
 
   Head* reset(Solver &S);
 
