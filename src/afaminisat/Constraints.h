@@ -24,7 +24,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <cstdio>
 
 #include "SolverTypes.h"
-#include "SupQ.h"
 #include "Global.h"
 
 
@@ -82,9 +81,10 @@ struct Constr {
 
 class Clause : public Constr, public Reason {
     unsigned    size_learnt;
-    Lit         data[0];
 
 public:
+    Lit         data[0];
+
     int  size        (void)      const { return size_learnt >> 1; }
     bool learnt      (void)      const { return size_learnt & 1; }
 
@@ -114,11 +114,11 @@ public:
 
 
 class UpwardClause : public Constr, public Reason {
+public:
     unsigned    size;
     Lit         output = lit_Undef;
     Lit         data[0];
 
-public:
     Lit  operator [] (int index) const { return data[index]; }
 
     void *getSpecificPtr() { return this; }

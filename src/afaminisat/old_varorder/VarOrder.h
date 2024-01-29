@@ -20,6 +20,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #ifndef VarOrder_h
 #define VarOrder_h
 
+#include <vector>
+
 #include "../SolverTypes.h"
 #include "Heap.h"
 
@@ -35,54 +37,46 @@ struct VarOrder_lt {
 class VarOrder {
     const vec<char>&    assigns;       // var->val. Pointer to external assignment table.
     const vec<double>&  activity;      // var->act. Pointer to external activity table.
-    const vec<bool>&    pures;
     Heap<VarOrder_lt>   heap;
     double              random_seed;   // For the internal random number generator
 
 public:
     VarOrder(
-        const vec<char>& ass, const vec<double>& act, const vec<bool>& pures_
-    ) : assigns(ass), activity(act), pures(pures_),
+        const vec<char>& ass, const vec<double>& act
+    ) : assigns(ass), activity(act),
         heap(VarOrder_lt(act)), random_seed(91648253)
     { }
 
     VarOrder(const vec<char>& ass, const VarOrder& order)
     : assigns(ass)
     , activity(order.activity)
-    , pures(order.pures)
     , heap(order.heap)
     , random_seed(order.random_seed)
     { }
 
-    inline void newVar(void);
+    inline void init(std::vector<Var> &order);
     inline void update(Var x);                  // Called when variable increased in activity.
     inline void undo(Var x);                    // Called when variable is unassigned and may be selected again.
     inline Var  select(double random_freq =.0); // Selects a new, unassigned variable (or 'var_Undef' if none exists).
 };
 
 
-void VarOrder::newVar(void)
-{
-    heap.setBounds(assigns.size());
-    int ix = assigns.size() - 1;
-    // printf("pure1 %d %d %d\n", ix, pures[ix], output_map[ix]);
-    if (!pures[ix])
-        heap.insert(ix);
+void VarOrder::init(std::vector<Var> &order) {
+  heap.setBounds(order.size());
+  for (Var x: order) heap.insert(x);
 }
 
 
 void VarOrder::update(Var x)
 {
-    // printf("pure2 %d %d\n", x, pures[x]);
-    if (!pures[x] && heap.inHeap(x))
+    if (heap.inHeap(x))
         heap.increase(x);
 }
 
 
 void VarOrder::undo(Var x)
 {
-    // printf("pure3 %d %d\n", x, pures[x]);
-    if (!pures[x] && !heap.inHeap(x))
+    if (!heap.inHeap(x))
         heap.insert(x);
 }
 
@@ -92,7 +86,7 @@ Var VarOrder::select(double random_var_freq)
     // Random decision:
     if (drand(random_seed) < random_var_freq){
         Var next = irand(random_seed,assigns.size());
-        if (toLbool(assigns[next]) == l_Undef && !pures[next])
+        if (toLbool(assigns[next]) == l_Undef)
             return next;
     }
 

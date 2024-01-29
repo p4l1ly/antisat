@@ -1,23 +1,3 @@
-/**************************************************************************************************
-MiniSat -- Copyright (c) 2003-2005, Niklas Een, Niklas Sorensson
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction,
-including without limitation the rights to use, copy, modify, merge, publish, distribute,
-sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or
-substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
-NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
-OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-**************************************************************************************************/
-
-#include "SupQ.h"
 #include "CellContainer.h"
 #include "Solver.h"
 #include "Constraints.h"
@@ -26,8 +6,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <ctime>
 #include <unistd.h>
 #include <signal.h>
-#include <chrono>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -39,7 +19,6 @@ using std::cout;
 using std::endl;
 using std::vector;
 using std::string;
-namespace chrono = std::chrono;
 
 #ifdef MY_DEBUG
 int verbosity = 5;
@@ -65,7 +44,8 @@ std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
 bool parse_dimacs(
   Solver& S,
   vector<Horline> &horlines,
-  vector<Head*> &verlines
+  vector<Head*> &verlines,
+  vector<Clause*> &clauses_ww
 ) {
   std::string line;
   bool found_p = false;
@@ -84,59 +64,60 @@ bool parse_dimacs(
     std::cerr << "Expected p or c line.\n"; exit(1);
   }
 
-  if (GUESS_WITH_TRIE) S.pures.growTo(nVars, true);
-  else S.pures.growTo(nVars, false);
-
   for (int i = nVars; i; --i) S.newVar();
 
-  if (TRIE_MODE == clauses) {
-    vec<Lit> lits;
+#ifdef TRIE_FOR_INPUT
 
-    while (nClauses) {
-      int n;
-      std::cin >> n;
-      if (n == 0) {
-        S.addClause(lits);
-        if (!S.okay()) return false;
+  vector<Lit> lits;
+  vector<unsigned> sharing_set;
+  sharing_set.resize(S.watches.size(), 0);
 
-        lits.clear();
-        --nClauses;
-      } else {
-        lits.push(Lit(abs(n) - 1, n < 0));
+  while (nClauses) {
+    int n;
+    std::cin >> n;
+    if (n == 0) {
+      if (verbosity >= 2) {
+        std::cout << "ADD_CLAUSE " << S.nConstrs;
+        for (Lit lit: lits) cout << " " << lit;
+        cout << endl;
       }
+
+      if (!S.trie.add_clause(lits, S, S.nConstrs, sharing_set, horlines, verlines)) return false;
+      ++S.nConstrs;
+      lits.clear();
+      --nClauses;
+    } else {
+      lits.emplace_back(abs(n) - 1, n < 0);
     }
-  } else {
-    vector<Lit> lits;
-    vector<unsigned> sharing_set;
-    sharing_set.resize(S.watches.size(), 0);
-
-    while (nClauses) {
-      int n;
-      std::cin >> n;
-      if (n == 0) {
-        if (verbosity >= 2) {
-          std::cout << "ADD_CLAUSE " << S.nConstrs;
-          for (Lit lit: lits) cout << " " << lit;
-          cout << endl;
-        }
-
-        if (!S.trie.add_clause(lits, S, S.nConstrs, sharing_set, horlines, verlines)) return false;
-        ++S.nConstrs;
-        lits.clear();
-        --nClauses;
-      } else {
-        lits.emplace_back(abs(n) - 1, n < 0);
-      }
-    }
-
-    for (Horline &horline: horlines) {
-      for (Head &verhead: horline.elems) {
-        verhead.above = horline.above;
-      }
-    }
-
-    cout << "TRIE_SIZE " << S.trie.count() << endl;
   }
+
+  for (Horline &horline: horlines) {
+    for (Head &verhead: horline.elems) {
+      verhead.above = horline.above;
+    }
+  }
+
+  cout << "TRIE_SIZE " << S.trie.count() << endl;
+
+#else
+
+  vec<Lit> lits;
+
+  while (nClauses) {
+    int n;
+    std::cin >> n;
+    if (n == 0) {
+      S.addClause(lits, clauses_ww);
+      if (!S.okay()) return false;
+
+      lits.clear();
+      --nClauses;
+    } else {
+      lits.push(Lit(abs(n) - 1, n < 0));
+    }
+  }
+
+#endif
 
   return true;
 }
@@ -165,62 +146,60 @@ static void SIGINT_handler(int signum) {
 //=================================================================================================
 
 
-bool run(char mode) {
+bool run() {
   vector<Horline> horlines;
   vector<Head*> verlines;
+  vector<Clause*> clauses_ww;
   bool result = false;
   Head *solid = NULL;
 
   {
     Solver S;
-    switch (mode) {
-      case '0':
-        TRIE_MODE = clauses;
-        GUESS_WITH_TRIE = false;
-        break;
-      case '1':
-        TRIE_MODE = branch_always;
-        GUESS_WITH_TRIE = false;
-        break;
-      case '2':
-        TRIE_MODE = clauses;
-        GUESS_WITH_TRIE = true;
-        break;
-      case '3':
-        TRIE_MODE = branch_always;
-        GUESS_WITH_TRIE = true;
-        break;
-      default:
-        std::cerr << "Error: unknown mode.\n";
-        exit(1);
-        break;
-    }
-    if (!parse_dimacs(S, horlines, verlines)) goto dealloc;
+    if (!parse_dimacs(S, horlines, verlines, clauses_ww)) goto dealloc;
 
+#ifdef SOLIDIFY
     solid = S.trie.solidify();
-
-#ifdef NEW_VARORDER
-    S.order.init();
-
-#ifdef FINISH_VARORDER
-    S.finish_varorder.init();
 #endif
 
+    vector<int> order;
+    order.reserve(S.nVars());
+    for (int i = 0; i < S.nVars(); ++i) order.push_back(i);
+
+#ifdef HEAP_VARORDER
+    S.heap_order.init(order);
 #endif
 
-    S.status = Solver_RUNNING;
-    S.tic = chrono::steady_clock::now();
+#ifdef BUBBLE_VARORDER
+    S.bubble_order.init(order);
+#endif
+
+#ifdef WATCH_VARORDER
+    S.watch_order.init(order);
+#endif
+
+#ifdef WATCH_CLAUSE_WATCH
+    for (Clause *clause: clauses_ww) {
+      S.watch_on(clause->data[0]);
+    }
+#endif
 
     if (verbosity >= -3) printf("SOLVING\n");
+
+#ifdef USE_TRIE
     if (verbosity >= 2) {
       S.trie.print_guards(S);
       if (write_debug_dots) S.trie.to_dot(S, "debug/trie0.dot");
     }
+#endif
 
     vec<Lit> empty_vec;
     if (S.solve(empty_vec)) {
       if (verbosity >= -3) printf("SOLVING_RESUME\n");
+
+#ifdef USE_TRIE
       if (verbosity >= 2) S.trie.print_guards(S);
+#endif
+
       result = S.resume();
       printStats(S.stats, cpuTime());
     }
@@ -237,7 +216,7 @@ int main(int argc, char** argv) {
     char mode = '3';
     if (argc >= 2) mode = argv[1][0];
 
-    if (run(mode)) {
+    if (run()) {
         std::cout << "SAT" << std::endl;
     } else {
         std::cout << "UNSAT" << std::endl;

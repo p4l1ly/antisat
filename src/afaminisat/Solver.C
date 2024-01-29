@@ -32,8 +32,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 // Just like 'assert()' but expression will be evaluated in the release version as well.
 inline void check(bool expr) { assert(expr); }
 
-bool GUESS_WITH_TRIE = true;
-
 //=================================================================================================
 // Minor methods:
 
@@ -56,7 +54,6 @@ Var Solver::newVar()
     assigns  .push(toInt(l_Undef));
     level    .push(-1);
     activity .push(0);
-    order    .newVar();
     return index;
 }
 
@@ -124,6 +121,8 @@ void Solver::record(const vec<Lit>& clause)
 //=================================================================================================
 // Major methods:
 
+#ifdef AFA
+
 bool Solver::onSatConflict(const vector<int>& cell) {
   stats.conflicts++;
 
@@ -159,6 +158,8 @@ bool Solver::onSatConflict(const vector<int>& cell) {
 
   return true;
 }
+
+#endif
 
 
 #ifdef NEW_ANALYZE
@@ -688,19 +689,6 @@ lbool Solver::search()
     cla_decay = 1 / params.clause_decay;
 
     for (;;){
-        if (status != Solver_RUNNING) {
-          if (status == Solver_PAUSED) {
-            elapsed += chrono::steady_clock::now() - tic;
-            runningMutex.unlock();
-            pauseMutex.lock();
-            runningMutex.lock();
-            pauseMutex.unlock();
-            tic = chrono::steady_clock::now();
-          }
-          if (status == Solver_CANCELLED) {
-            throw Cancelled();
-          }
-        }
         GClause confl = propagate();
         if (confl != GClause_NULL){
             // CONFLICT
@@ -746,45 +734,28 @@ lbool Solver::search()
             // New variable decision:
             stats.decisions++;
 
-#ifdef NEW_VARORDER
-            if (TRIE_MODE == branch_always) {
-              Snapshot &snapshot = trie.new_snapshot();
-              if (!order.select(*this)) {
-#ifdef   FINISH_VARORDER
-                if (!finish_varorder.select(*this)) {
-                  for (int i = 0; i < nVars(); ++i) printf("%d := %d\n", i, assigns[i]);
-                  return l_True;
-                }
-#else
-                for (int i = 0; i < nVars(); ++i) printf("%d := %d\n", i, assigns[i]);
-                return l_True;
-#endif
-              }
-#ifdef   FINISH_VARORDER
-              else {
-                finish_varorder.add_snapshot();
-                undos.push_back(&finish_varorder);
-              }
-#endif
-              undos.push_back(&trie);
-            } else {
-              if (!order.select(*this)) {
-                for (int i = 0; i < nVars(); ++i) printf("%d := %d\n", i, assigns[i]);
-                return l_True;
-              }
-            }
-#else
-            if (TRIE_MODE == branch_always) {
-              Snapshot &snapshot = trie.new_snapshot();
-              Var next = order.select(params.random_var_freq);
-              if (next == var_Undef) return l_True;
-              check(assume(Lit(next, true)));
-              undos.push_back(&trie);
-            } else {
-              Var next = order.select(params.random_var_freq);
-              if (next == var_Undef) return l_True;
-              check(assume(Lit(next, true)));
-            }
+#ifdef SAT_TRIE_HEAP
+            Snapshot &snapshot = trie.new_snapshot();
+            Var next = heap_order.select(params.random_var_freq);
+            if (next == var_Undef) return l_True;
+            check(assume(Lit(next, true)));
+            undos.push_back(&trie);
+#elif SAT_TRIE_BUBBLE
+            Snapshot &snapshot = trie.new_snapshot();
+            if (!bubble_order.select(*this)) return l_True;
+            undos.push_back(&trie);
+#elif SAT_TRIE_WATCH
+            Snapshot &snapshot = trie.new_snapshot();
+            if (!watch_order.select(*this)) return l_True;
+            undos.push_back(&trie);
+#elif SAT_CLAUSE_HEAP
+            Var next = heap_order.select(params.random_var_freq);
+            if (next == var_Undef) return l_True;
+            check(assume(Lit(next, true)));
+#elif SAT_CLAUSE_BUBBLE
+            if (!bubble_order.select(*this)) return l_True;
+#elif SAT_CLAUSE_WATCH
+            if (!watch_order.select(*this)) return l_True;
 #endif
         }
     }
@@ -798,8 +769,21 @@ void Solver::varRescaleActivity(void)
     for (int i = 0; i < nVars(); i++)
         activity[i] *= 1e-100;
     var_inc *= 1e-100;
-#ifdef NEW_VARORDER
-    order.tolerance *= 1e-100;
+
+#ifdef BUBBLE_VARORDER
+    bubble_order.tolerance *= 1e-100;
+#endif
+
+#ifdef WATCH_VARORDER
+    watch_order.tolerance *= 1e-100;
+#endif
+
+#ifdef BUBBLE_VARORDER2
+    bubble_order2.tolerance *= 1e-100;
+#endif
+
+#ifdef WATCH_VARORDER2
+    watch_order2.tolerance *= 1e-100;
 #endif
 }
 
@@ -826,7 +810,11 @@ void Solver::claRescaleActivity(void)
 bool Solver::solve(const vec<Lit>& assumps)
 {
     root_level = 0;
+
+#ifdef USE_TRIE
     if (trie.root && trie.reset(*this) != NULL) return false;
+#endif
+
     simplifyDB();
     if (!ok) return false;
 
@@ -872,10 +860,6 @@ bool Solver::resume() {
         nof_conflicts *= 1.5;
         nof_learnts   *= 1.1;
     }
-
-#ifdef NEW_VARORDER
-    order.new_stage();
-#endif
 
     return status == l_True;
 }

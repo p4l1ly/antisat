@@ -8,10 +8,6 @@
 
 inline void check(bool expr) { assert(expr); }
 
-unsigned global_bubble_move_count = 0;
-unsigned global_bubble_move_count_undo = 0;
-
-
 void WatchVarOrder::undo(Solver &S) {
   if (verbosity >= 2) {
     std::cout << "VARORDER_UNDO"
@@ -174,7 +170,7 @@ bool WatchVarOrder::select(Solver &S)
           watch_info.skipped = true;
 
 #ifdef FINISH_VARORDER
-          S.finish_varorder.skip(next, level);
+          if (finishing) S.finish_order.skip(next, level);
 #endif
         } else {
           if (guess_line != order.size()) {
@@ -227,9 +223,7 @@ bool WatchVarOrder::select(Solver &S)
 void WatchVarOrder::update(Var right, Solver &S) {
   if (verbosity >= -3) printf("VARORDER_UPDATE %d\n", right);
 
-  if (pures[right]) return;
   if (isinf(tolerance)) return;
-  ++update_count_since_last_stage;
 
   update0(right, var_ixs[right], S, S.decisionLevel());
 }
@@ -290,8 +284,6 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
     }
 
     ++bubble_move_count;
-    ++global_bubble_move_count;
-    ++bubble_move_count_since_last_stage;
     order[right_ix] = left;
     var_ixs[left] = right_ix;
 

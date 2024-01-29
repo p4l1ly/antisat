@@ -133,6 +133,14 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
         S.watches[index(~c->data[1])].push(c);
         out_clause = c;
 
+#ifdef WATCH_LEARNT_WATCH
+        if (learnt) {
+#else
+        if (false) {
+#endif
+          S.watch_on(c->data[0]);
+        }
+
         return true;
     }
 }
@@ -186,6 +194,15 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
     if (verbosity >= 2) printf("WATCHES_PUSH3 " L_LIT " %d %p %d\n", L_lit(~c->data[1]), S.watches[index(~c->data[1])].size(), c, S.value(~c->data[1]).toInt());
     S.watches[index(~c->data[1])].push(c);
     out_clause = c;
+
+#ifdef WATCH_CLAUSE_WATCH
+    {
+#else
+    if (false) {
+#endif
+      S.watch_on(c->data[0]);
+    }
+
     return false;
 }
 
@@ -213,6 +230,14 @@ void Clause::remove(Solver& S, bool just_dealloc)
         S.stats.clauses_literals -= size();
     }
 
+#ifdef WATCH_LEARNT_WATCH
+    {
+#else
+    if (false) {
+#endif
+      S.watch_off(data[0]);
+    }
+
     xfree(this);
 }
 
@@ -237,8 +262,24 @@ GClause Clause::propagate(Solver& S, Lit p, bool& keep_watch)
 {
     // Make sure the false literal is data[1]:
     Lit     false_lit = ~p;
-    if (data[0] == false_lit)
+    if (data[0] == false_lit) {
         data[0] = data[1], data[1] = false_lit;
+
+#ifdef WATCH_LEARNT_WATCH
+#  ifdef WATCH_CLAUSE_WATCH
+        {
+#  else
+        if (learnt()) {
+#  endif
+#elif WATCH_CLAUSE_WATCH
+        if (!learnt()) {
+#else
+        if (false) {
+#endif
+          S.watch_off(false_lit);
+          S.watch_on(data[0]);
+        }
+    }
     assert(data[1] == false_lit);
 
     // If 0th watch is true, then clause is already satisfied.

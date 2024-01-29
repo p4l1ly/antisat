@@ -241,10 +241,6 @@ public:
   Head* solidify();
 };
 
-
-enum Mode { clauses, branch_always };
-extern Mode TRIE_MODE;
-
 struct Horline {
   Head** ptr_to_first;
   Head* above;

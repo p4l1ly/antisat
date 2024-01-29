@@ -25,23 +25,15 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <iostream>
 #include <atomic>
 #include <mutex>
-#include <chrono>
 
 #include "SolverTypes.h"
 #include "Constraints.h"
 #include "Queue.h"
 
-#ifdef NEW_VARORDER
-// #include "VarOrder.h"
+#include "VarOrder.h"
 #include "watch_varorder/VarOrder.h"
-
-#ifdef FINISH_VARORDER
 #include "finish_varorder/VarOrder.h"
-#endif
-
-#else
 #include "old_varorder/VarOrder.h"
-#endif
 
 #include "Trie.h"
 
@@ -51,8 +43,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 //=================================================================================================
 // Solver -- the main class:
 
-
-extern bool GUESS_WITH_TRIE;
 
 struct SolverStats {
     int64   starts, decisions, propagations, inspects, conflicts;
@@ -79,9 +69,6 @@ class Cancelled {};
 class Solver {
 public:
     bool                ok;             // If FALSE, the constraints are already unsatisfiable. No part of the solver state may be used!
-    std::atomic_int     status;
-    std::mutex          runningMutex;
-    std::mutex          pauseMutex;
 
     vec<Constr*>        constrs;        // List of problem constraints.
     vec<Clause*>        learnts;        // List of learnt clauses.
@@ -93,19 +80,39 @@ public:
     double              var_decay;      // INVERSE decay factor for variable activity: stores 1/decay. Use negative value for static variable order.
     double              tolerance_decay;
 
+#ifdef AFA
     vec<bool>           pures;          // The pure literals (undef === one).
     vec<Lit>            outputs;        // The output literals.
+    std::vector<bool>   output_mask;    // Which variables are outputs.
     std::unordered_set<unsigned> finals;        // The output literals.
-
-#ifdef NEW_VARORDER
-    // VarOrder            order;          // Keeps track of the decision variable order.
-    WatchVarOrder       order;          // Keeps track of the decision variable order.
-#ifdef FINISH_VARORDER
-    FinishVarOrder finish_varorder;
 #endif
 
-#else
-    VarOrder            order;          // Keeps track of the decision variable order.
+#ifdef BUBBLE_VARORDER
+    BubbleVarOrder bubble_order;          // Keeps track of the decision variable order.
+#endif
+
+#ifdef WATCH_VARORDER
+    WatchVarOrder watch_order;          // Keeps track of the decision variable order.
+#endif
+
+#ifdef FINISH_VARORDER
+    FinishVarOrder finish_order;
+#endif
+
+#ifdef HEAP_VARORDER
+    VarOrder heap_order;          // Keeps track of the decision variable order.
+#endif
+
+#ifdef BUBBLE_VARORDER2
+    BubbleVarOrder bubble_order2;          // Keeps track of the decision variable order.
+#endif
+
+#ifdef WATCH_VARORDER2
+    WatchVarOrder watch_order2;          // Keeps track of the decision variable order.
+#endif
+
+#ifdef HEAP_VARORDER2
+    VarOrder heap_order2;          // Keeps track of the decision variable order.
 #endif
 
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
@@ -124,10 +131,9 @@ public:
     SearchParams params;
     double nof_conflicts, nof_learnts;
 
+#ifdef USE_TRIE
     Trie trie;
-
-    chrono::duration<double> elapsed = chrono::duration<double>::zero();
-    chrono::time_point<chrono::steady_clock> tic;
+#endif
 
     // Temporaries (to reduce allocation overhead):
     //
@@ -149,24 +155,85 @@ public:
     void        reduceDB     (void);
     lbool       search       ();
 
+#ifdef AFA
+    inline void watch_on(Lit p) { UNIMPLEMENTED }
+    inline void watch_off(Lit p) { UNIMPLEMENTED }
+#else
+#ifdef   WATCH_VARORDER
+    inline void watch_on(Lit p) { watch_order.watch(p); }
+    inline void watch_off(Lit p) { watch_order.unwatch(p); }
+#else
+    inline void watch_on(Lit p) {}
+    inline void watch_off(Lit p) {}
+#endif
+#endif
+
     // Activity:
     //
     void    varBumpActivity(Lit p) {
-        if (var_decay < 0) return;     // (negative decay means static variable order -- don't bump)
-        if ( (activity[var(p)] += var_inc) > 1e100 ) varRescaleActivity();
-#ifdef NEW_VARORDER
-        order.update(var(p), *this);
+      if (var_decay < 0) return;     // (negative decay means static variable order -- don't bump)
+      if ( (activity[var(p)] += var_inc) > 1e100 ) varRescaleActivity();
+
+      int var_ = var(p);
+
+#ifdef AFA
+      if (output_mask[var_]) {
 #else
-        order.update(var(p));
+      {
 #endif
+
+#ifdef BUBBLE_VARORDER
+        bubble_order.update(var_, *this);
+#endif
+
+#ifdef WATCH_VARORDER
+        watch_order.update(var_, *this);
+#endif
+
+#ifdef HEAP_VARORDER
+        heap_order.update(var_);
+#endif
+
+#ifdef AFA
+      } else {
+
+#ifdef BUBBLE_VARORDER2
+        bubble_order2.update(var_, *this);
+#endif
+
+#ifdef WATCH_VARORDER2
+        watch_order2.update(var_, *this);
+#endif
+
+#ifdef HEAP_VARORDER2
+        heap_order2.update(var_);
+#endif
+
+#endif
+      }
+
     }
 
     void    varDecayActivity(void) {
       if (var_decay >= 0) {
         var_inc *= var_decay;
-#ifdef NEW_VARORDER
-        order.tolerance *= tolerance_decay;
+
+#ifdef BUBBLE_VARORDER
+        bubble_order.tolerance *= tolerance_decay;
 #endif
+
+#ifdef WATCH_VARORDER
+        watch_order.tolerance *= tolerance_decay;
+#endif
+
+#ifdef BUBBLE_VARORDER2
+        bubble_order2.tolerance *= tolerance_decay;
+#endif
+
+#ifdef WATCH_VARORDER2
+        watch_order2.tolerance *= tolerance_decay;
+#endif
+
       }
     }
     void    varRescaleActivity(void);
@@ -179,22 +246,46 @@ public:
 
 public:
     Solver()
-      : ok(true)
-      , status(Solver_INIT)
-      , cla_inc(1)
-      , cla_decay(1)
-      , var_inc(1)
-      , var_decay(1)
-      , order(assigns, activity, pures)
-      , last_simplify(-1)
-      , params(1, 1, 0)
-      , trie(assigns)
-#ifdef FINISH_VARORDER
-      , finish_varorder(assigns)
+    : ok(true)
+    , cla_inc(1)
+    , cla_decay(1)
+    , var_inc(1)
+    , var_decay(1)
+    , last_simplify(-1)
+    , params(1, 1, 0)
+
+#ifdef USE_TRIE
+    , trie(assigns)
 #endif
-      {
-        runningMutex.lock();
-    }
+
+#ifdef HEAP_VARORDER
+    , heap_order(assigns, activity)
+#endif
+
+#ifdef BUBBLE_VARORDER
+    , bubble_order(assigns, activity)
+#endif
+
+#ifdef WATCH_VARORDER
+    , watch_order(assigns, activity, true)
+#endif
+
+#ifdef FINISH_VARORDER
+    , finish_order(assigns)
+#endif
+
+#ifdef HEAP_VARORDER2
+    , heap_order2(assigns, activity)
+#endif
+
+#ifdef BUBBLE_VARORDER2
+    , bubble_order2(assigns, activity)
+#endif
+
+#ifdef WATCH_VARORDER2
+    , watch_order2(assigns, activity, false)
+#endif
+    { }
 
     ~Solver();
 
@@ -223,33 +314,30 @@ public:
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
     friend bool UpwardClause_new(Solver& S, Lit p, const vec<Lit>& ps, UpwardClause*& out_clause);
 
-    void  addClause(const vec<Lit>& ps) {
+    void  addClause(const vec<Lit>& ps, std::vector<Clause*> &clauses_ww) {
       if (ok){
         Clause* c;
         ok = Clause_new(*this, ps, false, c);
         if (verbosity >= 2) printf("ADD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
         if (c != NULL) {
           constrs.push(c);
+          clauses_ww.push_back(c);
           ++nConstrs;
         }
       }
     }
 
-    void  addUpwardClause(Lit out, const vec<Lit>& ps) {
+    void  addUpwardClause(Lit out, const vec<Lit>& ps, std::vector<UpwardClause*> &clauses_ww) {
       if (ok){
         UpwardClause* c;
         ok = UpwardClause_new(*this, out, ps, c);
         if (verbosity >= 2) printf("ADD_UPWARD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
         if (c != NULL) {
           constrs.push(c);
+          clauses_ww.push_back(c);
           ++nConstrs;
         }
       }
-    }
-
-    void addConstr(Constr *c) {
-      constrs.push(c);
-      ++nConstrs;
     }
 
     bool onSatConflict(const vector<int>& cell);
@@ -274,8 +362,9 @@ inline void Solver::undoOne(void)
     Var     x  = var(trail.last()); trail.pop();
     assigns[x] = toInt(l_Undef);
     reason [x] = GClause_NULL;
-#ifndef NEW_VARORDER
-    order.undo(x);
+
+#ifdef HEAP_VARORDER
+    heap_order.undo(x);
 #endif
 }
 

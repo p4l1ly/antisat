@@ -13,58 +13,86 @@ set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DMY_DEBUG")
 
-option(NEW_VARORDER "use new varorder" OFF)
-option(NEW_ANALYZE "use new analyze function" OFF)
-option(STRENGTHENCC "use strengthenCC" OFF)
-option(FINISH_VARORDER "finally, finish all variables skipped by watch varorder" OFF)
-option(ALL_SOLO "don't use rear/van guards but only solo guards (limited unit propagation)" OFF)
+set(FLAGS "")
 
-# add_executable(
-#   afaminisat
-#   src/afaminisat/Main.C
-#   src/afaminisat/Solver.C
-#   src/afaminisat/Trie.C
-#   src/afaminisat/SupQ.C
-#   src/afaminisat/Constraints.C
-#   src/afaminisat/LogList.C
-#   src/afaminisat/VarOrder.C
-# )
-# set_property(TARGET afaminisat PROPERTY CXX_STANDARD 20)
+option(NEW_ANALYZE "use new analyze function" ON)
+option(STRENGTHENCC "use strengthenCC" ON)
+option(SOLIDIFY "solidify trie before SAT" ON)
+option(ALL_SOLO "don't use rear/van guards but only solo guards (limited unit propagation)" OFF)
+option(WATCH_CLAUSE_WATCH "input clauses have impact on watch bubble order" OFF)
+option(WATCH_LEARNT_WATCH "learnt clauses have impact on watch bubble order" OFF)
+
+set(MODE "${MODE}" CACHE STRING "modus_operandi" FORCE)
 
 set(TRIESAT_DEPS "")
 set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/MainSat.C")
 set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/Solver.C")
-set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/Trie.C")
-set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/SupQ.C")
 set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/Constraints.C")
 set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/LogList.C")
+set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/VarOrder.C")
+set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/watch_varorder/VarOrder.C")
+set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/finish_varorder/VarOrder.C")
 
-if (NEW_VARORDER)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNEW_VARORDER")
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DNEW_VARORDER")
-  # set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/VarOrder.C")
-  set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/watch_varorder/VarOrder.C")
-  if (FINISH_VARORDER)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFINISH_VARORDER")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFINISH_VARORDER")
-    set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/finish_varorder/VarOrder.C")
-  endif()
+set(FLAGS "${FLAGS} -D${MODE}")
+
+if (MODE STREQUAL "SAT_TRIE_HEAP")
+  set(USE_TRIE ON)
+  set(FLAGS "${FLAGS} -DHEAP_VARORDER")
+elseif (MODE STREQUAL "SAT_TRIE_BUBBLE")
+  set(USE_TRIE ON)
+  set(FLAGS "${FLAGS} -DBUBBLE_VARORDER")
+elseif (MODE STREQUAL "SAT_TRIE_WATCH")
+  set(USE_TRIE ON)
+  set(FLAGS "${FLAGS} -DWATCH_VARORDER")
+elseif (MODE STREQUAL "SAT_CLAUSE_HEAP")
+  set(USE_TRIE OFF)
+  set(FLAGS "${FLAGS} -DHEAP_VARORDER")
+elseif (MODE STREQUAL "SAT_CLAUSE_BUBBLE")
+  set(USE_TRIE OFF)
+  set(FLAGS "${FLAGS} -DBUBBLE_VARORDER")
+elseif (MODE STREQUAL "SAT_CLAUSE_WATCH")
+  set(USE_TRIE OFF)
+  set(FLAGS "${FLAGS} -DWATCH_VARORDER")
+  set(FLAGS "${FLAGS} -DWATCH_CLAUSE_WATCH")
+else()
+  message(FATAL_ERROR "Unknown MODE ${MODE}")
+endif()
+
+if (USE_TRIE)
+  set(TRIESAT_DEPS "${TRIESAT_DEPS};src/afaminisat/Trie.C")
+  set(FLAGS "${FLAGS} -DUSE_TRIE")
+  set(FLAGS "${FLAGS} -DTRIE_FOR_INPUT")
 endif()
 
 if (NEW_ANALYZE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNEW_ANALYZE")
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DNEW_ANALYZE")
+  set(FLAGS "${FLAGS} -DNEW_ANALYZE")
 endif()
 
-if (ALL_SOLO)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DALL_SOLO")
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DALL_SOLO")
+if (ALL_SOLO AND USE_TRIE)
+  set(FLAGS "${FLAGS} -DALL_SOLO")
 endif()
+
+if (STRENGTHENCC)
+  set(FLAGS "${FLAGS} -DSTRENGTHENCC")
+endif()
+
+if (SOLIDIFY AND USE_TRIE)
+  set(FLAGS "${FLAGS} -DSOLIDIFY")
+endif()
+
+if (WATCH_LEARNT_WATCH)
+  set(FLAGS "${FLAGS} -DWATCH_LEARNT_WATCH")
+endif()
+
+if (WATCH_CLAUSE_WATCH)
+  set(FLAGS "${FLAGS} -DWATCH_CLAUSE_WATCH")
+endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${FLAGS}")
 
 add_executable(
   triesat
   ${TRIESAT_DEPS}
 )
 set_property(TARGET triesat PROPERTY CXX_STANDARD 20)
-# target_include_directories(triesat PRIVATE ${LIBLZMA_INCLUDE_DIRS})
-# target_link_libraries(afaminisat PRIVATE ${LIBLZMA_LIBRARIES})

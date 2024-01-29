@@ -14,8 +14,6 @@
 
 inline void check(bool expr) { assert(expr); }
 
-Mode TRIE_MODE = branch_always;
-
 using std::endl;
 using std::cout;
 
@@ -484,9 +482,7 @@ Head* Head::full_multimove_on_propagate_solo(
         msnap = NULL;
         x->set_watch(S);
 
-#ifdef NEW_VARORDER
-        S.order.watch(x->tag);
-#endif
+        S.watch_on(x->tag);
 
         break;
       }
@@ -570,9 +566,7 @@ Head* Head::jump(Solver &S) {
         van.guard.minus_snapshot = van.save_to_msnap(trie, msnap);
         msnap = NULL;
 
-#ifdef NEW_VARORDER
-        S.order.watch(lit);
-#endif
+        S.watch_on(lit);
       }
     }
   }
@@ -605,11 +599,9 @@ void MinusSnapshot::undo(Solver &S) {
     assert(place->watching);
     switch (guard.guard_type) {
     case VAN_GUARD: guard.untangle(); break;
-#ifdef NEW_VARORDER
     case REAR_GUARD:
     case SOLO_GUARD:
-      S.order.unwatch(place->tag);
-#endif
+      S.watch_off(place->tag);
     default:;
     }
     guard.guard_type = DANGLING_GUARD;
@@ -650,9 +642,7 @@ void Trie::undo(Solver& S) {
     Head *place = psnap.place;
     Guard &guard = place->guard;
     if (psnap.dual == NULL) {
-#ifdef NEW_VARORDER
-      S.order.watch(place->tag);
-#endif
+      S.watch_on(place->tag);
       assert(guard.guard_type == REAR_GUARD || guard.guard_type == SOLO_GUARD);
     } else {
       assert(psnap.dual->watching);
@@ -795,9 +785,7 @@ GClause Head::propagate(Solver& S, Lit p, bool& keep_watch) {
       if (verbosity >= 2) cout << "REAR_PROP " << HeadAttrs(this, S) << endl;
       watching = false;
 
-#ifdef NEW_VARORDER
-      S.order.unwatch(tag);
-#endif
+      S.watch_off(tag);
 
       Head *confl = jump(S);
       make_rear_psnap(S);
@@ -810,9 +798,7 @@ GClause Head::propagate(Solver& S, Lit p, bool& keep_watch) {
         cout << "SOLO_PROP" << " " << HeadAttrs(this, S) << endl;
       }
 
-#ifdef NEW_VARORDER
-      S.order.unwatch(tag);
-#endif
+      S.watch_off(tag);
 
       watching = false;
 
@@ -869,9 +855,7 @@ Head* Trie::reset(Solver &S) {
           van.guard.last_change_level = 0;
           van.guard.minus_snapshot = van.save_to_msnap(*this, NULL);
 
-#ifdef NEW_VARORDER
-          S.order.watch(van.tag);
-#endif
+          S.watch_on(van.tag);
           van.set_watch(S);
         }
 

@@ -4,11 +4,8 @@
 
 inline void check(bool expr) { assert(expr); }
 
-unsigned global_bubble_move_count = 0;
-unsigned global_bubble_move_count_undo = 0;
 
-
-void VarOrder::undo(Solver &S) {
+void BubbleVarOrder::undo(Solver &S) {
   if (verbosity >= 2) {
     std::cout << "VARORDER_UNDO"
       << " " << guess_line
@@ -76,7 +73,7 @@ void VarOrder::undo(Solver &S) {
 }
 
 
-bool VarOrder::select(Solver &S)
+bool BubbleVarOrder::select(Solver &S)
 {
     if (verbosity >= -3) printf("VARORDER_SELECT %d\n", guess_line);
 
@@ -134,18 +131,16 @@ bool VarOrder::select(Solver &S)
 }
 
 
-void VarOrder::update(Var right, Solver &S) {
+void BubbleVarOrder::update(Var right, Solver &S) {
   if (verbosity >= -3) printf("VARORDER_UPDATE %d\n", right);
 
-  if (pures[right]) return;
   if (isinf(tolerance)) return;
-  ++update_count_since_last_stage;
 
   update0(right, var_ixs[right], S, S.decisionLevel());
 }
 
 
-bool VarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
+bool BubbleVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
   const int level = S.level[right];
 
   if (verbosity >= -3) printf(
@@ -196,8 +191,6 @@ bool VarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
     }
 
     ++bubble_move_count;
-    ++global_bubble_move_count;
-    ++bubble_move_count_since_last_stage;
     order[right_ix] = left;
     var_ixs[left] = right_ix;
 
