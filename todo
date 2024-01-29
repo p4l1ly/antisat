@@ -35,13 +35,14 @@ cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.
 - DONE, VERY_GOOD_IMPACT VarOrder: prefer watched variables? 1 - 2d
 - DONE VarOrder: finish skipped variables (useful for antichain) 3h
 - DONE novan (SoloGuard) 1d
-- WatchVarOrder: clauses can watch/unwatch too 1h (C_FLAGS: learnt clauses too? which of the two watches?)
+- DONE WatchVarOrder: clauses can watch/unwatch too 1h (C_FLAGS: learnt clauses too? which of the two watches?)
 
 Then
 ====
 
 - Reapply AFA stuff. 2d
-    - track accepting place
+    - DONE mark indirect "above" or use ifdef AFA
+    - track deepest rightmost rear/solo
     - onSat
 
 - Try to run at least one external incremental SAT solver - without maximization of outputs (we
@@ -52,4 +53,4 @@ Then
 
 - Compare thoroughly in all settings with all AFA model checkers and the selected SAT solvers. 1d
 
-- learnt clauses in trie?
+- WONT_DO learnt clauses in trie?

@@ -689,7 +689,12 @@ void Head::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
     while (iter) {
       out_reason.push(~iter->tag);
       if (verbosity >= 2) std::cout << "REASON_EXHAUST " << HeadAttrs(iter, S) << endl;
+#ifdef AFA
+      if (iter->is_ver) iter = iter->above;
+      else iter = iter->above == NULL ? NULL : iter->above->above;
+#else
       iter = iter->above;
+#endif
     }
   }
   else {
@@ -702,7 +707,12 @@ void Head::calcReason(Solver& S, Lit p, vec<Lit>& out_reason) {
       if (lit != p) out_reason.push(~lit);
       assert((S.value(lit) == l_False) == (lit != p));
       if (verbosity >= 2) std::cout << "REASON_PLACE " << HeadAttrs(iter, S) << endl;
+#ifdef AFA
+      if (iter->is_ver) iter = iter->above;
+      else iter = iter->above == NULL ? NULL : iter->above->above;
+#else
       iter = iter->above;
+#endif
     }
   }
 }
