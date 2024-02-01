@@ -1,0 +1,273 @@
+#ifdef AFA
+
+#include <algorithm>
+
+#include "Trie.h"
+#include "Solver.h"
+
+using std::cout;
+using std::endl;
+
+void Trie::onSat(
+  Solver &S,
+  unsigned clause_count,
+  vector<unsigned> &sharing_set,
+  vector<Lit> &my_literals,
+  vector<AfaHorline> &horlines,
+  vector<Head*> &verlines
+) {
+  Head * deepest_place = deepest_rightmost_rear;
+  if (verbosity >= 2) std::cout << "ON_SAT0 " << deepest_place << std::endl;
+
+  if (verbosity >= 2) {
+    std::cout << "ON_SAT"
+      << " " << HeadAttrs(deepest_place, S)
+      << " " << S.root_level
+      << std::endl;
+  }
+
+  int last_rear_level = -1;
+  Head *last_rear = NULL; 
+
+#ifndef ALL_SOLO
+  int last_van_level = -1;
+  int minus_first_rear_level = -1;
+#endif
+
+  {
+    Head *iter = deepest_place;
+    while (true) {
+      if (iter->is_ver) iter = iter->above;
+      else iter = iter->above == NULL ? NULL : iter->above->above;
+
+      if (iter == NULL) break;
+
+      if (verbosity >= 2) {
+        cout << "MY_ZERO1"
+          << " " << iter->tag
+          << " " << S.value(iter->tag).toInt()
+          << " " << S.level[var(iter->tag)]
+          << endl;
+      }
+
+      const Lit tag = iter->tag;
+      sharing_set[index(tag)] = clause_count;
+
+      int lvl = S.level[var(tag)];
+      if (lvl >= last_rear_level) {
+#ifndef ALL_SOLO
+        minus_first_rear_level = -1;
+        last_van_level = last_rear_level;
+#endif
+        last_rear_level = lvl;
+        last_rear = iter;
+      }
+#ifndef ALL_SOLO
+      else if (lvl >= minus_first_rear_level) {
+        minus_first_rear_level = lvl;
+      }
+#endif
+    }
+  }
+
+  // max level of added_vars+my_zeroes
+  int max_level = -1;
+
+  // added_vars are (level, variable) pairs, of zero variables added in the
+  // accepting condition (= not included in my_zeroes)
+  vector<std::pair<int, Lit>> added_vars;
+  added_vars.reserve(my_literals.size());
+  for (Lit x: my_literals) {
+    if (S.value(x) == l_False) {
+      if (verbosity >= 2) {
+        printf("MY_ZERO2 " L_LIT " %d %d\n", L_lit(x), S.value(x).toInt(), S.level[var(x)]);
+      }
+      int lvl = S.level[var(x)];
+      if (lvl > max_level) {
+        max_level = lvl;
+      }
+      if (sharing_set[index(x)] != clause_count) {
+        added_vars.emplace_back(lvl, x);
+      }
+    }
+  }
+
+  if (verbosity >= 2) printf("MAX_LEVEL %d\n", max_level);
+
+  bool ver_accept = deepest_place->is_ver;
+
+  // We have found a solution that covers the last traversed clause => we
+  // shrink the clause (cut it up to the knee) instead of adding a new branch
+  // to the trie.
+  if (added_vars.size() == 0) {
+    if (verbosity >= 2) printf("NO_ADDED_VAR\n");
+
+    Head *cut;
+    assert(deepest_place->above != NULL);
+    if (ver_accept) cut = deepest_place->above;
+    else cut = deepest_place->above->above;
+
+    if (cut->is_ver) cut->next = NULL;
+    else cut->dual_next = NULL;
+
+    S.cancelUntil(max_level);
+    return;
+  }
+
+  // sort added_vars by level
+  std::sort(added_vars.begin(), added_vars.end());
+
+  if (verbosity >= 2) {
+    for (auto x: added_vars) {
+       printf("ADDED_VAR %d " L_LIT "\n", x.first, L_lit(x.second));
+    }
+  }
+
+  // Add the branch with unshared part of the clause (added_vars)
+
+  Head *verheadptr;
+
+  {
+    int horline_ix;
+
+    if (deepest_place->is_ver) {
+      horline_ix = horlines.size();
+      deepest_place->external = horline_ix;
+      AfaHorline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place);
+      verheadptr = &horline.elems.emplace_back(added_vars[0]);
+      verheadptr->above = deepest_place;
+    } else {
+      horline_ix = deepest_place->external;
+      AfaHorline &horline = horlines[horline_ix];
+      Head *ptr0 = &horline.elems[0];
+      verheadptr = &horline.elems.emplace_back(added_vars[0]);
+      verheadptr->above = horline.leftmost;
+
+      Head *next;
+      if ((next = &horline.elems[0]) != ptr0) {
+        deepest_place = verheadptr;
+        --deepest_place;
+
+        *horline.ptr_to_first = next;
+
+        while(true) {
+          Head *dual_next = next->dual_next;
+          if (dual_next != NULL) dual_next->above = next;
+          Head *prev = next++;
+          if (next == verheadptr) break;
+          prev->next = next;
+        }
+      }
+    }
+    Head &verhead = *verheadptr;
+
+    verhead.next = NULL;
+    verhead.external = horline_ix;
+    unsigned depth = verhead.depth = deepest_place->depth;
+    if (deepest_place->is_ver) deepest_place->dual_next = verheadptr;
+    else deepest_place->next = verheadptr;
+
+    Head *verline = verlines.emplace_back(new Head[added_vars.size() - 1]);
+
+    Head *above = verheadptr;
+    for (unsigned i = 1; i != added_vars.size(); ++i) {
+      Head &horhead = verline[i - 1];
+      horhead.tag = added_vars[i].second;
+      horhead.above = above;
+
+      if (i == 1) verhead.dual_next = &horhead;
+      else above->next = &horhead;
+
+      horhead.depth = ++depth;
+      above = &horhead;
+    }
+
+    deepest_rightmost_rear = above;
+  }
+
+  // Calculate Plus and Minus snapshots in the new branch.
+
+#ifndef ALL_SOLO
+  last_van_level = max(minus_first_rear_level, last_van_level);
+#endif
+
+  Head *van_place = verheadptr;
+
+  {
+
+#ifndef ALL_SOLO
+    while (last_van_level < last_rear_level) {
+      int lvl;
+      while ((lvl = S.level[var(van_place->tag)]) <= last_van_level) {
+        van_place = van_place->down();
+        if (van_place == NULL) goto no_van_place;
+      }
+      lvl = min(lvl, last_rear_level);
+      if (lvl > S.root_level) {
+        LogList<MinusSnapshot> &msnaps = last_van_level > S.root_level
+          ? snapshots[last_van_level - S.root_level - 1].minus_snapshots
+          : root_minus_snapshots;
+        MinusSnapshot &last_van_msnap = msnaps.emplace_back(van_place);
+        snapshots[lvl].plus_snapshots.emplace_back(
+          van_place, last_van_level, last_rear, last_van_msnap, NULL
+        );
+      }
+      last_van_level = lvl;
+    }
+#endif
+
+    Head *rear_place = van_place;
+    van_place = van_place->down();
+
+    if (van_place == NULL) goto no_van_place;
+
+    while(true) {
+      int lvl;
+      while ((lvl = S.level[var(rear_place->tag)]) <= last_rear_level) {
+        rear_place = van_place;
+        van_place = van_place->down();
+        if (van_place == NULL) goto no_van_place;
+      }
+
+      Snapshot &snapshot = snapshots[lvl - S.root_level - 1];
+
+#ifndef ALL_SOLO
+      if (lvl > S.root_level) {
+        LogList<MinusSnapshot> &msnaps = last_van_level > S.root_level
+          ? snapshots[last_van_level - S.root_level - 1].minus_snapshots
+          : root_minus_snapshots;
+        MinusSnapshot &last_van_msnap = msnaps.emplace_back(van_place);
+        snapshots[lvl].plus_snapshots.emplace_back(
+          van_place, last_van_level, rear_place, last_van_msnap, NULL
+        );
+      }
+      last_van_level = lvl;
+#endif
+
+#ifdef ALL_SOLO
+      rear_place->guard.guard_type = SOLO_GUARD;
+#else
+      rear_place->guard.guard_type = REAR_GUARD;
+      rear_place->guard.dual = NULL;
+      rear_place->guard.deepest_rightmost_van = NULL;
+#endif
+
+      if (lvl > S.root_level) {
+        LogList<MinusSnapshot> &msnaps = last_rear_level > S.root_level
+          ? snapshots[last_rear_level - S.root_level - 1].minus_snapshots
+          : root_minus_snapshots;
+        MinusSnapshot &last_rear_msnap = msnaps.emplace_back(rear_place);
+        snapshots[lvl].plus_snapshots.emplace_back(
+          rear_place, last_rear_level, NULL, last_rear_msnap, rear_place
+        );
+      }
+      last_rear_level = lvl;
+    }
+  }
+
+no_van_place:;
+
+  S.cancelUntil(max_level);
+}
+
+#endif

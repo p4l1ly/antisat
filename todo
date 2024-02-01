@@ -1,6 +1,9 @@
 How to improve performance further
 ==================================
 
+SAT related
+===========
+
 - DONE, VERY_GOOD_IMPACT VarOrder: tolerance grows slower than liveness step
 - Less memory jumping:
     - DONE LogLists are used in the trie, which can cause memory jumping.
@@ -37,14 +40,16 @@ cat ../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.
 - DONE novan (SoloGuard) 1d
 - DONE WatchVarOrder: clauses can watch/unwatch too 1h (C_FLAGS: learnt clauses too? which of the two watches?)
 
-Then
-====
+Then, AFA related
+=================
 
-- Reapply AFA stuff. 2d
+- Reapply AFA stuff. 3d
     - DONE mark indirect "above" or use ifdef AFA
     - DONE track deepest rightmost rear/solo. for each rear, track deepest rightmost accepted van
-    - onSat
-    - Main, CMakeLists
+    - DONE onSat 1d
+    - add antichain clause => raise nLearnts 20m
+    - Main, Solver->order.select, CMakeLists 3h
+    - try, debug 1d
 
 - Try to run at least one external incremental SAT solver - CryptoMiniSAT
     - without maximization of outputs (we should be much better because of this nonmaximization)

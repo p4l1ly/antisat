@@ -223,6 +223,7 @@ public:
   bool simplify  (Solver& S) { return false; };
 
   inline Head* right() { return is_ver ? dual_next : next; }
+  inline Head* down() { return is_ver ? next : dual_next; }
 
   Head* full_multimove_on_propagate(
     Solver &S,
@@ -258,6 +259,18 @@ struct Horline {
   Horline(Head** ptr_to_first_, Head *above_) : ptr_to_first(ptr_to_first_), above(above_) {}
 };
 
+#ifdef AFA
+struct AfaHorline {
+  Head** ptr_to_first;
+  Head* leftmost;
+  vector<Head> elems;
+
+  AfaHorline(Head** ptr_to_first_, Head* leftmost_)
+  : ptr_to_first(ptr_to_first_), leftmost(leftmost_)
+  {}
+};
+#endif
+
 class Trie : public Undoable {
 public:
   Head* root = NULL;
@@ -273,6 +286,14 @@ public:
 #ifdef AFA
   Head* deepest_rightmost_rear = NULL;
   void deepest_rightmost_candidate(Head *rear);
+  void onSat(
+    Solver &S,
+    unsigned clause_count,
+    vector<unsigned> &sharing_set,
+    vector<Lit> &my_literals,
+    vector<AfaHorline> &horlines,
+    vector<Head*> &verlines
+  );
 #endif
 
   Snapshot &get_last_snapshot() { return snapshots[snapshot_count - 1]; }
@@ -295,7 +316,7 @@ public:
     vector<Lit> &lits,
     Solver &S,
     unsigned clause_count,
-    vector<unsigned> sharing_set,
+    vector<unsigned> &sharing_set,
     vector<Horline> &horlines,
     vector<Head*> &verlines
   );

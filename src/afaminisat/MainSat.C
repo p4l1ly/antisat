@@ -25,22 +25,6 @@ int verbosity = 5;
 #endif
 const bool write_debug_dots = true;
 
-std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
-  std::string line;
-  if (getline(std::cin, line)) {
-    std::istringstream is(line);
-    return std::pair(
-      true,
-      std::move(std::vector<int> {std::istream_iterator<int>(is), std::istream_iterator<int>()})
-    );
-  }
-  if (required) {
-    std::cerr << "Too few lines" << std::endl;
-    exit(1);
-  }
-  return std::pair(false, std::vector<int>());
-}
-
 bool parse_dimacs(
   Solver& S,
   vector<Horline> &horlines,

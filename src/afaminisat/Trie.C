@@ -18,12 +18,12 @@ using std::endl;
 using std::cout;
 
 bool Trie::add_clause(
-    vector<Lit> &clause,
-    Solver &S,
-    unsigned clause_count,
-    vector<unsigned> sharing_set,
-    vector<Horline> &horlines,
-    vector<Head*> &verlines
+  vector<Lit> &clause,
+  Solver &S,
+  unsigned clause_count,
+  vector<unsigned> &sharing_set,
+  vector<Horline> &horlines,
+  vector<Head*> &verlines
 ) {
   vec<char> mask;
   mask.growTo(S.nVars(), 0);
@@ -616,12 +616,13 @@ Head* Head::jump(Solver &S) {
     }
   }
 
-  // All vans have accepted. We have an empty van list, we don't watch, nor continue anywhere =>
-  // we remove the msnap.
-  if (msnap) msnap->place = NULL;
 #ifdef AFA
   if (guard.deepest_rightmost_van) trie.deepest_rightmost_candidate(guard.deepest_rightmost_van);
 #endif
+
+  // All vans have accepted. We have an empty van list, we don't watch, nor continue anywhere =>
+  // we remove the msnap.
+  if (msnap) msnap->place = NULL;
 
   return NULL;
 }
