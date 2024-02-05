@@ -22,7 +22,6 @@ struct WatchInfo {
 class WatchVarOrder: Undoable {
     const vec<char>&    assigns;       // var->val. Pointer to external assignment table.
     const vec<double>&  activity;      // var->act. Pointer to external activity table.
-    unsigned guess_line = 0;
     std::vector<unsigned> var_ixs;
     std::vector<unsigned> snapshots;
     std::vector<pair<int, int>> barriers;
@@ -30,21 +29,34 @@ class WatchVarOrder: Undoable {
     std::vector<int> skipped_candidates;
     const unsigned max_bubble_moves = 5;
     const double tolerance_increase = 1.05;
+#ifdef AFA
+#ifdef WATCH_VARORDER
     const bool finishing;
+#endif
+#endif
 
 public:
+    unsigned guess_line = 0;
     std::vector<Var> order;
     double tolerance = 10.0;
     // double tolerance = std::numeric_limits<double>::infinity();
 
     WatchVarOrder(const vec<char>& ass, const vec<double>& act, bool finishing_)
-    : assigns(ass), activity(act), finishing(finishing_) { }
+    : assigns(ass), activity(act)
+#ifdef AFA
+#ifdef WATCH_VARORDER
+    , finishing(finishing_)
+#endif
+#endif
+    { }
 
     inline void init(const vector<Var> &order_);
     void update(Var x, Solver &S);                  // Called when variable increased in activity.
-    bool update0(int right, int right_ix, Solver &S, int declevel);                  // Called when variable increased in activity.
+    bool update0(int right, int right_ix, Solver &S);                  // Called when variable increased in activity.
     void undo(Solver &S);                    // Called when variable is unassigned and may be selected again.
-    bool select(Solver &S); // Selects a new, unassigned variable (or 'var_Undef' if none exists).
+    Lit select(Solver &S); // Selects a new, unassigned variable (or 'var_Undef' if none exists).
+    void noselect(Solver &S);
+    void after_select(int old_guess_line, Solver &S);
     void watch(Lit lit);
     void unwatch(Lit lit);
 };

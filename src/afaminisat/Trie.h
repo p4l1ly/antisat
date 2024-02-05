@@ -290,7 +290,7 @@ public:
     Solver &S,
     unsigned clause_count,
     vector<unsigned> &sharing_set,
-    vector<Lit> &my_literals,
+    vec<Lit> &zero_outputs,
     vector<AfaHorline> &horlines,
     vector<Head*> &verlines
   );

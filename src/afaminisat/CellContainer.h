@@ -10,83 +10,60 @@ using std::vector;
 
 struct LeastSizeCompare
 {
-    bool operator()(const vector<int>* lhs, const vector<int>* rhs) const
+    bool operator()(const vec<Lit>& lhs, const vec<Lit>& rhs) const
     {
-        if (lhs->size() != rhs->size()) return lhs->size() < rhs->size();
+        if (lhs.size() != rhs.size()) return lhs.size() < rhs.size();
 
         // We're sure that the inserted elements are unequal and if the sizes are equal, we don't
         // care about the order.
         return true;
-
-        // for (unsigned i = 0; i < lhs->size(); i++) {
-        //     if ((*lhs)[i] != (*rhs)[i]) return (*lhs)[i] < (*rhs)[i];
-        // }
-        // return false;
     }
 };
 
 
 struct CellContainer {
-    virtual void add(vector<int>* x) = 0;
+    virtual void add(vec<Lit> &x) = 0;
     virtual int size() const = 0;
-    virtual vector<int>* pop() = 0;
+    virtual vec<Lit> pop() = 0;
     virtual ~CellContainer() {};
 };
 
 class CellContainerSet : public CellContainer {
-    set<vector<int>*, LeastSizeCompare> data;
+    set<vec<Lit>, LeastSizeCompare> data;
 public:
     CellContainerSet() {}
-    void add(vector<int>* x) { data.insert(x); }
+    void add(vec<Lit> &x) { data.emplace(std::move(x)); }
     int size() const { return data.size(); }
-    vector<int>* pop() {
+    vec<Lit> pop() {
         auto it = data.begin();
-        vector<int>* result = *it;
+        vec<Lit> result(std::move(*it));
         data.erase(it);
-        return result;
-    }
-
-    ~CellContainerSet() {
-      for (vector<int> *x: data) {
-        delete x;
-      }
+        return std::move(result);
     }
 };
 
 class CellContainerBfs : public CellContainer {
-    deque<vector<int>*> data;
+    deque<vec<Lit>> data;
 public:
     CellContainerBfs() {}
-    void add(vector<int>* x) { data.push_back(x); }
+    void add(vec<Lit>& x) { data.emplace_back(std::move(x)); }
     int size() const { return data.size(); }
-    vector<int>* pop() {
-        vector<int>* result = data.front();
-        data.pop_front();
-        return result;
-    }
-
-    ~CellContainerBfs() {
-      for (vector<int> *x: data) {
-        delete x;
-      }
+    vec<Lit> pop() {
+      vec<Lit> result(std::move(data.front()));
+      data.pop_front();
+      return std::move(result);
     }
 };
 
 class CellContainerDfs : public CellContainer {
-    vector<vector<int>*> data;
+    vector<vec<Lit>> data;
 public:
     CellContainerDfs() {}
-    void add(vector<int>* x) { data.push_back(x); }
+    void add(vec<Lit>& x) { data.emplace_back(std::move(x)); }
     int size() const { return data.size(); }
-    vector<int>* pop() {
-        vector<int>* result = data.back();
-        data.pop_back();
-        return result;
-    }
-
-    ~CellContainerDfs() {
-      for (vector<int> *x: data) {
-        delete x;
-      }
+    vec<Lit> pop() {
+      vec<Lit> result(std::move(data.back()));
+      data.pop_back();
+      return std::move(result);
     }
 };

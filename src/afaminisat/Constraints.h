@@ -93,7 +93,7 @@ public:
 
     // Constructor -- creates a new clause and add it to watcher lists.
     friend bool Clause_new(Solver& S, const vec<Lit>& ps, bool learnt, Clause*& out_clause);
-    friend bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause);
+    friend void Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause);
 
     // Learnt clauses only:
     bool    locked  (const Solver& S) const;

@@ -12,7 +12,7 @@ void Trie::onSat(
   Solver &S,
   unsigned clause_count,
   vector<unsigned> &sharing_set,
-  vector<Lit> &my_literals,
+  vec<Lit> &zero_outputs,
   vector<AfaHorline> &horlines,
   vector<Head*> &verlines
 ) {
@@ -76,9 +76,12 @@ void Trie::onSat(
   // added_vars are (level, variable) pairs, of zero variables added in the
   // accepting condition (= not included in my_zeroes)
   vector<std::pair<int, Lit>> added_vars;
-  added_vars.reserve(my_literals.size());
-  for (Lit x: my_literals) {
-    if (S.value(x) == l_False) {
+  added_vars.reserve(zero_outputs.size());
+
+  {
+    const Lit* end = &zero_outputs[zero_outputs.size()];
+    for (Lit *xptr = zero_outputs; xptr != end; ++xptr) {
+      Lit x = *xptr;
       if (verbosity >= 2) {
         printf("MY_ZERO2 " L_LIT " %d %d\n", L_lit(x), S.value(x).toInt(), S.level[var(x)]);
       }
@@ -209,7 +212,7 @@ void Trie::onSat(
           : root_minus_snapshots;
         MinusSnapshot &last_van_msnap = msnaps.emplace_back(van_place);
         snapshots[lvl].plus_snapshots.emplace_back(
-          van_place, last_van_level, last_rear, last_van_msnap, NULL
+          van_place, last_van_level, last_rear, &last_van_msnap, (Head*)NULL
         );
       }
       last_van_level = lvl;
@@ -238,7 +241,7 @@ void Trie::onSat(
           : root_minus_snapshots;
         MinusSnapshot &last_van_msnap = msnaps.emplace_back(van_place);
         snapshots[lvl].plus_snapshots.emplace_back(
-          van_place, last_van_level, rear_place, last_van_msnap, NULL
+          van_place, last_van_level, rear_place, &last_van_msnap, (Head*)NULL
         );
       }
       last_van_level = lvl;
@@ -258,7 +261,7 @@ void Trie::onSat(
           : root_minus_snapshots;
         MinusSnapshot &last_rear_msnap = msnaps.emplace_back(rear_place);
         snapshots[lvl].plus_snapshots.emplace_back(
-          rear_place, last_rear_level, NULL, last_rear_msnap, rear_place
+          rear_place, last_rear_level, (Head*)NULL, &last_rear_msnap, rear_place
         );
       }
       last_rear_level = lvl;

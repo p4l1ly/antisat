@@ -14,7 +14,6 @@ using std::pair;
 //=================================================================================================
 
 struct VarInfo {
-  bool signum = false;
   bool enqueued = false;
   int skip_level = -1;
 };

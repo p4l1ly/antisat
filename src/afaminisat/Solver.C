@@ -123,13 +123,13 @@ void Solver::record(const vec<Lit>& clause)
 
 #ifdef AFA
 
-bool Solver::onSatConflict(const vector<int>& cell) {
+bool Solver::onSatConflict(vec<Lit> p_reason) {
   stats.conflicts++;
 
   if (verbosity >= 2) {
       printf(L_IND "**CONFLICT2**", L_ind);
       printf("{");
-      for(int x: cell) printf(" %d", x);
+      for(int i = 0; i < p_reason.size(); ++i) printf(" " L_LIT, L_lit(p_reason[i]));
       printf(" }\n");
   }
 
@@ -139,12 +139,6 @@ bool Solver::onSatConflict(const vector<int>& cell) {
   if (decisionLevel() <= root_level) {
       if (verbosity >= 2) printf("DECLEVEL\n");
       return false;
-  }
-
-
-  vec<Lit> p_reason;
-  for (int i: cell) {
-      p_reason.push(~outputs[i]);
   }
 
   if (!analyze(p_reason, learnt_clause, backtrack_level)) {
@@ -742,20 +736,66 @@ lbool Solver::search()
             undos.push_back(&trie);
 #elif SAT_TRIE_BUBBLE
             Snapshot &snapshot = trie.new_snapshot();
-            if (!bubble_order.select(*this)) return l_True;
+            int old_guess_line1 = bubble_order.guess_line;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) return l_True;
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
             undos.push_back(&trie);
 #elif SAT_TRIE_WATCH
             Snapshot &snapshot = trie.new_snapshot();
-            if (!watch_order.select(*this)) return l_True;
+            int old_guess_line1 = watch_order.guess_line;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) return l_True;
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
             undos.push_back(&trie);
 #elif SAT_CLAUSE_HEAP
             Var next = heap_order.select(params.random_var_freq);
             if (next == var_Undef) return l_True;
             check(assume(Lit(next, true)));
 #elif SAT_CLAUSE_BUBBLE
-            if (!bubble_order.select(*this)) return l_True;
+            int old_guess_line1 = bubble_order.guess_line;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) return l_True;
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
 #elif SAT_CLAUSE_WATCH
-            if (!watch_order.select(*this)) return l_True;
+            int old_guess_line1 = watch_order.guess_line;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) return l_True;
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+#elif AFA_CLAUSE_BUBBLE_BUBBLE
+            int old_guess_line1 = bubble_order.guess_line;
+            int old_guess_line2 = bubble_order2.guess_line;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) guess = bubble_order2.select(*this);
+            else bubble_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              bubble_order.guess_line = old_guess_line1;
+              bubble_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
+            bubble_order2.after_select(old_guess_line2, *this);
+#elif AFA_CLAUSE_BUBBLE_WATCH
+            int old_guess_line1 = bubble_order.guess_line;
+            int old_guess_line2 = watch_order2.guess_line;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) guess = watch_order2.select(*this);
+            else watch_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              bubble_order.guess_line = old_guess_line1;
+              watch_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
+            watch_order2.after_select(old_guess_line2, *this);
+#else
+            ERROR_UNSUPPORTED_MODE
 #endif
         }
     }

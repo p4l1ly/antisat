@@ -12,6 +12,7 @@
             "-DNEW_ANALYZE",
             "-DSOLIDIFY",
             "-DAFA"
+            "-DCELL_CONTAINER_SET"
           ]
         }
       }

@@ -21,7 +21,9 @@ bool FinishVarOrder::select(Solver &S) {
 
     VarInfo &varinfo = varinfos[cand];
     if (assigns[cand] == 0) {
-      if (!S.assume(Lit(cand, varinfo.signum))) assert(false);
+      VarType var_type = S.var_types[cand];
+      bool signum = var_type == OUTPUT_POS ? false : true;
+      if (!S.assume(Lit(cand, signum))) assert(false);
       S.undos.push_back(this);
       snapshots.back().push_back(cand);
       if (verbosity >= 2) printf("FINISH_SELECTED\n");

@@ -145,7 +145,7 @@ bool Clause_new(Solver& S, const vec<Lit>& ps_, bool learnt, Clause*& out_clause
     }
 }
 
-bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
+void Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
 {
     out_clause = NULL;
     sortUnique(ps);
@@ -202,8 +202,6 @@ bool Clause_new_handleConflict(Solver& S, vec<Lit>& ps, Clause*& out_clause)
 #endif
       S.watch_on(c->data[0]);
     }
-
-    return false;
 }
 
 

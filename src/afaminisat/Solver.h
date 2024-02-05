@@ -66,6 +66,8 @@ struct SearchParams {
 
 class Cancelled {};
 
+enum VarType { OUTPUT_POS, OUTPUT_NEG, OUTPUT_POSNEG, OUTPUT_POSQ, NOGUESS_VAR, GUESS_VAR };
+
 class Solver {
 public:
     bool                ok;             // If FALSE, the constraints are already unsatisfiable. No part of the solver state may be used!
@@ -81,38 +83,34 @@ public:
     double              tolerance_decay;
 
 #ifdef AFA
-    vec<bool>           pures;          // The pure literals (undef === one).
-    vec<Lit>            outputs;        // The output literals.
-    std::vector<bool>   output_mask;    // Which variables are outputs.
-    std::unordered_set<unsigned> finals;        // The output literals.
+    std::vector<VarType> var_types;
 #endif
 
 #ifdef BUBBLE_VARORDER
-    BubbleVarOrder bubble_order;          // Keeps track of the decision variable order.
+    BubbleVarOrder bubble_order;
 #endif
 
 #ifdef WATCH_VARORDER
-    WatchVarOrder watch_order;          // Keeps track of the decision variable order.
-#endif
-
-#ifdef FINISH_VARORDER
+    WatchVarOrder watch_order;
+#ifdef AFA
     FinishVarOrder finish_order;
+#endif
 #endif
 
 #ifdef HEAP_VARORDER
-    VarOrder heap_order;          // Keeps track of the decision variable order.
+    VarOrder heap_order;
 #endif
 
 #ifdef BUBBLE_VARORDER2
-    BubbleVarOrder bubble_order2;          // Keeps track of the decision variable order.
+    BubbleVarOrder bubble_order2;
 #endif
 
 #ifdef WATCH_VARORDER2
-    WatchVarOrder watch_order2;          // Keeps track of the decision variable order.
+    WatchVarOrder watch_order2;
 #endif
 
 #ifdef HEAP_VARORDER2
-    VarOrder heap_order2;          // Keeps track of the decision variable order.
+    VarOrder heap_order2;
 #endif
 
     vec<vec<Constr*> >  watches;        // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
@@ -156,8 +154,43 @@ public:
     lbool       search       ();
 
 #ifdef AFA
-    inline void watch_on(Lit p) { UNIMPLEMENTED }
-    inline void watch_off(Lit p) { UNIMPLEMENTED }
+    inline void watch_on(Lit p) {
+
+#ifdef  WATCH_VARORDER
+      VarType vtype = var_types[var(p)];
+      if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+        watch_order.watch(p);
+        return;
+      }
+#endif
+
+#ifdef  WATCH_VARORDER2
+#ifndef WATCH_VARORDER
+      VarType vtype = var_types[var(p)];
+#endif
+      if (vtype == GUESS_VAR) watch_order2.watch(p);
+#endif
+
+    }
+
+    inline void watch_off(Lit p) {
+
+#ifdef  WATCH_VARORDER
+      VarType vtype = var_types[var(p)];
+      if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+        watch_order.unwatch(p);
+        return;
+      }
+#endif
+
+#ifdef  WATCH_VARORDER2
+#ifndef WATCH_VARORDER
+      VarType vtype = var_types[var(p)];
+#endif
+      if (vtype == GUESS_VAR) watch_order2.unwatch(p);
+#endif
+
+    }
 #else
 #ifdef   WATCH_VARORDER
     inline void watch_on(Lit p) { watch_order.watch(p); }
@@ -177,7 +210,8 @@ public:
       int var_ = var(p);
 
 #ifdef AFA
-      if (output_mask[var_]) {
+      VarType vtype = var_types[var_];
+      if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
 #else
       {
 #endif
@@ -195,7 +229,7 @@ public:
 #endif
 
 #ifdef AFA
-      } else {
+      } else if (vtype == GUESS_VAR) {
 
 #ifdef BUBBLE_VARORDER2
         bubble_order2.update(var_, *this);
@@ -268,10 +302,9 @@ public:
 
 #ifdef WATCH_VARORDER
     , watch_order(assigns, activity, true)
-#endif
-
-#ifdef FINISH_VARORDER
+#ifdef AFA
     , finish_order(assigns)
+#endif
 #endif
 
 #ifdef HEAP_VARORDER2
@@ -318,7 +351,13 @@ public:
       if (ok){
         Clause* c;
         ok = Clause_new(*this, ps, false, c);
-        if (verbosity >= 2) printf("ADD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
+        if (verbosity >= 2) {
+          printf("ADD_CLAUSE %p %p", c, c ? c->getSpecificPtr2() : c);
+          for (int j = 0; j < ps.size(); ++j) {
+            std::cout << " " << ps[j];
+          }
+          std::cout << std::endl;
+        }
         if (c != NULL) {
           constrs.push(c);
           clauses_ww.push_back(c);
@@ -340,7 +379,7 @@ public:
       }
     }
 
-    bool onSatConflict(const vector<int>& cell);
+    bool onSatConflict(vec<Lit> p_reason);
 
     // Solving:
     //
@@ -363,8 +402,27 @@ inline void Solver::undoOne(void)
     assigns[x] = toInt(l_Undef);
     reason [x] = GClause_NULL;
 
+#ifdef AFA
+
+#ifdef  HEAP_VARORDER
+    VarType vtype = var_types[x];
+    if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+      heap_order.undo(x);
+      return;
+    }
+#endif
+
+#ifdef  HEAP_VARORDER2
+#ifndef HEAP_VARORDER
+    VarType vtype = var_types[x];
+#endif
+    if (vtype == GUESS_VAR) heap_order2.undo(x);
+#endif
+
+#else
 #ifdef HEAP_VARORDER
     heap_order.undo(x);
+#endif
 #endif
 }
 

@@ -142,7 +142,19 @@ public:
     vec(int size, const T& pad) : data(NULL) , sz(0)   , cap(0)    { growTo(size, pad); }
     vec(T* array, int size)     : data(array), sz(size), cap(size) { }      // (takes ownership of array -- will be deallocated with 'xfree()')
     vec(const vec<T>& v) : data(NULL), sz(0), cap(0) { v.copyTo(*this); }
+    vec(vec<T>&& v) : data(v.data), sz(v.sz), cap(v.cap) { v.data = NULL; v.sz = 0; v.cap = 0; }
    ~vec(void)                                                      { clear(true); }
+
+    vec<T>& operator=(vec<T> &&v) { 
+      clear(true);
+      data = v.data;
+      sz = v.sz;
+      cap = v.cap;
+      v.data = NULL;
+      v.sz = 0;
+      v.cap = 0;
+      return *this;
+    }
 
     // Ownership of underlying array:
     T*       release  (void)           { T* ret = data; data = NULL; sz = 0; cap = 0; return ret; }

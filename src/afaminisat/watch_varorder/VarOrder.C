@@ -1,10 +1,7 @@
 #include <math.h>
 #include "VarOrder.h"
 #include "../Solver.h"
-
-#ifdef FINISH_VARORDER
 #include "../finish_varorder/VarOrder.h"
-#endif
 
 inline void check(bool expr) { assert(expr); }
 
@@ -74,7 +71,7 @@ void WatchVarOrder::undo(Solver &S) {
   }
 
   for (; right_ix != order.size(); ++right_ix) {
-    if (update0(order[right_ix], right_ix, S, S.decisionLevel() - 1) == 0) break;
+    if (update0(order[right_ix], right_ix, S) == 0) break;
   }
 
 #ifdef MY_DEBUG
@@ -87,7 +84,50 @@ void WatchVarOrder::undo(Solver &S) {
 }
 
 
-bool WatchVarOrder::select(Solver &S)
+void WatchVarOrder::noselect(Solver &S) {
+    if (verbosity >= -3) printf("VARORDER_NOSELECT %d\n", guess_line);
+
+    if (guess_line >= order.size()) return;
+
+    // applied after assume, so the level is already incremented
+    const int level = S.decisionLevel();
+
+    while (guess_line != order.size()) {
+      Var next = order[guess_line];
+      if (assigns[next] == 0) {
+        if (guess_line != order.size()) {
+          pair<int, int> &barrier = barriers[guess_line];
+          barrier.second = level;
+          if (barrier.first == -1) barrier.first = level;
+        }
+        if (verbosity >= 2) {
+          std::cout << "VAR_SELECT " << next << " " << guess_line << " " << level << std::endl;
+        }
+
+#ifdef MY_DEBUG
+        for (int i = 0; i < guess_line; ++i) {
+          if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
+            printf("NOOO %d %d\n", i, order[i]); assert(false);
+          }
+        }
+#endif
+
+        return;
+      }
+      if (verbosity >= -3) printf("MOVING_GUESS_LINE1_NOSELECT %d %d %d %d\n", guess_line, level, guess_line == order.size() ? -1 : order[guess_line], next);
+      ++guess_line;
+    }
+}
+
+
+void WatchVarOrder::after_select(int old_guess_line1, Solver &S) {
+  if (old_guess_line1 >= order.size()) return;
+  snapshots.push_back(old_guess_line1);
+  S.undos.push_back(this);
+}
+
+
+Lit WatchVarOrder::select(Solver &S)
 {
     if (verbosity >= -3) printf("VARORDER_SELECT %d\n", guess_line);
 
@@ -99,9 +139,8 @@ bool WatchVarOrder::select(Solver &S)
     }
 #endif
 
-    if (guess_line >= order.size()) return false;
+    if (guess_line >= order.size()) return lit_Undef;
 
-    snapshots.push_back(guess_line);
     const int level = S.decisionLevel();
 
     while (!skipped_candidates.empty()) {
@@ -120,7 +159,7 @@ bool WatchVarOrder::select(Solver &S)
       if (
         !watch_info.skipped
         || watch_info.neg_watch_count == 0 && watch_info.pos_watch_count == 0
-        || toLbool(assigns[candidate]) != l_Undef
+        || assigns[candidate] != 0
       ) {
         if (verbosity >= 2) {
           std::cout << "VARORDER_NOCANDIDATE"
@@ -133,23 +172,43 @@ bool WatchVarOrder::select(Solver &S)
         continue;
       }
 
-      pair<int, int> &barrier = barriers[guess_line];
-      barrier.second = level;
-      // if (barrier.first == -1) barrier.first = level;
-      assert (barrier.first != -1);
-
-      check(S.assume(Lit(candidate, watch_info.pos_watch_count < watch_info.neg_watch_count)));
-      S.undos.push_back(this);
+      while (guess_line != order.size()) {
+        Var next = order[guess_line];
+        if (assigns[next] == 0) {
+          if (guess_line != order.size()) {
+            pair<int, int> &barrier = barriers[guess_line];
+            barrier.second = level;
+            if (barrier.first == -1) barrier.first = level;
+          }
+          if (verbosity >= 2) {
+            std::cout << "VAR_SELECT " << next << " " << guess_line << " " << level << std::endl;
+          }
 
 #ifdef MY_DEBUG
-      for (int i = 0; i < guess_line; ++i) {
-        if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
-          printf("NOOO %d %d\n", i, order[i]); assert(false);
-        }
-      }
+          for (int i = 0; i < guess_line; ++i) {
+            if (!watch_infos[order[i]].skipped && assigns[order[i]] == 0) {
+              printf("NOOO %d %d\n", i, order[i]); assert(false);
+            }
+          }
 #endif
 
-      return true;
+          break;
+        }
+        if (verbosity >= -3) printf("MOVING_GUESS_LINE1_SKIPSELECT %d %d %d %d\n", guess_line, level, guess_line == order.size() ? -1 : order[guess_line], next);
+        ++guess_line;
+      }
+
+#ifdef AFA
+      VarType var_type = S.var_types[candidate];
+      bool signum =
+        var_type == OUTPUT_POS ? false :
+        var_type == OUTPUT_NEG ? true :
+        watch_info.pos_watch_count < watch_info.neg_watch_count;
+      return Lit(candidate, signum);
+#else
+      return Lit(candidate, watch_info.pos_watch_count < watch_info.neg_watch_count);
+#endif
+
     }
 
     if (verbosity >= -3) printf("MOVING_GUESS_LINE0 %d %d\n", guess_line, level);
@@ -157,7 +216,7 @@ bool WatchVarOrder::select(Solver &S)
     // Activity based decision:
     while (guess_line != order.size()) {
       Var next = order[guess_line];
-      if (toLbool(assigns[next]) == l_Undef) {
+      if (assigns[next] == 0) {
         WatchInfo &watch_info = watch_infos[next];
         if (watch_info.neg_watch_count == 0 && watch_info.pos_watch_count == 0) {
           if (verbosity >= 2) {
@@ -169,8 +228,10 @@ bool WatchVarOrder::select(Solver &S)
           }
           watch_info.skipped = true;
 
-#ifdef FINISH_VARORDER
+#ifdef AFA
+#ifdef WATCH_VARORDER
           if (finishing) S.finish_order.skip(next, level);
+#endif
 #endif
         } else {
           if (guess_line != order.size()) {
@@ -187,8 +248,6 @@ bool WatchVarOrder::select(Solver &S)
               << " " << watch_info.neg_watch_count
               << std::endl;
           }
-          check(S.assume(Lit(next, watch_info.pos_watch_count < watch_info.neg_watch_count)));
-          S.undos.push_back(this);
 
 #ifdef MY_DEBUG
           for (int i = 0; i < guess_line; ++i) {
@@ -198,15 +257,23 @@ bool WatchVarOrder::select(Solver &S)
           }
 #endif
 
-          return true;
+#ifdef AFA
+          VarType var_type = S.var_types[next];
+          bool signum =
+            var_type == OUTPUT_POS ? false :
+            var_type == OUTPUT_NEG ? true :
+            watch_info.pos_watch_count < watch_info.neg_watch_count;
+          return Lit(next, signum);
+#else
+          return Lit(next, watch_info.pos_watch_count < watch_info.neg_watch_count);
+#endif
         }
       }
-      ++guess_line;
       if (verbosity >= -3) printf("MOVING_GUESS_LINE1 %d %d %d\n", guess_line, level, guess_line == order.size() ? -1 : order[guess_line]);
+      ++guess_line;
     }
 
     if (verbosity >= 2) std::cout << "VAR_NOSELECT" << std::endl;
-    S.undos.push_back(this);
 
 #ifdef MY_DEBUG
     for (int i = 0; i < guess_line; ++i) {
@@ -216,7 +283,7 @@ bool WatchVarOrder::select(Solver &S)
     }
 #endif
 
-    return false;
+    return lit_Undef;
 }
 
 
@@ -225,11 +292,11 @@ void WatchVarOrder::update(Var right, Solver &S) {
 
   if (isinf(tolerance)) return;
 
-  update0(right, var_ixs[right], S, S.decisionLevel());
+  update0(right, var_ixs[right], S);
 }
 
 
-bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
+bool WatchVarOrder::update0(int right, int right_ix, Solver &S) {
   const int level = assigns[right] == 0 ? std::numeric_limits<int>::max() : S.level[right];
 
   if (verbosity >= -3) printf(
@@ -289,12 +356,11 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
 
     if (left_barrier.second != -1) {
       if (verbosity >= -4) printf(
-        "LEFT_BARRIER %d,%d %d %d %d\n",
+        "LEFT_BARRIER %d,%d %d %d\n",
         left_barrier.first,
         left_barrier.second,
         right_ix,
-        level,
-        declevel
+        level
       );
 
       if (left_barrier.second < level) {
@@ -307,7 +373,7 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
       if (left_barrier.first < level) {
         if (verbosity >= -4) printf("SPLIT_BARRIER\n");
         barriers[right_ix - 1] = pair(left_barrier.first, level - 1);
-        unsigned snapshot_ix = snapshots.size() - declevel + level;
+        unsigned snapshot_ix = level - S.root_level;
         snapshots[snapshot_ix] = right_ix - 1;
 
         unsigned new_barrier_first = level;
@@ -335,11 +401,11 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
               if (barriers[i].second == -1) {
                 barriers[i] = pair(new_barrier_first, left_barrier.second);
 
-                if (declevel - left_barrier.second == 1) {
+                unsigned snapshot_ix = left_barrier.second + 1 - S.root_level;
+                if (snapshot_ix == snapshots.size()) {
                   if (verbosity >= -4) printf("SET_GUESS_LINE %d %d %d\n", guess_line, level, i);
                   guess_line = i;
                 } else {
-                  unsigned snapshot_ix = snapshots.size() - declevel + left_barrier.second + 1;
                   if (verbosity >= -4) {
                     printf("SET_SNAPSHOT1 %d %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level, i);
                   }
@@ -349,7 +415,7 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
               break;
             } else {
               barriers[i] = pair(new_barrier_first, ilevel - 1);
-              unsigned snapshot_ix = snapshots.size() - declevel + ilevel;
+              unsigned snapshot_ix = ilevel - S.root_level;
               if (verbosity >= -4) {
                 printf("SET_SNAPSHOT2 %d %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level, i);
               }
@@ -363,14 +429,12 @@ bool WatchVarOrder::update0(int right, int right_ix, Solver &S, int declevel) {
         break;
       }
 
-      assert(declevel - left_barrier.second > 0);
-      if (declevel - left_barrier.second == 1) {
+      unsigned snapshot_ix = left_barrier.second + 1 - S.root_level;
+      if (snapshot_ix == snapshots.size()) {
         assert(guess_line == right_ix - 1);
         if (verbosity >= -4) printf("MOVING_GUESS_LINE2 %d %d\n", guess_line, level);
         ++guess_line;
       } else {
-        assert(declevel - left_barrier.second - 1 <= snapshots.size());
-        unsigned snapshot_ix = snapshots.size() - declevel + left_barrier.second + 1;
         if (verbosity >= -4) {
           printf("MOVING_SNAPSHOT1 %d %d %d\n", snapshot_ix, snapshots[snapshot_ix], level);
         }
