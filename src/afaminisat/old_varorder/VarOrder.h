@@ -62,7 +62,7 @@ public:
 
 
 void VarOrder::init(std::vector<Var> &order) {
-  heap.setBounds(order.size());
+  heap.setBounds(assigns.size());
   for (Var x: order) heap.insert(x);
 }
 

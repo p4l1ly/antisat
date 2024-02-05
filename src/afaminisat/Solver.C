@@ -766,6 +766,20 @@ lbool Solver::search()
             if (guess == lit_Undef) return l_True;
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
+#elif AFA_CLAUSE_BUBBLE_HEAP
+            int old_guess_line1 = bubble_order.guess_line;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) {
+              Var vguess = heap_order2.select(params.random_var_freq);
+              if (vguess == var_Undef) guess = lit_Undef;
+              else guess = Lit(vguess, true);
+            }
+            if (guess == lit_Undef) {
+              bubble_order.guess_line = old_guess_line1;
+              return l_True;
+            }
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
 #elif AFA_CLAUSE_BUBBLE_BUBBLE
             int old_guess_line1 = bubble_order.guess_line;
             int old_guess_line2 = bubble_order2.guess_line;
