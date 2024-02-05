@@ -87,7 +87,7 @@ void WatchVarOrder::undo(Solver &S) {
 void WatchVarOrder::noselect(Solver &S) {
     if (verbosity >= -3) printf("VARORDER_NOSELECT %d\n", guess_line);
 
-    if (guess_line >= order.size()) return;
+    if (guess_line == order.size()) return;
 
     // applied after assume, so the level is already incremented
     const int level = S.decisionLevel();
@@ -121,7 +121,7 @@ void WatchVarOrder::noselect(Solver &S) {
 
 
 void WatchVarOrder::after_select(int old_guess_line1, Solver &S) {
-  if (old_guess_line1 >= order.size()) return;
+  if (old_guess_line1 == order.size()) return;
   snapshots.push_back(old_guess_line1);
   S.undos.push_back(this);
 }
@@ -139,7 +139,7 @@ Lit WatchVarOrder::select(Solver &S)
     }
 #endif
 
-    if (guess_line >= order.size()) return lit_Undef;
+    if (guess_line == order.size()) return lit_Undef;
 
     const int level = S.decisionLevel();
 

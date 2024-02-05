@@ -226,7 +226,7 @@ bool run() {
   }
 
 #ifdef USE_TRIE
-  AfaHorline &horline = horlines.emplace_back(&S.trie.root, NULL);
+  AfaHorline &horline = horlines.emplace_back((Head*)NULL);
   Head &verhead = horline.elems.emplace_back(outputs[0]);
 
   unsigned depth = 0;

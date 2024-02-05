@@ -76,7 +76,7 @@ void BubbleVarOrder::undo(Solver &S) {
 void BubbleVarOrder::noselect(Solver &S) {
     if (verbosity >= -3) printf("VARORDER_NOSELECT %d\n", guess_line);
 
-    if (guess_line >= order.size()) return;
+    if (guess_line == order.size()) return;
 
     // applied after assume, so the level is already incremented
     const int level = S.decisionLevel();
@@ -108,7 +108,7 @@ void BubbleVarOrder::noselect(Solver &S) {
 
 
 void BubbleVarOrder::after_select(int old_guess_line1, Solver &S) {
-  if (old_guess_line1 >= order.size()) return;
+  if (old_guess_line1 == order.size()) return;
   snapshots.push_back(old_guess_line1);
   S.undos.push_back(this);
 }
@@ -124,7 +124,7 @@ Lit BubbleVarOrder::select(Solver &S)
     }
 #endif
 
-    if (guess_line >= order.size()) return lit_Undef;
+    if (guess_line == order.size()) return lit_Undef;
 
     const int level = S.decisionLevel();
 
@@ -148,9 +148,7 @@ Lit BubbleVarOrder::select(Solver &S)
 #endif
 
 #ifdef AFA
-        VarType var_type = S.var_types[next];
-        bool signum = var_type == OUTPUT_POS ? false : true;
-        return Lit(next, signum);
+        return Lit(next, S.var_types[next] != OUTPUT_POS);
 #else
         return Lit(next, true);
 #endif

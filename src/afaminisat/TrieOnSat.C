@@ -17,8 +17,6 @@ void Trie::onSat(
   vector<Head*> &verlines
 ) {
   Head * deepest_place = deepest_rightmost_rear;
-  if (verbosity >= 2) std::cout << "ON_SAT0 " << deepest_place << std::endl;
-
   if (verbosity >= 2) {
     std::cout << "ON_SAT"
       << " " << HeadAttrs(deepest_place, S)
@@ -26,12 +24,12 @@ void Trie::onSat(
       << std::endl;
   }
 
-  int last_rear_level = -1;
+  int last_rear_level = 0;
   Head *last_rear = NULL; 
 
 #ifndef ALL_SOLO
-  int last_van_level = -1;
-  int minus_first_rear_level = -1;
+  int last_van_level = 0;
+  int minus_first_rear_level = 0;
 #endif
 
   {
@@ -103,12 +101,12 @@ void Trie::onSat(
   // shrink the clause (cut it up to the knee) instead of adding a new branch
   // to the trie.
   if (added_vars.size() == 0) {
-    if (verbosity >= 2) printf("NO_ADDED_VAR\n");
-
     Head *cut;
     assert(deepest_place->above != NULL);
     if (ver_accept) cut = deepest_place->above;
     else cut = deepest_place->above->above;
+
+    if (verbosity >= 2) cout << "NO_ADDED_VAR " << *cut << endl;
 
     if (cut->is_ver) cut->next = NULL;
     else cut->dual_next = NULL;
@@ -135,32 +133,14 @@ void Trie::onSat(
 
     if (deepest_place->is_ver) {
       horline_ix = horlines.size();
-      deepest_place->external = horline_ix;
-      AfaHorline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place);
-      verheadptr = &horline.elems.emplace_back(added_vars[0]);
+      AfaHorline &horline = horlines.emplace_back(deepest_place);
+      verheadptr = &horline.elems.emplace_back(added_vars[0].second);
       verheadptr->above = deepest_place;
     } else {
       horline_ix = deepest_place->external;
       AfaHorline &horline = horlines[horline_ix];
-      Head *ptr0 = &horline.elems[0];
-      verheadptr = &horline.elems.emplace_back(added_vars[0]);
+      verheadptr = &horline.elems.emplace_back(added_vars[0].second);
       verheadptr->above = horline.leftmost;
-
-      Head *next;
-      if ((next = &horline.elems[0]) != ptr0) {
-        deepest_place = verheadptr;
-        --deepest_place;
-
-        *horline.ptr_to_first = next;
-
-        while(true) {
-          Head *dual_next = next->dual_next;
-          if (dual_next != NULL) dual_next->above = next;
-          Head *prev = next++;
-          if (next == verheadptr) break;
-          prev->next = next;
-        }
-      }
     }
     Head &verhead = *verheadptr;
 
@@ -189,6 +169,14 @@ void Trie::onSat(
   }
 
   // Calculate Plus and Minus snapshots in the new branch.
+  if (verbosity >= 2) {
+    cout << "ON_SAT_SNAPS"
+      << " R0=" << last_rear_level
+      << " V0=" << last_van_level
+      << " VM=" << minus_first_rear_level
+      << " R=" << *last_rear
+      << endl;
+  }
 
 #ifndef ALL_SOLO
   last_van_level = max(minus_first_rear_level, last_van_level);
@@ -211,9 +199,20 @@ void Trie::onSat(
           ? snapshots[last_van_level - S.root_level - 1].minus_snapshots
           : root_minus_snapshots;
         MinusSnapshot &last_van_msnap = msnaps.emplace_back(van_place);
-        snapshots[lvl].plus_snapshots.emplace_back(
+        snapshots[lvl - S.root_level - 1].plus_snapshots.emplace_back(
           van_place, last_van_level, last_rear, &last_van_msnap, (Head*)NULL
         );
+
+        if (verbosity >= 2) {
+          cout << "VAN1"
+            << " " << van_place
+            << " -" << last_van_level
+            << " +" << lvl
+            << " ^" << last_rear
+            << endl;
+        }
+      } else if (verbosity >= 2) {
+        cout << "VAN1_SKIP " << van_place << " " << lvl << " " << S.root_level << endl;
       }
       last_van_level = lvl;
     }
@@ -240,9 +239,20 @@ void Trie::onSat(
           ? snapshots[last_van_level - S.root_level - 1].minus_snapshots
           : root_minus_snapshots;
         MinusSnapshot &last_van_msnap = msnaps.emplace_back(van_place);
-        snapshots[lvl].plus_snapshots.emplace_back(
+        snapshot.plus_snapshots.emplace_back(
           van_place, last_van_level, rear_place, &last_van_msnap, (Head*)NULL
         );
+        if (verbosity >= 2) {
+
+          cout << "VAN2"
+            << " " << van_place
+            << " -" << last_van_level
+            << " +" << lvl
+            << " ^" << rear_place
+            << endl;
+        }
+      } else if (verbosity >= 2) {
+        cout << "VAN2_SKIP " << van_place << " " << lvl << " " << S.root_level << endl;
       }
       last_van_level = lvl;
 #endif
@@ -260,9 +270,19 @@ void Trie::onSat(
           ? snapshots[last_rear_level - S.root_level - 1].minus_snapshots
           : root_minus_snapshots;
         MinusSnapshot &last_rear_msnap = msnaps.emplace_back(rear_place);
-        snapshots[lvl].plus_snapshots.emplace_back(
+        snapshot.rear_plus_snapshots.emplace_back(
           rear_place, last_rear_level, (Head*)NULL, &last_rear_msnap, rear_place
         );
+
+        if (verbosity >= 2) {
+          cout << "REAR2"
+            << " " << rear_place
+            << " -" << last_rear_level
+            << " +" << lvl
+            << endl;
+        }
+      } else if (verbosity >= 2) {
+        cout << "REAR2_SKIP " << rear_place << " " << lvl << " " << S.root_level << endl;
       }
       last_rear_level = lvl;
     }

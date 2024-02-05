@@ -21,6 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #define VarOrder_h
 
 #include <vector>
+#include <iostream>
 
 #include "../SolverTypes.h"
 #include "Heap.h"
@@ -63,7 +64,9 @@ public:
 
 void VarOrder::init(std::vector<Var> &order) {
   heap.setBounds(assigns.size());
-  for (Var x: order) heap.insert(x);
+  for (Var x: order) {
+    heap.insert(x);
+  }
 }
 
 
@@ -76,17 +79,19 @@ void VarOrder::update(Var x)
 
 void VarOrder::undo(Var x)
 {
-    if (!heap.inHeap(x))
+    if (!heap.inHeap(x)) {
         heap.insert(x);
+    }
 }
 
 
 Var VarOrder::select(double random_var_freq)
 {
     // Random decision:
-    if (drand(random_seed) < random_var_freq){
-        Var next = irand(random_seed,assigns.size());
-        if (toLbool(assigns[next]) == l_Undef)
+    if (drand(random_seed) < random_var_freq && heap.heap.size() > 1){
+        Var next = irand(random_seed,heap.heap.size() - 1);
+        std::cout << std::flush;
+        if (toLbool(heap.heap[next + 1]) == l_Undef)
             return next;
     }
 

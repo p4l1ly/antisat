@@ -11,8 +11,7 @@ void FinishVarOrder::undo(Solver &S) {
   for (int candidate: snapshot) candidates.push_back(candidate);
 }
 
-bool FinishVarOrder::select(Solver &S) {
-  add_snapshot();
+Lit FinishVarOrder::select(Solver &S) {
   int declevel = S.decisionLevel();
   if (verbosity >= 2) printf("FINISH_SELECT %d %lu\n", declevel, candidates.size());
   while (!candidates.empty()) {
@@ -21,13 +20,8 @@ bool FinishVarOrder::select(Solver &S) {
 
     VarInfo &varinfo = varinfos[cand];
     if (assigns[cand] == 0) {
-      VarType var_type = S.var_types[cand];
-      bool signum = var_type == OUTPUT_POS ? false : true;
-      if (!S.assume(Lit(cand, signum))) assert(false);
-      S.undos.push_back(this);
-      snapshots.back().push_back(cand);
-      if (verbosity >= 2) printf("FINISH_SELECTED\n");
-      return true;
+      if (verbosity >= 2) printf("FINISH_SELECTED %d\n", cand);
+      return Lit(cand, S.var_types[cand] != OUTPUT_POS);
     }
     int level = S.level[cand];
     if (level <= varinfo.skip_level) {
@@ -35,21 +29,25 @@ bool FinishVarOrder::select(Solver &S) {
       varinfo.skip_level = -1;
       continue;
     }
-    unsigned snapshot_ix = snapshots.size() - declevel + level;
+    unsigned snapshot_ix = level - S.root_level;
     snapshots[snapshot_ix].push_back(cand);
   }
-  S.undos.push_back(this);
   if (verbosity >= 2) printf("FINISH_DONE\n");
-  return false;
+  return lit_Undef;
 }
 
-void FinishVarOrder::add_snapshot() {
+// TODO
+// S.undos.push_back(this);
+// snapshots.back().push_back(cand);
+
+void FinishVarOrder::after_select(Solver &S) {
   if (snapshot_count == snapshots.size()) {
     snapshots.emplace_back();
     ++snapshot_count;
     return;
   }
   snapshots[snapshot_count++].clear();
+  S.undos.push_back(this);
 }
 
 void FinishVarOrder::skip(int var, int level) {

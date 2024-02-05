@@ -370,7 +370,14 @@ public:
       if (ok){
         UpwardClause* c;
         ok = UpwardClause_new(*this, out, ps, c);
-        if (verbosity >= 2) printf("ADD_UPWARD_CLAUSE %p %p\n", c, c ? c->getSpecificPtr2() : c);
+        if (verbosity >= 2) {
+          printf("ADD_UPWARD_CLAUSE %p %p", c, c ? c->getSpecificPtr2() : c);
+          std::cout << " " << out;
+          for (int j = 0; j < ps.size(); ++j) {
+            std::cout << " " << ps[j];
+          }
+          std::cout << std::endl;
+        }
         if (c != NULL) {
           constrs.push(c);
           clauses_ww.push_back(c);
@@ -397,7 +404,11 @@ public:
 //
 inline void Solver::undoOne(void)
 {
+#ifdef AFA
+    if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND "unbind(" L_LIT ") %d\n", L_ind, L_lit(p), var_types[var(p)]); }
+#else
     if (verbosity >= 2){ Lit p = trail.last(); printf(L_IND "unbind(" L_LIT ")\n", L_ind, L_lit(p)); }
+#endif
     Var     x  = var(trail.last()); trail.pop();
     assigns[x] = toInt(l_Undef);
     reason [x] = GClause_NULL;

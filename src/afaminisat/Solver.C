@@ -729,27 +729,24 @@ lbool Solver::search()
             stats.decisions++;
 
 #ifdef SAT_TRIE_HEAP
-            Snapshot &snapshot = trie.new_snapshot();
             Var next = heap_order.select(params.random_var_freq);
             if (next == var_Undef) return l_True;
             check(assume(Lit(next, true)));
-            undos.push_back(&trie);
+            trie.new_snapshot(); undos.push_back(&trie);
 #elif SAT_TRIE_BUBBLE
-            Snapshot &snapshot = trie.new_snapshot();
             int old_guess_line1 = bubble_order.guess_line;
             Lit guess = bubble_order.select(*this);
             if (guess == lit_Undef) return l_True;
             check(assume(guess));
             bubble_order.after_select(old_guess_line1, *this);
-            undos.push_back(&trie);
+            trie.new_snapshot(); undos.push_back(&trie);
 #elif SAT_TRIE_WATCH
-            Snapshot &snapshot = trie.new_snapshot();
             int old_guess_line1 = watch_order.guess_line;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) return l_True;
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            undos.push_back(&trie);
+            trie.new_snapshot(); undos.push_back(&trie);
 #elif SAT_CLAUSE_HEAP
             Var next = heap_order.select(params.random_var_freq);
             if (next == var_Undef) return l_True;
@@ -766,6 +763,47 @@ lbool Solver::search()
             if (guess == lit_Undef) return l_True;
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
+#elif AFA_CLAUSE_HEAP_HEAP
+            Var vguess = heap_order.select(params.random_var_freq);
+            if (vguess == var_Undef) {
+              vguess = heap_order2.select(params.random_var_freq);
+              if (vguess == var_Undef) return l_True;
+              check(assume(Lit(vguess, true)));
+            } else {
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+            }
+#elif AFA_CLAUSE_HEAP_BUBBLE
+            int old_guess_line2 = bubble_order2.guess_line;
+            Var vguess = heap_order.select(params.random_var_freq);
+            if (vguess == var_Undef) {
+              Lit guess = bubble_order2.select(*this);
+              if (guess == lit_Undef) {
+                bubble_order2.guess_line = old_guess_line2;
+                return l_True;
+              }
+              check(assume(guess));
+              bubble_order2.after_select(old_guess_line2, *this);
+            } else {
+              bubble_order2.noselect(*this);
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+              bubble_order2.after_select(old_guess_line2, *this);
+            }
+#elif AFA_CLAUSE_HEAP_WATCH
+            int old_guess_line2 = watch_order2.guess_line;
+            Var vguess = heap_order.select(params.random_var_freq);
+            if (vguess == var_Undef) {
+              Lit guess = watch_order2.select(*this);
+              if (guess == lit_Undef) {
+                watch_order2.guess_line = old_guess_line2;
+                return l_True;
+              }
+              check(assume(guess));
+              watch_order2.after_select(old_guess_line2, *this);
+            } else {
+              watch_order2.noselect(*this);
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+              watch_order2.after_select(old_guess_line2, *this);
+            }
 #elif AFA_CLAUSE_BUBBLE_HEAP
             int old_guess_line1 = bubble_order.guess_line;
             Lit guess = bubble_order.select(*this);
@@ -808,6 +846,219 @@ lbool Solver::search()
             check(assume(guess));
             bubble_order.after_select(old_guess_line1, *this);
             watch_order2.after_select(old_guess_line2, *this);
+#elif AFA_CLAUSE_WATCH_HEAP
+            int old_guess_line1 = watch_order.guess_line;
+            bool o2_guess = false;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) {
+              guess = finish_order.select(*this);
+              if (guess == lit_Undef) {
+                o2_guess = true;
+                Var vguess = heap_order2.select(params.random_var_freq);
+                if (vguess == var_Undef) guess = lit_Undef;
+                else guess = Lit(vguess, true);
+              }
+            }
+            if (guess == lit_Undef) {
+              watch_order.guess_line = old_guess_line1;
+              return l_True;
+            }
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) finish_order.after_select(*this);
+#elif AFA_CLAUSE_WATCH_BUBBLE
+            int old_guess_line1 = watch_order.guess_line;
+            int old_guess_line2 = bubble_order2.guess_line;
+            bool o2_guess = false;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) {
+              guess = finish_order.select(*this);
+              if (guess == lit_Undef) { o2_guess = true; guess = bubble_order2.select(*this); }
+              else bubble_order2.noselect(*this);
+            } else bubble_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              watch_order.guess_line = old_guess_line1;
+              bubble_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) finish_order.after_select(*this);
+            bubble_order2.after_select(old_guess_line2, *this);
+#elif AFA_CLAUSE_WATCH_WATCH
+            int old_guess_line1 = watch_order.guess_line;
+            int old_guess_line2 = watch_order2.guess_line;
+            bool o2_guess = false;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) {
+              guess = finish_order.select(*this);
+              if (guess == lit_Undef) { o2_guess = true; guess = watch_order2.select(*this); }
+              else watch_order2.noselect(*this);
+            } else watch_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              watch_order.guess_line = old_guess_line1;
+              watch_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) finish_order.after_select(*this);
+            watch_order2.after_select(old_guess_line2, *this);
+#elif AFA_TRIE_HEAP_HEAP
+            Var vguess = heap_order.select(params.random_var_freq);
+            if (vguess == var_Undef) {
+              if (verbosity >= 2) printf("O2GUESS\n");
+              vguess = heap_order2.select(params.random_var_freq);
+              if (vguess == var_Undef) return l_True;
+              check(assume(Lit(vguess, true)));
+            } else {
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+              trie.new_snapshot(); undos.push_back(&trie);
+            }
+#elif AFA_TRIE_HEAP_BUBBLE
+            int old_guess_line2 = bubble_order2.guess_line;
+            Var vguess = heap_order.select(params.random_var_freq);
+            if (vguess == var_Undef) {
+              Lit guess = bubble_order2.select(*this);
+              if (guess == lit_Undef) {
+                bubble_order2.guess_line = old_guess_line2;
+                return l_True;
+              }
+              check(assume(guess));
+              bubble_order2.after_select(old_guess_line2, *this);
+            } else {
+              bubble_order2.noselect(*this);
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+              bubble_order2.after_select(old_guess_line2, *this);
+              trie.new_snapshot(); undos.push_back(&trie);
+            }
+#elif AFA_TRIE_HEAP_WATCH
+            int old_guess_line2 = watch_order2.guess_line;
+            Var vguess = heap_order.select(params.random_var_freq);
+            if (vguess == var_Undef) {
+              Lit guess = watch_order2.select(*this);
+              if (guess == lit_Undef) {
+                watch_order2.guess_line = old_guess_line2;
+                return l_True;
+              }
+              check(assume(guess));
+              watch_order2.after_select(old_guess_line2, *this);
+            } else {
+              watch_order2.noselect(*this);
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+              watch_order2.after_select(old_guess_line2, *this);
+              trie.new_snapshot(); undos.push_back(&trie);
+            }
+#elif AFA_TRIE_BUBBLE_HEAP
+            int old_guess_line1 = bubble_order.guess_line;
+            Lit guess = bubble_order.select(*this);
+            bool o2_guess = false;
+            if (guess == lit_Undef) {
+              o2_guess = true;
+              Var vguess = heap_order2.select(params.random_var_freq);
+              if (vguess == var_Undef) guess = lit_Undef;
+              else guess = Lit(vguess, true);
+            }
+            if (guess == lit_Undef) {
+              bubble_order.guess_line = old_guess_line1;
+              return l_True;
+            }
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#elif AFA_TRIE_BUBBLE_BUBBLE
+            int old_guess_line1 = bubble_order.guess_line;
+            int old_guess_line2 = bubble_order2.guess_line;
+            bool o2_guess = false;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) { o2_guess = true; guess = bubble_order2.select(*this); }
+            else bubble_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              bubble_order.guess_line = old_guess_line1;
+              bubble_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
+            bubble_order2.after_select(old_guess_line2, *this);
+            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#elif AFA_TRIE_BUBBLE_WATCH
+            int old_guess_line1 = bubble_order.guess_line;
+            int old_guess_line2 = watch_order2.guess_line;
+            bool o2_guess = false;
+            Lit guess = bubble_order.select(*this);
+            if (guess == lit_Undef) { o2_guess = true; guess = watch_order2.select(*this); }
+            else watch_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              bubble_order.guess_line = old_guess_line1;
+              watch_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            bubble_order.after_select(old_guess_line1, *this);
+            watch_order2.after_select(old_guess_line2, *this);
+            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#elif AFA_TRIE_WATCH_HEAP
+            int old_guess_line1 = watch_order.guess_line;
+            bool o2_guess = false;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) {
+              guess = finish_order.select(*this);
+              if (guess == lit_Undef) {
+                o2_guess = true;
+                Var vguess = heap_order2.select(params.random_var_freq);
+                if (vguess == var_Undef) guess = lit_Undef;
+                else guess = Lit(vguess, true);
+              }
+            }
+            if (guess == lit_Undef) {
+              watch_order.guess_line = old_guess_line1;
+              return l_True;
+            }
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) finish_order.after_select(*this);
+            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#elif AFA_TRIE_WATCH_BUBBLE
+            int old_guess_line1 = watch_order.guess_line;
+            int old_guess_line2 = bubble_order2.guess_line;
+            bool o2_guess = false;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) {
+              guess = finish_order.select(*this);
+              if (guess == lit_Undef) { o2_guess = true; guess = bubble_order2.select(*this); }
+              else bubble_order2.noselect(*this);
+            } else bubble_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              watch_order.guess_line = old_guess_line1;
+              bubble_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) finish_order.after_select(*this);
+            bubble_order2.after_select(old_guess_line2, *this);
+            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#elif AFA_TRIE_WATCH_WATCH
+            int old_guess_line1 = watch_order.guess_line;
+            int old_guess_line2 = watch_order2.guess_line;
+            bool o2_guess = false;
+            Lit guess = watch_order.select(*this);
+            if (guess == lit_Undef) {
+              guess = finish_order.select(*this);
+              if (guess == lit_Undef) { o2_guess = true; guess = watch_order2.select(*this); }
+              else watch_order2.noselect(*this);
+            } else watch_order2.noselect(*this);
+            if (guess == lit_Undef) {
+              watch_order.guess_line = old_guess_line1;
+              watch_order2.guess_line = old_guess_line2;
+              return l_True;
+            }
+            check(assume(guess));
+            watch_order.after_select(old_guess_line1, *this);
+            if (!o2_guess) finish_order.after_select(*this);
+            watch_order2.after_select(old_guess_line2, *this);
+            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
 #else
             ERROR_UNSUPPORTED_MODE
 #endif

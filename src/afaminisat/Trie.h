@@ -76,17 +76,22 @@ struct PlusSnapshot {
 };
 
 struct Snapshot {
+#ifdef AFA
+  // Rears must be created before vans and in AFA onSat, when post-calculating snapshots,
+  // new van snapshots are created after rear snapshots exist, so they would be triggered earlier.
+  LogList<PlusSnapshot> rear_plus_snapshots;
+#endif
   LogList<PlusSnapshot> plus_snapshots;
   LogList<MinusSnapshot> minus_snapshots;
 
-  Snapshot()
-  : plus_snapshots()
-  , minus_snapshots()
-  {}
+  Snapshot() {}
 
   Snapshot(Snapshot&& old) noexcept
   : plus_snapshots(std::move(old.plus_snapshots))
   , minus_snapshots(std::move(old.minus_snapshots))
+#ifdef AFA
+  , rear_plus_snapshots(std::move(old.rear_plus_snapshots))
+#endif
   {}
 
   Snapshot(Snapshot& old) = delete;
@@ -121,6 +126,9 @@ struct Guard {
   }
 
   void untangle();
+  MinusSnapshot *get_msnap(int level, int root_level) {
+    return last_change_level == level || level <= root_level ? minus_snapshot : NULL;
+  }
 };
 
 
@@ -242,7 +250,11 @@ public:
 
   Head* jump(Solver &S);
 
+#ifdef AFA
+  void make_rear_psnap(Solver &S, Head *old_deepest_rightmost_rear);
+#else
   void make_rear_psnap(Solver &S);
+#endif
   void make_van_psnap(Solver &S, int level);
   void *getSpecificPtr2() { return this; }
   MinusSnapshot *save_to_msnap(Trie &trie, MinusSnapshot *msnap);
@@ -261,12 +273,11 @@ struct Horline {
 
 #ifdef AFA
 struct AfaHorline {
-  Head** ptr_to_first;
   Head* leftmost;
-  vector<Head> elems;
+  LogList<Head> elems;
 
-  AfaHorline(Head** ptr_to_first_, Head* leftmost_)
-  : ptr_to_first(ptr_to_first_), leftmost(leftmost_)
+  AfaHorline(Head* leftmost_)
+  : leftmost(leftmost_)
   {}
 };
 #endif

@@ -31,8 +31,8 @@ public:
 
     void init(); // Then, signa should be set externally
     void undo(Solver &S);
-    bool select(Solver &S);
-    void add_snapshot();
+    Lit select(Solver &S);
+    void after_select(Solver &S);
     void skip(int var, int level);
 };
 
