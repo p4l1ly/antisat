@@ -113,25 +113,34 @@ bool parse_cnfafa(
     int i = 0;
     for (auto clause: clauses) {
       lits.clear();
-      if (upwardClausesSet.contains(i)) {
-        auto out0 = clause[0];
-        int var = abs(out0) - 1;
-        Lit out = out0 > 0 ? Lit(var) : Lit(var, true);
-        for (int j = 1; j < clause.size(); ++j) {
-          auto lit = clause[j];
-          int var = abs(lit) - 1;
-          lits.push(lit > 0 ? Lit(var) : Lit(var, true));
-        }
-        S.addUpwardClause(out, lits, upward_clauses_ww);
-      } else {
-        for (auto lit: clause) {
-          int var = abs(lit) - 1;
-          lits.push(lit > 0 ? Lit(var) : Lit(var, true));
-        }
-        S.addClause(lits, clauses_ww);
+
+      bool optional = false;
+      if (clause.back() == 0) {
+        optional = true;
+        clause.pop_back();
       }
-      if (!S.okay())
-        return false;
+
+      if (!optional) {
+        if (upwardClausesSet.contains(i)) {
+          auto out0 = clause[0];
+          int var = abs(out0) - 1;
+          Lit out = out0 > 0 ? Lit(var) : Lit(var, true);
+          for (int j = 1; j < clause.size(); ++j) {
+            auto lit = clause[j];
+            int var = abs(lit) - 1;
+            lits.push(lit > 0 ? Lit(var) : Lit(var, true));
+          }
+          S.addUpwardClause(out, lits, upward_clauses_ww);
+        } else {
+          for (auto lit: clause) {
+            int var = abs(lit) - 1;
+            lits.push(lit > 0 ? Lit(var) : Lit(var, true));
+          }
+          S.addClause(lits, clauses_ww);
+        }
+        if (!S.okay())
+          return false;
+      }
       ++i;
     }
   }

@@ -47,9 +47,9 @@ Then, AFA related
     - DONE mark indirect "above" or use ifdef AFA
     - DONE track deepest rightmost rear/solo. for each rear, track deepest rightmost accepted van
     - DONE onSat 1d
-    - add antichain clause => raise nLearnts 20m
-    - Main, Solver->order.select, CMakeLists 3h
-    - try, debug 1d
+    - DONE add antichain clause => raise nLearnts 20m
+    - DONE Main, Solver->order.select, CMakeLists 3h
+    - DONE try, debug 1d
 
 - Try to run at least one external incremental SAT solver - CryptoMiniSAT
     - without maximization of outputs (we should be much better because of this nonmaximization)

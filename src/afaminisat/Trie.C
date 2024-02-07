@@ -1,9 +1,3 @@
-// TODO
-// 2. improve code beauty
-// 7. enable switching of heap vs tolerance order
-// 9. test and backport posq stuff to novan
-// 10. binary clause reasons implementation (it should improve performance by 10 to 20% - suspicious)
-
 #include <algorithm>
 #include <iostream>
 #include <fstream>
