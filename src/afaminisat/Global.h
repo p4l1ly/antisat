@@ -287,6 +287,7 @@ inline std::ostream& operator<<(std::ostream& os, Lit const &p) {
 
 const Lit lit_Undef(var_Undef, false);  // }- Useful special constants.
 const Lit lit_Error(var_Undef, true );  // }
+const Lit lit_NoCandidate(-2, false);
 
 
 

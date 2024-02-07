@@ -21,7 +21,7 @@ using std::vector;
 using std::string;
 
 #ifdef MY_DEBUG
-int verbosity = -5;
+int verbosity = 5;
 #endif
 const bool write_debug_dots = true;
 
@@ -78,8 +78,10 @@ bool parse_cnfafa(
 
   S.var_types.resize(nVars, GUESS_VAR);
 
+#ifdef NOGUESS_VARS
   for (int pure: pureVars) S.var_types[pure] = NOGUESS_VAR;
   for (unsigned i = 0; i < outputs.size(); ++i) S.var_types[i] = NOGUESS_VAR;
+#endif
 
   unordered_set<unsigned> upwardClausesSet;
   for (auto upward: upwardClauses) upwardClausesSet.insert(upward);
@@ -103,7 +105,10 @@ bool parse_cnfafa(
     ++i;
   }
 
+#ifdef POSQ_OUTPUTS
   for (int posqOutput: posqOutputs) S.var_types[var(all_outputs[posqOutput])] = OUTPUT_POSQ;
+#endif
+
   for (int final_: finals) finals_set.insert(final_);
 
   while (nVars > S.nVars()) S.newVar();
@@ -120,7 +125,13 @@ bool parse_cnfafa(
         clause.pop_back();
       }
 
+#ifdef OPTIONAL_CLAUSES
       if (!optional) {
+#else
+      {
+#endif
+
+#ifdef UPWARD_CLAUSES
         if (upwardClausesSet.contains(i)) {
           auto out0 = clause[0];
           int var = abs(out0) - 1;
@@ -132,6 +143,9 @@ bool parse_cnfafa(
           }
           S.addUpwardClause(out, lits, upward_clauses_ww);
         } else {
+#else
+        {
+#endif
           for (auto lit: clause) {
             int var = abs(lit) - 1;
             lits.push(lit > 0 ? Lit(var) : Lit(var, true));
@@ -369,6 +383,17 @@ bool run() {
         }
         S.constrs.push(c);
         ++S.nConstrs;
+
+        int max_level = -1;
+        const Lit* end = &outputs[outputs.size()];
+        for (Lit *xptr = outputs; xptr != end; ++xptr) {
+          Lit x = *xptr;
+          int lvl = S.level[var(x)];
+          if (lvl > max_level) {
+            max_level = lvl;
+          }
+        }
+        S.cancelUntil(max_level);
       }
 #endif
       {

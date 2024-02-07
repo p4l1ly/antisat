@@ -18,6 +18,12 @@ void Trie::onSat(
 ) {
   Head * deepest_place = deepest_rightmost_rear;
   if (verbosity >= 2) {
+    std::cout << "ON_SAT0"
+      << " " << deepest_place
+      << " " << S.root_level
+      << std::endl;
+  }
+  if (verbosity >= 2) {
     std::cout << "ON_SAT"
       << " " << HeadAttrs(deepest_place, S)
       << " " << S.root_level

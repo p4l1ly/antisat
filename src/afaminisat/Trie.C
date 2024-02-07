@@ -565,8 +565,18 @@ Head* Head::jump(Solver &S) {
       if (van.guard.last_change_level == level || level <= S.root_level) {
         van.guard.minus_snapshot->place = NULL;
       }
+
+#ifdef AFA
+      // S.level[var(lit)] would make mess with accepting places.
+      // Moreover, this compromise is not very costly. Watches remain, msnap is in the right level,
+      // etc.
+      van.make_van_psnap(S, S.decisionLevel());
+#else
       van.make_van_psnap(S, S.level[var(lit)]);
+#endif
+
       van.guard.guard_type = DANGLING_GUARD;
+
 #ifdef AFA
       trie.deepest_rightmost_candidate(&van);
 #endif
@@ -828,10 +838,11 @@ void Head::make_van_psnap(Solver &S, int level) {
   if (guard.last_change_level == level) return;
   if (level <= S.root_level) {guard.last_change_level = level; return;}
 
-  Snapshot &snapshot = S.trie.snapshots[level - S.root_level - 1];
   if (verbosity >= 2) {
     cout << "MAKE_VAN_PSNAP " << level << " " << S.root_level << " " << HeadAttrs(this, S) << endl;
   }
+
+  Snapshot &snapshot = S.trie.snapshots[level - S.root_level - 1];
   snapshot.plus_snapshots.emplace_back(
     this, guard.last_change_level, guard.dual, guard.minus_snapshot
 #ifdef AFA
@@ -1173,15 +1184,26 @@ std::ostream& operator<<(std::ostream& os, DotHead const &p) {
 }
 
 void Trie::print_guards(Solver &S) {
+#ifdef AFA
+  cout << "DEEPEST_RIGHTMOST " << deepest_rightmost_rear << endl;
+#endif
   ITER_LOGLIST(root_minus_snapshots, MinusSnapshot, x, {
     if (x.place && x.place->watching && x.place->guard.guard_type != DANGLING_GUARD)
-      std::cout << "GUARD -1 " << HeadAttrs(x.place, S) << endl;
+      std::cout << "GUARD -1 " << HeadAttrs(x.place, S)
+#ifdef AFA
+        << " " << x.place->guard.deepest_rightmost_van
+#endif
+        << endl;
   })
   for (int i = 0; i < snapshot_count; ++i) {
     Snapshot& snapshot = snapshots[i];
     ITER_LOGLIST(snapshot.minus_snapshots, MinusSnapshot, x, {
       if (x.place && x.place->watching && x.place->guard.guard_type != DANGLING_GUARD)
-        std::cout << "GUARD " << i << ' ' << HeadAttrs(x.place, S) << endl;
+        std::cout << "GUARD " << i << ' ' << HeadAttrs(x.place, S)
+#ifdef AFA
+          << " " << x.place->guard.deepest_rightmost_van
+#endif
+          << endl;
     })
   }
 }

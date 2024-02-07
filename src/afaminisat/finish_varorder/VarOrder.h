@@ -21,18 +21,18 @@ struct VarInfo {
 class FinishVarOrder: public Undoable {
     const vec<char>&    assigns;       // var->val. Pointer to external assignment table.
     vector<vector<int>> snapshots;
+
+public:
     unsigned snapshot_count = 0;
     vector<int> candidates;
     vector<VarInfo> varinfos;
-
-public:
 
     FinishVarOrder(const vec<char>& ass);
 
     void init(); // Then, signa should be set externally
     void undo(Solver &S);
     Lit select(Solver &S);
-    void after_select(Solver &S);
+    void add_snapshot();
     void skip(int var, int level);
 };
 

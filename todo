@@ -55,8 +55,10 @@ Then, AFA related
     - without maximization of outputs (we should be much better because of this nonmaximization)
     - with MaxSAT
 
-- switch various features on/off - posq outputs, purity, directedness (directed boolean operators,
-  directed clauses) 3h
+- DONE switch various features on/off - posq outputs, purity, directedness (directed boolean
+  operators, directed clauses) 3h
+
+- WONT_DO random order 1h
 
 - Compare thoroughly in all settings with all AFA model checkers and the selected SAT solvers. 1d
 

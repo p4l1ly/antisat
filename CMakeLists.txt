@@ -179,6 +179,26 @@ if (AFA)
   else()
     message(FATAL_ERROR "Unknown CELL_CONTAINER ${CELL_CONTAINER}")
   endif()
+
+  option(NOGUESS_VARS "" ON)
+  if (NOGUESS_VARS)
+    option(POSQ_OUTPUTS "" ON)
+
+    set(FLAGS "${FLAGS} -DNOGUESS_VARS")
+    if (POSQ_OUTPUTS)
+      set(FLAGS "${FLAGS} -DPOSQ_OUTPUTS")
+    endif()
+  endif()
+
+  option(OPTIONAL_CLAUSES "" ON)
+  if (OPTIONAL_CLAUSES)
+    option(UPWARD_CLAUSES "" ON)
+
+    set(FLAGS "${FLAGS} -DOPTIONAL_CLAUSES")
+    if (UPWARD_CLAUSES)
+      set(FLAGS "${FLAGS} -DUPWARD_CLAUSES")
+    endif()
+  endif()
 endif()
 
 if (USE_TRIE)

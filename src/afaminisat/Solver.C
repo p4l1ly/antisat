@@ -383,9 +383,9 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
             if (!seen[var(q)] && level[var(q)] > 0){
                 varBumpActivity(q);
                 seen[var(q)] = 1;
-                if (level[var(q)] == decisionLevel())
-                    pathC++;
-                else{
+                if (level[var(q)] == decisionLevel()) {
+                  pathC++;
+                } else{
                     assert(value(q) == l_True);
                     out_learnt.push(~q);
                     out_btlevel = max(out_btlevel, level[var(q)]);
@@ -396,13 +396,14 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
         // Select next clause to look at:
         while (!seen[var(trail[index--])]);
         p     = trail[index+1];
-        p_reason.clear();
 
         seen[var(p)] = 0;
 
         GClause confl = reason[var(p)];
 
         if ((--pathC) == 0) break;
+
+        assert(confl != GClause_NULL);
 
         if (confl.isLit()) {
           p_reason.sz = 1;
@@ -423,7 +424,6 @@ bool Solver::analyze(vec<Lit> &p_reason, vec<Lit>& out_learnt, int& out_btlevel)
           printf("\n");
         }
 
-        assert(pathC == 0 || confl != GClause_NULL);
     }
     out_learnt[0] = ~p;
     out_learnt.copyTo(analyze_toclear);
@@ -848,61 +848,72 @@ lbool Solver::search()
             watch_order2.after_select(old_guess_line2, *this);
 #elif AFA_CLAUSE_WATCH_HEAP
             int old_guess_line1 = watch_order.guess_line;
-            bool o2_guess = false;
+            bool undo_finish = true;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) {
               guess = finish_order.select(*this);
+              if (guess == lit_NoCandidate) { guess = lit_Undef; undo_finish = false; }
               if (guess == lit_Undef) {
-                o2_guess = true;
                 Var vguess = heap_order2.select(params.random_var_freq);
                 if (vguess == var_Undef) guess = lit_Undef;
                 else guess = Lit(vguess, true);
               }
-            }
+            } else finish_order.add_snapshot();
             if (guess == lit_Undef) {
               watch_order.guess_line = old_guess_line1;
+              if (undo_finish) finish_order.undo(*this);
               return l_True;
             }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) finish_order.after_select(*this);
+            if (undo_finish) undos.push_back(&finish_order);
 #elif AFA_CLAUSE_WATCH_BUBBLE
             int old_guess_line1 = watch_order.guess_line;
             int old_guess_line2 = bubble_order2.guess_line;
-            bool o2_guess = false;
+            bool undo_finish = true;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) {
               guess = finish_order.select(*this);
-              if (guess == lit_Undef) { o2_guess = true; guess = bubble_order2.select(*this); }
+              if (guess == lit_NoCandidate) { guess = lit_Undef; undo_finish = false; }
+              if (guess == lit_Undef) { guess = bubble_order2.select(*this); }
               else bubble_order2.noselect(*this);
-            } else bubble_order2.noselect(*this);
+            } else {
+              bubble_order2.noselect(*this);
+              finish_order.add_snapshot();
+            }
             if (guess == lit_Undef) {
               watch_order.guess_line = old_guess_line1;
               bubble_order2.guess_line = old_guess_line2;
+              if (undo_finish) finish_order.undo(*this);
               return l_True;
             }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) finish_order.after_select(*this);
+            if (undo_finish) undos.push_back(&finish_order);
             bubble_order2.after_select(old_guess_line2, *this);
 #elif AFA_CLAUSE_WATCH_WATCH
             int old_guess_line1 = watch_order.guess_line;
             int old_guess_line2 = watch_order2.guess_line;
-            bool o2_guess = false;
+            bool undo_finish = true;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) {
               guess = finish_order.select(*this);
-              if (guess == lit_Undef) { o2_guess = true; guess = watch_order2.select(*this); }
+              if (guess == lit_NoCandidate) { guess = lit_Undef; undo_finish = false; }
+              if (guess == lit_Undef) { guess = watch_order2.select(*this); }
               else watch_order2.noselect(*this);
-            } else watch_order2.noselect(*this);
+            } else {
+              watch_order2.noselect(*this);
+              finish_order.add_snapshot();
+            }
             if (guess == lit_Undef) {
               watch_order.guess_line = old_guess_line1;
               watch_order2.guess_line = old_guess_line2;
+              if (undo_finish) finish_order.undo(*this);
               return l_True;
             }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) finish_order.after_select(*this);
+            if (undo_finish) undos.push_back(&finish_order);
             watch_order2.after_select(old_guess_line2, *this);
 #elif AFA_TRIE_HEAP_HEAP
             Var vguess = heap_order.select(params.random_var_freq);
@@ -1001,62 +1012,79 @@ lbool Solver::search()
 #elif AFA_TRIE_WATCH_HEAP
             int old_guess_line1 = watch_order.guess_line;
             bool o2_guess = false;
+            bool undo_finish = true;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) {
               guess = finish_order.select(*this);
+              if (guess == lit_NoCandidate) { guess = lit_Undef; undo_finish = false; }
               if (guess == lit_Undef) {
                 o2_guess = true;
                 Var vguess = heap_order2.select(params.random_var_freq);
                 if (vguess == var_Undef) guess = lit_Undef;
                 else guess = Lit(vguess, true);
               }
+            } else {
+              finish_order.add_snapshot();
             }
             if (guess == lit_Undef) {
               watch_order.guess_line = old_guess_line1;
+              if (undo_finish) finish_order.undo(*this);
               return l_True;
             }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) finish_order.after_select(*this);
+            if (undo_finish) undos.push_back(&finish_order);
             if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_WATCH_BUBBLE
             int old_guess_line1 = watch_order.guess_line;
             int old_guess_line2 = bubble_order2.guess_line;
             bool o2_guess = false;
+            bool undo_finish = true;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) {
               guess = finish_order.select(*this);
+              if (guess == lit_NoCandidate) { guess = lit_Undef; undo_finish = false; }
               if (guess == lit_Undef) { o2_guess = true; guess = bubble_order2.select(*this); }
               else bubble_order2.noselect(*this);
-            } else bubble_order2.noselect(*this);
+            } else {
+              bubble_order2.noselect(*this);
+              finish_order.add_snapshot();
+            }
             if (guess == lit_Undef) {
               watch_order.guess_line = old_guess_line1;
               bubble_order2.guess_line = old_guess_line2;
+              if (undo_finish) finish_order.undo(*this);
               return l_True;
             }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) finish_order.after_select(*this);
+            if (undo_finish) undos.push_back(&finish_order);
             bubble_order2.after_select(old_guess_line2, *this);
             if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_WATCH_WATCH
             int old_guess_line1 = watch_order.guess_line;
             int old_guess_line2 = watch_order2.guess_line;
             bool o2_guess = false;
+            bool undo_finish = true;
             Lit guess = watch_order.select(*this);
             if (guess == lit_Undef) {
               guess = finish_order.select(*this);
+              if (guess == lit_NoCandidate) { guess = lit_Undef; undo_finish = false; }
               if (guess == lit_Undef) { o2_guess = true; guess = watch_order2.select(*this); }
               else watch_order2.noselect(*this);
-            } else watch_order2.noselect(*this);
+            } else {
+              watch_order2.noselect(*this);
+              finish_order.add_snapshot();
+            }
             if (guess == lit_Undef) {
               watch_order.guess_line = old_guess_line1;
               watch_order2.guess_line = old_guess_line2;
+              if (undo_finish) finish_order.undo(*this);
               return l_True;
             }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) finish_order.after_select(*this);
+            if (undo_finish) undos.push_back(&finish_order);
             watch_order2.after_select(old_guess_line2, *this);
             if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
 #else
@@ -1118,6 +1146,17 @@ bool Solver::solve(const vec<Lit>& assumps)
 
 #ifdef USE_TRIE
     if (trie.root && trie.reset(*this) != NULL) return false;
+#endif
+
+#ifdef AFA
+#ifdef WATCH_VARORDER
+    assert(finish_order.snapshot_count == 0);
+    for (int cand: finish_order.candidates) {
+      VarInfo &varinfo = finish_order.varinfos[cand];
+      varinfo.enqueued = false;
+    }
+    finish_order.candidates.clear();
+#endif
 #endif
 
     simplifyDB();
