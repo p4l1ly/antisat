@@ -54,6 +54,7 @@ Then, AFA related
 - Try to run at least one external incremental SAT solver - CryptoMiniSAT
     - DONE without maximization of outputs (e should be much better because of this nonmaximization)
     - WONT_DO with MaxSAT
+    - WONT_DO implement two orders in CryptoMiniSAT
 
 - DONE switch various features on/off - posq outputs, purity, directedness (directed boolean
   operators, directed clauses) 3h

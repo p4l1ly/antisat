@@ -922,6 +922,9 @@ lbool Solver::search()
               vguess = heap_order2.select(params.random_var_freq);
               if (vguess == var_Undef) return l_True;
               check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
+#ifdef NO_POSNEG_OUTPUTS
+              trie.new_snapshot(); undos.push_back(&trie);
+#endif
             } else {
               check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
               trie.new_snapshot(); undos.push_back(&trie);
@@ -937,6 +940,9 @@ lbool Solver::search()
               }
               check(assume(guess));
               bubble_order2.after_select(old_guess_line2, *this);
+#ifdef NO_POSNEG_OUTPUTS
+              trie.new_snapshot(); undos.push_back(&trie);
+#endif
             } else {
               bubble_order2.noselect(*this);
               check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
@@ -954,6 +960,9 @@ lbool Solver::search()
               }
               check(assume(guess));
               watch_order2.after_select(old_guess_line2, *this);
+#ifdef NO_POSNEG_OUTPUTS
+              trie.new_snapshot(); undos.push_back(&trie);
+#endif
             } else {
               watch_order2.noselect(*this);
               check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
@@ -976,7 +985,10 @@ lbool Solver::search()
             }
             check(assume(guess));
             bubble_order.after_select(old_guess_line1, *this);
-            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#ifndef NO_POSNEG_OUTPUTS
+            if (!o2_guess)
+#endif
+              { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_BUBBLE_BUBBLE
             int old_guess_line1 = bubble_order.guess_line;
             int old_guess_line2 = bubble_order2.guess_line;
@@ -992,7 +1004,10 @@ lbool Solver::search()
             check(assume(guess));
             bubble_order.after_select(old_guess_line1, *this);
             bubble_order2.after_select(old_guess_line2, *this);
-            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#ifndef NO_POSNEG_OUTPUTS
+            if (!o2_guess)
+#endif
+              { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_BUBBLE_WATCH
             int old_guess_line1 = bubble_order.guess_line;
             int old_guess_line2 = watch_order2.guess_line;
@@ -1008,7 +1023,10 @@ lbool Solver::search()
             check(assume(guess));
             bubble_order.after_select(old_guess_line1, *this);
             watch_order2.after_select(old_guess_line2, *this);
-            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#ifndef NO_POSNEG_OUTPUTS
+            if (!o2_guess)
+#endif
+              { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_WATCH_HEAP
             int old_guess_line1 = watch_order.guess_line;
             bool o2_guess = false;
@@ -1034,7 +1052,10 @@ lbool Solver::search()
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
             if (undo_finish) undos.push_back(&finish_order);
-            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#ifndef NO_POSNEG_OUTPUTS
+            if (!o2_guess)
+#endif
+              { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_WATCH_BUBBLE
             int old_guess_line1 = watch_order.guess_line;
             int old_guess_line2 = bubble_order2.guess_line;
@@ -1060,7 +1081,10 @@ lbool Solver::search()
             watch_order.after_select(old_guess_line1, *this);
             if (undo_finish) undos.push_back(&finish_order);
             bubble_order2.after_select(old_guess_line2, *this);
-            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#ifndef NO_POSNEG_OUTPUTS
+            if (!o2_guess)
+#endif
+              { trie.new_snapshot(); undos.push_back(&trie); }
 #elif AFA_TRIE_WATCH_WATCH
             int old_guess_line1 = watch_order.guess_line;
             int old_guess_line2 = watch_order2.guess_line;
@@ -1086,7 +1110,10 @@ lbool Solver::search()
             watch_order.after_select(old_guess_line1, *this);
             if (undo_finish) undos.push_back(&finish_order);
             watch_order2.after_select(old_guess_line2, *this);
-            if (!o2_guess) { trie.new_snapshot(); undos.push_back(&trie); }
+#ifndef NO_POSNEG_OUTPUTS
+            if (!o2_guess)
+#endif
+              { trie.new_snapshot(); undos.push_back(&trie); }
 #else
             ERROR_UNSUPPORTED_MODE
 #endif

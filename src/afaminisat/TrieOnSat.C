@@ -178,8 +178,10 @@ void Trie::onSat(
   if (verbosity >= 2) {
     cout << "ON_SAT_SNAPS"
       << " R0=" << last_rear_level
+#ifndef ALL_SOLO
       << " V0=" << last_van_level
       << " VM=" << minus_first_rear_level
+#endif
       << " R=" << *last_rear
       << endl;
   }

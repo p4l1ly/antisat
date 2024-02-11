@@ -286,7 +286,7 @@ bool run() {
   }
 
   vector<unsigned> sharing_set;
-  sharing_set.resize(S.watches.size(), 0);
+  sharing_set.resize(S.watches.size(), -1);
 #else
   if (verbosity >= 2) printf("FINAL_ANTICHAIN_CLAUSE\n");
   S.addClause(outputs, clauses_ww);
