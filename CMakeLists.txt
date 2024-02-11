@@ -21,6 +21,9 @@ option(SOLIDIFY "solidify trie before SAT" ON)
 option(ALL_SOLO "don't use rear/van guards but only solo guards (limited unit propagation)" OFF)
 option(WATCH_CLAUSE_WATCH "input clauses have impact on watch bubble order" OFF)
 option(WATCH_LEARNT_WATCH "learnt clauses have impact on watch bubble order" OFF)
+option(NO_POSNEG_OUTPUTS "output literals that appear in both signs are not outputs" ON)
+option(ONE_ORDER "guessing of output literals is not prioritized" OFF)
+option(NO_OUTPUTS "output literals have no special meaning in the sat (except that they appear in the antichain)" OFF)
 
 set(MODE "${MODE}" CACHE STRING "modus_operandi" FORCE)
 
@@ -229,6 +232,18 @@ endif()
 
 if (WATCH_CLAUSE_WATCH)
   set(FLAGS "${FLAGS} -DWATCH_CLAUSE_WATCH")
+endif()
+
+if (NO_POSNEG_OUTPUTS)
+  set(FLAGS "${FLAGS} -DNO_POSNEG_OUTPUTS")
+endif()
+
+if (ONE_ORDER)
+  set(FLAGS "${FLAGS} -DONE_ORDER")
+endif()
+
+if (NO_OUTPUTS)
+  set(FLAGS "${FLAGS} -DNO_OUTPUTS")
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}")

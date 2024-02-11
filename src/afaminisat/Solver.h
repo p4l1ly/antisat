@@ -159,7 +159,11 @@ public:
 #ifdef  WATCH_VARORDER
       VarType vtype = var_types[var(p)];
       if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+#ifdef ONE_ORDER
+        watch_order2.watch(p);
+#else
         watch_order.watch(p);
+#endif
         return;
       }
 #endif
@@ -178,7 +182,11 @@ public:
 #ifdef  WATCH_VARORDER
       VarType vtype = var_types[var(p)];
       if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+#ifdef ONE_ORDER
+        watch_order2.unwatch(p);
+#else
         watch_order.unwatch(p);
+#endif
         return;
       }
 #endif
@@ -418,7 +426,11 @@ inline void Solver::undoOne(void)
 #ifdef  HEAP_VARORDER
     VarType vtype = var_types[x];
     if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+#ifdef ONE_ORDER
+      heap_order2.undo(x);
+#else
       heap_order.undo(x);
+#endif
       return;
     }
 #endif

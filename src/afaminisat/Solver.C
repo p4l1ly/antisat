@@ -768,7 +768,7 @@ lbool Solver::search()
             if (vguess == var_Undef) {
               vguess = heap_order2.select(params.random_var_freq);
               if (vguess == var_Undef) return l_True;
-              check(assume(Lit(vguess, true)));
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
             } else {
               check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
             }
@@ -810,7 +810,7 @@ lbool Solver::search()
             if (guess == lit_Undef) {
               Var vguess = heap_order2.select(params.random_var_freq);
               if (vguess == var_Undef) guess = lit_Undef;
-              else guess = Lit(vguess, true);
+              else guess = Lit(vguess, var_types[vguess] != OUTPUT_POS);
             }
             if (guess == lit_Undef) {
               bubble_order.guess_line = old_guess_line1;
@@ -856,7 +856,7 @@ lbool Solver::search()
               if (guess == lit_Undef) {
                 Var vguess = heap_order2.select(params.random_var_freq);
                 if (vguess == var_Undef) guess = lit_Undef;
-                else guess = Lit(vguess, true);
+                else guess = Lit(vguess, var_types[vguess] != OUTPUT_POS);
               }
             } else finish_order.add_snapshot();
             if (guess == lit_Undef) {
@@ -921,7 +921,7 @@ lbool Solver::search()
               if (verbosity >= 2) printf("O2GUESS\n");
               vguess = heap_order2.select(params.random_var_freq);
               if (vguess == var_Undef) return l_True;
-              check(assume(Lit(vguess, true)));
+              check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
             } else {
               check(assume(Lit(vguess, var_types[vguess] != OUTPUT_POS)));
               trie.new_snapshot(); undos.push_back(&trie);
@@ -968,7 +968,7 @@ lbool Solver::search()
               o2_guess = true;
               Var vguess = heap_order2.select(params.random_var_freq);
               if (vguess == var_Undef) guess = lit_Undef;
-              else guess = Lit(vguess, true);
+              else guess = Lit(vguess, var_types[vguess] != OUTPUT_POS);
             }
             if (guess == lit_Undef) {
               bubble_order.guess_line = old_guess_line1;
@@ -1021,7 +1021,7 @@ lbool Solver::search()
                 o2_guess = true;
                 Var vguess = heap_order2.select(params.random_var_freq);
                 if (vguess == var_Undef) guess = lit_Undef;
-                else guess = Lit(vguess, true);
+                else guess = Lit(vguess, var_types[vguess] != OUTPUT_POS);
               }
             } else {
               finish_order.add_snapshot();

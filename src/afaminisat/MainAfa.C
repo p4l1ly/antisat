@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <fcntl.h>
 #include <iterator>
-#include <lzma.h>
 
 using std::cout;
 using std::endl;
@@ -91,8 +90,9 @@ bool parse_cnfafa(
     int var = abs(output) - 1;
     Lit lit = output > 0 ? Lit(var) : Lit(var, true);
     all_outputs.push_back(lit);
-    VarType old_vartype = S.var_types[var];
 
+#ifndef NO_OUTPUTS
+    VarType old_vartype = S.var_types[var];
     if (old_vartype == OUTPUT_POSNEG) S.var_types[var] = OUTPUT_POSNEG;
     else if (old_vartype == OUTPUT_POS) {
       if (output < 0) S.var_types[var] = OUTPUT_POSNEG;
@@ -101,9 +101,19 @@ bool parse_cnfafa(
     } else {
       S.var_types[var] = output > 0 ? OUTPUT_POS : OUTPUT_NEG;
     }
+#endif
 
     ++i;
   }
+
+#ifdef NO_POSNEG_OUTPUTS
+  for (int output: outputs) {
+    int var = abs(output) - 1;
+    if (S.var_types[var] == OUTPUT_POSNEG) {
+      S.var_types[var] = GUESS_VAR;
+    }
+  }
+#endif
 
 #ifdef POSQ_OUTPUTS
   for (int posqOutput: posqOutputs) S.var_types[var(all_outputs[posqOutput])] = OUTPUT_POSQ;
@@ -206,7 +216,11 @@ bool run() {
   for (int i = 0; i < S.nVars(); ++i) {
     VarType vtype = S.var_types[i];
     if (vtype == OUTPUT_POS || vtype == OUTPUT_NEG || vtype == OUTPUT_POSNEG) {
+#ifdef ONE_ORDER
+      order2.push_back(i);
+#else
       order1.push_back(i);
+#endif
     } else if (vtype == GUESS_VAR) {
       order2.push_back(i);
     }
@@ -410,8 +424,6 @@ bool run() {
       }
       if (verbosity >= 2) printf("NEXT\n");
     }
-
-    // TODO nLearnts
 
     ++unsatCnt;
 
