@@ -25,8 +25,6 @@ class WatchVarOrder: Undoable {
     std::vector<unsigned> var_ixs;
     std::vector<unsigned> snapshots;
     std::vector<pair<int, int>> barriers;
-    std::vector<WatchInfo> watch_infos;
-    std::vector<int> skipped_candidates;
     const unsigned max_bubble_moves = 5;
     const double tolerance_increase = 1.05;
 #ifdef AFA
@@ -36,6 +34,8 @@ class WatchVarOrder: Undoable {
 #endif
 
 public:
+    std::vector<int> skipped_candidates;
+    std::vector<WatchInfo> watch_infos;
     unsigned guess_line = 0;
     std::vector<Var> order;
     double tolerance = 10.0;

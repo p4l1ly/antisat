@@ -26,8 +26,8 @@ flags0 = [
     (["afa", "trie"], ("MODE", "AFA_TRIE_WATCH_HEAP"), [["watch"]]),
     (["afa", "trie"], ("MODE", "AFA_TRIE_WATCH_BUBBLE"), [["watch"]]),
     (["afa", "trie"], ("MODE", "AFA_TRIE_WATCH_WATCH"), [["watch"]]),
-    # ([], ("NEW_ANALYZE", "OFF"), [[]]),
-    ([], ("NEW_ANALYZE", "ON"), [[]]),
+    ([], ("NEW_ANALYZE", "OFF"), [[]]),
+    # ([], ("NEW_ANALYZE", "ON"), [[]]),
     # ([], ("STRENGTHENCC", "OFF"), [[]]),
     ([], ("STRENGTHENCC", "ON"), [[]]),
     # (["sat", "trie"], ("SOLIDIFY", "OFF"), [[]]),
@@ -94,8 +94,6 @@ def recur(flags, options: frozenset, settings_keys: frozenset, settings: frozens
             found_continuation = True
 
     if not found_continuation:
-        if settings == frozenset(("-DNEW_ANALYZE=ON", "-DSTRENGTHENCC=ON")):
-            print("HEY ", options, flags, settings_keys)
         results.add(settings)
 
 recur(flags0, frozenset(), frozenset(), frozenset())

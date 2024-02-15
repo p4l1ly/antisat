@@ -143,7 +143,7 @@ bool Trie::add_clause(
         deepest_place = verheadptr;
         --deepest_place;
 
-        *horline.ptr_to_first = next;
+        *horline.ptr_to_first = next = &horline.elems[0];
 
         while(true) {
           Head *dual_next = next->dual_next;
@@ -714,7 +714,9 @@ void Trie::undo(Solver& S) {
       cout
         << " " << psnap.last_change_level
         << " " << psnap.minus_snapshot
+#ifdef AFA
         << " " << psnap.deepest_rightmost_guard
+#endif
         << endl;
     }
 
@@ -960,7 +962,7 @@ Head* Trie::reset(Solver &S) {
   root_minus_snapshots.clear_nodestroy();
 
 #ifdef ALL_SOLO
-  root->full_multimove_on_propagate_solo(S, multimove_ctx.after_right(root), NULL);
+  return root->full_multimove_on_propagate_solo(S, multimove_ctx.after_right(root), NULL);
 #else
   pair<Head*, WhatToDo> move0 = pair(root, multimove_ctx2.after_right(root));
   pair<Head*, MultimoveEnd> move = multimove_ctx2.first(move0);
@@ -1022,9 +1024,9 @@ Head* Trie::reset(Solver &S) {
 
     move = multimove_ctx2.next();
   }
-#endif
 
   return NULL;
+#endif
 }
 
 unsigned Head::count() {

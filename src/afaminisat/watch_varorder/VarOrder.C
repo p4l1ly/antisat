@@ -139,8 +139,6 @@ Lit WatchVarOrder::select(Solver &S)
     }
 #endif
 
-    if (guess_line == order.size()) return lit_Undef;
-
     const int level = S.decisionLevel();
 
     while (!skipped_candidates.empty()) {
@@ -210,8 +208,6 @@ Lit WatchVarOrder::select(Solver &S)
 #endif
 
     }
-
-    if (verbosity >= -3) printf("MOVING_GUESS_LINE0 %d %d\n", guess_line, level);
 
     // Activity based decision:
     while (guess_line != order.size()) {

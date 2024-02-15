@@ -24,6 +24,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include <iostream>
 #include <cstdlib>
 
+using std::cout;
+using std::endl;
+
 
 //=================================================================================================
 // Debug:
