@@ -11,8 +11,9 @@
             "-DTRIE_FOR_INPUT",
             "-DNEW_ANALYZE",
             "-DSOLIDIFY",
-            "-DAFA"
-            "-DCELL_CONTAINER_SET"
+            "-DAFA",
+            "-DCELL_CONTAINER_SET",
+            "-DFIXED_ORDER"
           ]
         }
       }

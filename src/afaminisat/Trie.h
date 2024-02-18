@@ -329,7 +329,8 @@ public:
     unsigned clause_count,
     vector<unsigned> &sharing_set,
     vector<Horline> &horlines,
-    vector<Head*> &verlines
+    vector<Head*> &verlines,
+    vec<char> &mask
   );
 };
 

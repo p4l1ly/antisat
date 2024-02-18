@@ -1,3 +1,4 @@
+import random
 import subprocess
 import sys
 import time
@@ -29,7 +30,8 @@ def measure_with(i, j, program):
 ANTISAT_COUNT = 243
 CRYPTOMINISAT_COUNT = 6
 
-for i in range(1, 13001, 52):
+random.seed("qveo3tj309rfkv240")
+for i in random.sample(range(1, 13001), 100):
     for j in range(ANTISAT_COUNT):
         measure_with(i, j, f"./build{j}/triesat")
 

@@ -1,6 +1,7 @@
 import asyncio
 import asyncio.subprocess
 import os
+import random
 import sys
 import time
 from functools import partial
@@ -437,11 +438,73 @@ async def check_stdin_unpacked(problem, program):
             p.kill()
             return b"TimeoutError"
 
+
+async def unxz(problem):
+    with open(problem, "r") as f:
+        with open("../data/unxz.cnf", "r") as f2:
+            p = await asyncio.create_subprocess_exec(
+                "unxz",
+                stdout=f2,
+                stdin=f,
+            )
+            await unxz.wait()
+
+async def presort_clauses():
+    with open("../data/presort.cnf", "r") as f2:
+        p = await asyncio.create_subprocess_exec(
+            "python3",
+            "presort_clauses.py",
+            "../data/unxz.cnf",
+            "qewe23",
+            stdout=f2,
+        )
+        await p.wait()
+
+async def check_stdin_unpacked2(problem, program):
+    with open(problem, "r") as f:
+        read, write = os.pipe()
+        read2, write2 = os.pipe()
+
+        unxz = await asyncio.create_subprocess_exec(
+            "unxz",
+            stdout=write,
+            stdin=f,
+        )
+
+        os.close(write)
+
+        py = await asyncio.create_subprocess_exec(
+            "python3",
+            "presort_clauses.py",
+            "0",
+            "qewe23",
+            stdin=read,
+            stdout=write2,
+        )
+
+        os.close(read)
+        os.close(write2)
+
+        p = await asyncio.create_subprocess_exec(
+            program,
+            stdin=read2,
+            stdout=asyncio.subprocess.PIPE,
+        )
+
+        os.close(read2)
+
+        assert p.stdout is not None
+        try:
+            return await asyncio.wait_for(p.stdout.read(), TIMEOUT)
+        except asyncio.TimeoutError:
+            p.kill()
+            return b"TimeoutError"
+
 loop = asyncio.get_event_loop()
 
-def check_antisat(problem, program):
+def check_antisat(problem, program, check):
     try:
-        stdout = loop.run_until_complete(check_stdin_unpacked(problem, program))
+        stdout = loop.run_until_complete(check(problem, program))
     except Exception as e:
         return e.__class__.__name__
     if stdout == b"TimeoutError":
@@ -454,31 +517,114 @@ def check_antisat(problem, program):
     return "UNEXPECTED"
 
 
-def antisat(i):
-    return f"antisat{i}", partial(check_antisat, program=f"./buildsat{i}/triesat")
+def antisat(i, presort):
+    if presort:
+        return f"antisat{i}p", partial(check_antisat, program=f"./buildsat{i}/triesat", check=check_stdin_unpacked2)
+    else:
+        return f"antisat{i}", partial(check_antisat, program=f"./buildsat{i}/triesat", check=check_stdin_unpacked)
+
+
+def check_minisat(problem, program):
+    try:
+        stdout = loop.run_until_complete(check_stdin_unpacked(problem, program))
+    except Exception as e:
+        return e.__class__.__name__
+    if stdout == b"TimeoutError":
+        return "TimeoutError"
+    stdout_last = stdout.split(b"\n")[-2]
+    if stdout_last == b"SATISFIABLE":
+        return "SAT"
+    if stdout_last == b"UNSATISFIABLE":
+        return "UNSAT"
+    return "UNEXPECTED"
+
+
+def minisat(version):
+    program = f"../MiniSat_v{version}/minisat"
+    return f"minisat{version}", partial(check_minisat, program=program)
+
+
+def check_s(check):
+    try:
+        stdout = loop.run_until_complete(check())
+    except Exception as e:
+        return e.__class__.__name__
+    if stdout == b"TimeoutError":
+        return "TimeoutError"
+    stdout_lines = stdout.split(b"\n")
+    if b"s SATISFIABLE" in stdout_lines:
+        return "SAT"
+    if b"s UNSATISFIABLE" in stdout_lines:
+        return "UNSAT"
+    return "UNEXPECTED"
+
+
+def cadical():
+    program = f"../cadical/build/cadical"
+    return f"cadical", lambda problem: check_s(lambda: check_stdin_unpacked(problem, program))
+
+
+def cryptominisat():
+    program = f"../cryptominisat/build/cryptominisat5"
+    return f"cryptominisat", lambda problem: check_s(lambda: check_stdin_unpacked(problem, program))
+
+
+async def check_sbva_cadical(problem):
+    p = await asyncio.create_subprocess_exec(
+        "./sbva_wrapped",
+        "../cadical/build/cadical",
+        problem,
+        "/tmp/sbva.out",
+        cwd="../SBVA",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+    assert p.stdout is not None
+    try:
+        return await asyncio.wait_for(p.stdout.read(), TIMEOUT)
+    except asyncio.TimeoutError:
+        p.kill()
+        return b"TimeoutError"
+
+def svba_cadical():
+    return f"cryptominisat", lambda problem: check_s(lambda: check_sbva_cadical(problem))
 
 
 PROGRAMS = (
-    *(antisat(i) for i in range(18)),
+    *(antisat(i, False) for i in range(18)),
+    *(antisat(i, True) for i in range(18)),
+    minisat("1.12b"),
+    minisat("1.14"),
+    cadical(),
+    cryptominisat(),
+    svba_cadical(),
 )
+
 
 times_f = open("times_sat.csv", "w")
 results_f = open("results_sat.csv", "w")
 
 
 def measure_with(problem, program):
-    print(f"{problem}\t{program[0]}", end="\t")
+    print(f"{problem}\t{program[0]}", end="\t", flush=True)
     tic = time.time()
     result = program[1](problem=problem)
-    print(result, end=" ", file=results_f)
+    print(result, end=" ", file=results_f, flush=True)
     toc = time.time()
-    print(f"{result}\t{toc - tic:.2f}")
-    print(f"{toc - tic:.2f}", end=" ", file=times_f)
+    print(f"{result}\t{toc - tic:.2f}", flush=True)
+    print(f"{toc - tic:.2f}", end=" ", file=times_f, flush=True)
 
 
-for problem in PROBLEMS:
-    for program in PROGRAMS:
-        measure_with(problem, program)
+random.seed("qveo3tj309rfkv240")
+for i, problem in enumerate(random.sample(PROBLEMS, 100)):
+    if i == 21:
+        print(problem)
+        for j, program in enumerate(PROGRAMS):
+            if j == 26:
+                print(program)
+    # for program in PROGRAMS:
+    #     measure_with(problem, program)
 
-    print(file=results_f)
-    print(file=times_f)
+    # print(file=results_f, flush=True)
+    # print(file=times_f, flush=True)

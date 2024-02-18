@@ -24,6 +24,7 @@ option(WATCH_LEARNT_WATCH "learnt clauses have impact on watch bubble order" OFF
 option(NO_POSNEG_OUTPUTS "output literals that appear in both signs are not outputs" ON)
 option(ONE_ORDER "guessing of output literals is not prioritized" OFF)
 option(NO_OUTPUTS "output literals have no special meaning in the sat (except that they appear in the antichain)" OFF)
+option(FIXED_ORDER "trie has fixed variable order" OFF)
 
 set(MODE "${MODE}" CACHE STRING "modus_operandi" FORCE)
 
@@ -248,6 +249,10 @@ endif()
 
 if (NO_OUTPUTS)
   set(FLAGS "${FLAGS} -DNO_POSNEG_OUTPUTS -DNO_OUTPUTS")
+endif()
+
+if (FIXED_ORDER)
+  set(FLAGS "${FLAGS} -DFIXED_ORDER")
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}")

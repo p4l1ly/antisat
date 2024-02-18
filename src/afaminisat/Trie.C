@@ -17,170 +17,195 @@ bool Trie::add_clause(
   unsigned clause_count,
   vector<unsigned> &sharing_set,
   vector<Horline> &horlines,
-  vector<Head*> &verlines
+  vector<Head*> &verlines,
+  vec<char> &mask
 ) {
-  vec<char> mask;
-  mask.growTo(S.nVars(), 0);
+  bool result;
   vector<Lit> preprocessed_clause;
+  {
+    for (Lit lit: clause) {
+      lbool sval = S.value(lit);
+      if (sval == l_True) {result = true; goto finally;}
+      if (sval == l_False) continue;
 
-  for (Lit lit: clause) {
-    lbool sval = S.value(lit);
-    if (sval == l_True) return true;
-    if (sval == l_False) continue;
+      char old_val = mask[var(lit)];
+      char new_val = sign(lit) ? 1 : -1;
 
-    char old_val = mask[var(lit)];
-    char new_val = sign(lit) ? 1 : -1;
-
-    if (old_val == -new_val) return true;
-    if (old_val == 0) {
-      mask[var(lit)] = new_val;
-      preprocessed_clause.push_back(lit);
+      if (old_val == -new_val) {result = true; goto finally;}
+      if (old_val == 0) {
+        mask[var(lit)] = new_val;
+        preprocessed_clause.push_back(lit);
+      }
     }
-  }
 
-  if (preprocessed_clause.size() == 0) return false;
-  if (preprocessed_clause.size() == 1) {
-    check(S.enqueue(preprocessed_clause[0]));
-    return true;
-  }
-
-  if (root == NULL) {
-    Horline &horline = horlines.emplace_back(&root, (Head*)NULL);
-    Head &verhead = horline.elems.emplace_back(preprocessed_clause[0]);
-
-    unsigned depth = 0;
-    root = &verhead;
-
-    Head *verline = verlines.emplace_back(new Head[preprocessed_clause.size() - 1]);
-
-    Head *above = &verhead;
-    for (unsigned i = 1; i != preprocessed_clause.size(); ++i) {
-      Head &horhead = verline[i - 1];
-      horhead.tag = preprocessed_clause[i];
-      horhead.above = above;
-
-      if (i == 1) verhead.dual_next = &horhead;
-      else above->next = &horhead;
-
-      horhead.depth = ++depth;
-
-      above = &horhead;
+    if (preprocessed_clause.size() == 0) {result = false; goto finally;}
+    if (preprocessed_clause.size() == 1) {
+      check(S.enqueue(preprocessed_clause[0]));
+      result = true; goto finally;
     }
-    return true;
-  }
 
-  Head *deepest_place;
-  int max_depth = -1;
+    if (root == NULL) {
+      Horline &horline = horlines.emplace_back(&root, (Head*)NULL);
+      Head &verhead = horline.elems.emplace_back(preprocessed_clause[0]);
 
-  MultimoveCtx ctx(mask);
-  pair<Head*, MultimoveEnd> move = ctx.first(pair(root, ctx.after_right(root)));
+      unsigned depth = 0;
+      root = &verhead;
 
-  while (move.first != NULL) {
-    switch (move.second) {
-      case MultimoveEnd::E_EXHAUST: return true;
-      default: {
-        if ((int)move.first->depth > max_depth) {
-          if (move.first->is_ver) {
-            if (move.first->dual_next != NULL) break;
-          } else {
-            if (move.first->next != NULL) break;
-          }
-          if (verbosity >= 2) cout << "MAX_DEPTH " << move.first->depth << endl;
-          max_depth = move.first->depth;
-          deepest_place = move.first;
+      Head *verline = verlines.emplace_back(new Head[preprocessed_clause.size() - 1]);
+
+      Head *above = &verhead;
+      for (unsigned i = 1; i != preprocessed_clause.size(); ++i) {
+        Head &horhead = verline[i - 1];
+        horhead.tag = preprocessed_clause[i];
+        horhead.above = above;
+
+        if (i == 1) verhead.dual_next = &horhead;
+        else above->next = &horhead;
+
+        horhead.depth = ++depth;
+
+        above = &horhead;
+      }
+      result = true; goto finally;
+    }
+
+    Head *deepest_place;
+
+#ifdef FIXED_ORDER
+    deepest_place = root;
+
+    {
+      int i = 0;
+      while (true) {
+        if (deepest_place->tag == preprocessed_clause[i]) {
+          deepest_place = deepest_place->down();
+          if (deepest_place == NULL) {result = true; goto finally;}
+        } else {
+          Head *right = deepest_place->right();
+          if (right) deepest_place = right;
+          else break;
         }
       }
     }
-    move = ctx.next();
-  }
+#else
 
-  {
-    Head *zero_iter = deepest_place;
-    while (true) {
-      if (zero_iter->is_ver) zero_iter = zero_iter->above;
-      else zero_iter = horlines[zero_iter->external].above;
+    int max_depth = -1;
 
-      if (zero_iter == NULL) break;
-      sharing_set[index(zero_iter->tag)] = clause_count;
-    }
-  }
+    MultimoveCtx ctx(mask);
+    pair<Head*, MultimoveEnd> move = ctx.first(pair(root, ctx.after_right(root)));
 
-  vector<Lit> added_vars;
-  for (Lit lit: preprocessed_clause) {
-    if (sharing_set[index(lit)] != clause_count) {
-      added_vars.emplace_back(lit);
-    }
-  }
-
-  if (added_vars.empty()) {
-    Head *above = deepest_place;
-    if (above->is_ver) above = above->above;
-    else above = horlines[above->external].above;
-
-    if (above->is_ver) above->next = NULL;
-    else above->dual_next = NULL;
-
-    return true;
-  }
-
-  {
-    Head *verheadptr;
-    int horline_ix;
-
-    if (deepest_place->is_ver) {
-      horline_ix = horlines.size();
-      deepest_place->external = horline_ix;
-      Horline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place->above);
-      verheadptr = &horline.elems.emplace_back(added_vars[0]);
-    } else {
-      horline_ix = deepest_place->external;
-      Horline &horline = horlines[horline_ix];
-      bool realloc = horline.elems.capacity() == horline.elems.size();
-      verheadptr = &horline.elems.emplace_back(added_vars[0]);
-
-      Head *next;
-      if (realloc) {
-        deepest_place = verheadptr;
-        --deepest_place;
-
-        *horline.ptr_to_first = next = &horline.elems[0];
-
-        while(true) {
-          Head *dual_next = next->dual_next;
-          if (dual_next != NULL) {
-            dual_next->above = next;
-            if (dual_next->dual_next != NULL) horlines[dual_next->external].above = next;
+    while (move.first != NULL) {
+      switch (move.second) {
+        case MultimoveEnd::E_EXHAUST: result = true; goto finally;
+        default: {
+          if ((int)move.first->depth > max_depth) {
+            if (move.first->is_ver) {
+              if (move.first->dual_next != NULL) break;
+            } else {
+              if (move.first->next != NULL) break;
+            }
+            if (verbosity >= 2) cout << "MAX_DEPTH " << move.first->depth << endl;
+            max_depth = move.first->depth;
+            deepest_place = move.first;
           }
-          Head *prev = next++;
-          if (next == verheadptr) break;
-          prev->next = next;
         }
       }
+      move = ctx.next();
     }
-    Head &verhead = *verheadptr;
+#endif
 
-    verhead.next = NULL;
-    verhead.external = horline_ix;
-    unsigned depth = verhead.depth = deepest_place->depth;
-    if (deepest_place->is_ver) deepest_place->dual_next = verheadptr;
-    else deepest_place->next = verheadptr;
+    {
+      Head *zero_iter = deepest_place;
+      while (true) {
+        if (zero_iter->is_ver) zero_iter = zero_iter->above;
+        else zero_iter = horlines[zero_iter->external].above;
 
-    Head *verline = verlines.emplace_back(new Head[added_vars.size() - 1]);
-
-    Head *above = verheadptr;
-    for (unsigned i = 1; i != added_vars.size(); ++i) {
-      Head &horhead = verline[i - 1];
-      horhead.tag = added_vars[i];
-      horhead.above = above;
-
-      if (i == 1) verhead.dual_next = &horhead;
-      else above->next = &horhead;
-
-      horhead.depth = ++depth;
-      above = &horhead;
+        if (zero_iter == NULL) break;
+        sharing_set[index(zero_iter->tag)] = clause_count;
+      }
     }
+
+    vector<Lit> added_vars;
+    for (Lit lit: preprocessed_clause) {
+      if (sharing_set[index(lit)] != clause_count) {
+        added_vars.emplace_back(lit);
+      }
+    }
+
+    if (added_vars.empty()) {
+      Head *above = deepest_place;
+      if (above->is_ver) above = above->above;
+      else above = horlines[above->external].above;
+
+      if (above->is_ver) above->next = NULL;
+      else above->dual_next = NULL;
+
+      result = true; goto finally;
+    }
+
+    {
+      Head *verheadptr;
+      int horline_ix;
+
+      if (deepest_place->is_ver) {
+        horline_ix = horlines.size();
+        deepest_place->external = horline_ix;
+        Horline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place->above);
+        verheadptr = &horline.elems.emplace_back(added_vars[0]);
+      } else {
+        horline_ix = deepest_place->external;
+        Horline &horline = horlines[horline_ix];
+        bool realloc = horline.elems.capacity() == horline.elems.size();
+        verheadptr = &horline.elems.emplace_back(added_vars[0]);
+
+        Head *next;
+        if (realloc) {
+          deepest_place = verheadptr;
+          --deepest_place;
+
+          *horline.ptr_to_first = next = &horline.elems[0];
+
+          while(true) {
+            Head *dual_next = next->dual_next;
+            if (dual_next != NULL) {
+              dual_next->above = next;
+              if (dual_next->dual_next != NULL) horlines[dual_next->external].above = next;
+            }
+            Head *prev = next++;
+            if (next == verheadptr) break;
+            prev->next = next;
+          }
+        }
+      }
+      Head &verhead = *verheadptr;
+
+      verhead.next = NULL;
+      verhead.external = horline_ix;
+      unsigned depth = verhead.depth = deepest_place->depth;
+      if (deepest_place->is_ver) deepest_place->dual_next = verheadptr;
+      else deepest_place->next = verheadptr;
+
+      Head *verline = verlines.emplace_back(new Head[added_vars.size() - 1]);
+
+      Head *above = verheadptr;
+      for (unsigned i = 1; i != added_vars.size(); ++i) {
+        Head &horhead = verline[i - 1];
+        horhead.tag = added_vars[i];
+        horhead.above = above;
+
+        if (i == 1) verhead.dual_next = &horhead;
+        else above->next = &horhead;
+
+        horhead.depth = ++depth;
+        above = &horhead;
+      }
+    }
+    result = true;
   }
-  return true;
+
+finally:
+  for (Lit lit: preprocessed_clause) mask[var(lit)] = 0;
+  return result;
 }
 
 

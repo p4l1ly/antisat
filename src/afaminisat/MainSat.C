@@ -16,6 +16,7 @@
 #include <lzma.h>
 
 using std::cout;
+using std::cerr;
 using std::endl;
 using std::vector;
 using std::string;
@@ -51,6 +52,8 @@ bool parse_dimacs(
   for (int i = nVars; i; --i) S.newVar();
 
 #ifdef TRIE_FOR_INPUT
+  vec<char> mask;
+  mask.growTo(S.nVars(), 0);
 
   vector<Lit> lits;
   vector<unsigned> sharing_set;
@@ -66,10 +69,14 @@ bool parse_dimacs(
         cout << endl;
       }
 
-      if (!S.trie.add_clause(lits, S, S.nConstrs, sharing_set, horlines, verlines)) return false;
+      if (!S.trie.add_clause(lits, S, S.nConstrs, sharing_set, horlines, verlines, mask)) return false;
       ++S.nConstrs;
       lits.clear();
       --nClauses;
+
+      if (S.nConstrs % 10000 == 0) {
+        cerr << "PARSED_CLAUSES " << S.nConstrs << endl << std::flush;
+      }
     } else {
       lits.emplace_back(abs(n) - 1, n < 0);
     }
@@ -96,6 +103,10 @@ bool parse_dimacs(
 
       lits.clear();
       --nClauses;
+
+      if (S.nConstrs % 10000 == 0) {
+        cerr << "PARSED_CLAUSES " << S.nConstrs << endl << std::flush;
+      }
     } else {
       lits.push(Lit(abs(n) - 1, n < 0));
     }
@@ -139,9 +150,11 @@ bool run() {
 
   {
     Solver S;
+    cerr << "PARSE" << endl;
     if (!parse_dimacs(S, horlines, verlines, clauses_ww)) goto dealloc;
 
 #ifdef SOLIDIFY
+    cerr << "SOLIDIFY" << endl;
     solid = S.trie.solidify();
 #endif
 
@@ -167,6 +180,7 @@ bool run() {
     }
 #endif
 
+    cerr << "SOLVING" << endl;
     if (verbosity >= -3) printf("SOLVING\n");
 
 #ifdef USE_TRIE
