@@ -8,6 +8,7 @@
 #include <fstream>
 #include <map>
 #include <stdint.h>
+#include <unordered_map>
 
 #include "Constraints.h"
 #include "LogList.h"
@@ -18,6 +19,7 @@ using std::pair;
 using std::vector;
 using std::unordered_set;
 using std::map;
+using std::unordered_map;
 
 //=================================================================================================
 
@@ -135,7 +137,7 @@ struct Guard {
 class MultimoveCtx {
 public:
   vec<char> &assigns;
-  vector<pair<Head*, WhatToDo>> stack;
+  vector<Head*> stack;
 
   MultimoveCtx(vec<char> &assigns_) : assigns(assigns_) {}
 
@@ -267,6 +269,10 @@ struct Horline {
   Head** ptr_to_first;
   Head* above;
   vector<Head> elems;
+
+#ifdef FIXED_ORDER
+  unordered_map<int, int> lit_to_ix;
+#endif
 
   Horline(Head** ptr_to_first_, Head *above_) : ptr_to_first(ptr_to_first_), above(above_) {}
 };

@@ -1,10 +1,13 @@
 import asyncio
 import asyncio.subprocess
+import subprocess
 import os
 import random
 import sys
 import time
+import traceback
 from functools import partial
+from typing import Union
 
 PROBLEMS = (
     "../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz",
@@ -411,104 +414,90 @@ PROBLEMS = (
 
 TIMEOUT = float(sys.argv[1])
 
-async def check_stdin_unpacked(problem, program):
-    with open(problem, "r") as f:
-        read, write = os.pipe()
 
-        unxz = await asyncio.create_subprocess_exec(
-            "unxz",
-            stdout=write,
-            stdin=f,
-        )
-
-        os.close(write)
-
-        p = await asyncio.create_subprocess_exec(
-            program,
-            stdin=read,
-            stdout=asyncio.subprocess.PIPE,
-        )
-
-        os.close(read)
-
-        assert p.stdout is not None
-        try:
-            return await asyncio.wait_for(p.stdout.read(), TIMEOUT)
-        except asyncio.TimeoutError:
-            p.kill()
-            return b"TimeoutError"
+class TimeoutError(Exception):
+    def __str__(self):
+        return "TimeoutError"
 
 
-async def unxz(problem):
-    with open(problem, "r") as f:
-        with open("../data/unxz.cnf", "r") as f2:
+class ReturnCodeError(Exception):
+    def __init__(self, returncode):
+        self.returncode = returncode
+
+    def __str__(self):
+        return f"ReturnCode{self.returncode}"
+
+
+class NotFoundError(Exception):
+    def __str__(self):
+        return "NotFound"
+
+
+async def check_stdin_unpacked(problem, program) -> Union[bytes, Exception]:
+    try:
+        with open(problem, "r") as f:
             p = await asyncio.create_subprocess_exec(
-                "unxz",
-                stdout=f2,
+                program,
                 stdin=f,
+                stdout=asyncio.subprocess.PIPE,
             )
-            await unxz.wait()
 
-async def presort_clauses():
-    with open("../data/presort.cnf", "r") as f2:
-        p = await asyncio.create_subprocess_exec(
-            "python3",
-            "presort_clauses.py",
-            "../data/unxz.cnf",
-            "qewe23",
-            stdout=f2,
-        )
-        await p.wait()
+            assert p.stdout is not None
+            try:
+                result = await asyncio.wait_for(p.stdout.read(), TIMEOUT)
 
-async def check_stdin_unpacked2(problem, program):
+                # check status code
+                if await p.wait() not in (0, 10, 20):
+                    return ReturnCodeError(p.returncode)
+
+                return result
+            except asyncio.TimeoutError:
+                p.terminate()
+                return TimeoutError()
+    except FileNotFoundError:
+        return NotFoundError()
+
+
+def unxz(problem):
     with open(problem, "r") as f:
-        read, write = os.pipe()
-        read2, write2 = os.pipe()
+        with open("../data/unxz.cnf", "w") as f2:
+            p = subprocess.Popen("unxz", stdout=f2, stdin=f)
+            p.wait()
+    return "OK"
 
-        unxz = await asyncio.create_subprocess_exec(
-            "unxz",
-            stdout=write,
-            stdin=f,
-        )
 
-        os.close(write)
+def presort_clauses(mode="global", seed="", shuffle=True, sbva=False):
+    path = f"../data/presort{'_sbva' if sbva else ''}.cnf"
+    try:
+        with open(path, "w") as f2:
+            p = subprocess.Popen(
+                (
+                    "python3",
+                    "presort_clauses.py",
+                    f"../data/{'sbva' if sbva else 'unxz'}.cnf",
+                    seed,
+                    mode,
+                    "shuffle" if shuffle else "noshuffle",
+                ),
+                stdout=f2,
+            )
+            p.wait()
+        return "OK"
+    except FileNotFoundError:
+        os.remove(path)
+        return "NotFound"
 
-        py = await asyncio.create_subprocess_exec(
-            "python3",
-            "presort_clauses.py",
-            "0",
-            "qewe23",
-            stdin=read,
-            stdout=write2,
-        )
-
-        os.close(read)
-        os.close(write2)
-
-        p = await asyncio.create_subprocess_exec(
-            program,
-            stdin=read2,
-            stdout=asyncio.subprocess.PIPE,
-        )
-
-        os.close(read2)
-
-        assert p.stdout is not None
-        try:
-            return await asyncio.wait_for(p.stdout.read(), TIMEOUT)
-        except asyncio.TimeoutError:
-            p.kill()
-            return b"TimeoutError"
 
 loop = asyncio.get_event_loop()
 
-def check_antisat(problem, program, check):
+
+def check_antisat(problem, program):
     try:
-        stdout = loop.run_until_complete(check(problem, program))
+        stdout = loop.run_until_complete(check_stdin_unpacked(problem, program))
     except Exception as e:
         return e.__class__.__name__
-    if stdout == b"TimeoutError":
-        return "TimeoutError"
+    if isinstance(stdout, Exception):
+        return str(stdout)
     stdout_last = stdout.split(b"\n")[-2]
     if stdout_last == b"SAT":
         return "SAT"
@@ -517,11 +506,11 @@ def check_antisat(problem, program, check):
     return "UNEXPECTED"
 
 
-def antisat(i, presort):
-    if presort:
-        return f"antisat{i}p", partial(check_antisat, program=f"./buildsat{i}/triesat", check=check_stdin_unpacked2)
-    else:
-        return f"antisat{i}", partial(check_antisat, program=f"./buildsat{i}/triesat", check=check_stdin_unpacked)
+def antisat(i, inp, build_suffix, name_suffix):
+    return (
+        f"antisat{name_suffix}{i}",
+        lambda _: check_antisat(f"../data/{inp}.cnf", f"./buildsat{build_suffix}{i}/triesat")
+    )
 
 
 def check_minisat(problem, program):
@@ -529,8 +518,8 @@ def check_minisat(problem, program):
         stdout = loop.run_until_complete(check_stdin_unpacked(problem, program))
     except Exception as e:
         return e.__class__.__name__
-    if stdout == b"TimeoutError":
-        return "TimeoutError"
+    if isinstance(stdout, Exception):
+        return str(stdout)
     stdout_last = stdout.split(b"\n")[-2]
     if stdout_last == b"SATISFIABLE":
         return "SAT"
@@ -539,18 +528,19 @@ def check_minisat(problem, program):
     return "UNEXPECTED"
 
 
-def minisat(version):
+def minisat(version, inp):
     program = f"../MiniSat_v{version}/minisat"
-    return f"minisat{version}", partial(check_minisat, program=program)
+    return f"minisat{version}_{inp}", lambda _: check_minisat(f"../data/{inp}.cnf", program)
 
 
 def check_s(check):
     try:
-        stdout = loop.run_until_complete(check())
+        stdout = loop.run_until_complete(check)
     except Exception as e:
+        traceback.print_exc()
         return e.__class__.__name__
-    if stdout == b"TimeoutError":
-        return "TimeoutError"
+    if isinstance(stdout, Exception):
+        return str(stdout)
     stdout_lines = stdout.split(b"\n")
     if b"s SATISFIABLE" in stdout_lines:
         return "SAT"
@@ -559,72 +549,112 @@ def check_s(check):
     return "UNEXPECTED"
 
 
-def cadical():
+def cadical(inp):
     program = f"../cadical/build/cadical"
-    return f"cadical", lambda problem: check_s(lambda: check_stdin_unpacked(problem, program))
+    return f"cadical_{inp}", lambda _: check_s(check_stdin_unpacked(f"../data/{inp}.cnf", program))
 
 
-def cryptominisat():
+def cryptominisat(inp):
     program = f"../cryptominisat/build/cryptominisat5"
-    return f"cryptominisat", lambda problem: check_s(lambda: check_stdin_unpacked(problem, program))
+    return f"cryptominisat_{inp}", lambda _: check_s(check_stdin_unpacked(f"../data/{inp}.cnf", program))
 
 
-async def check_sbva_cadical(problem):
-    p = await asyncio.create_subprocess_exec(
-        "./sbva_wrapped",
-        "../cadical/build/cadical",
-        problem,
-        "/tmp/sbva.out",
-        cwd="../SBVA",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+def sbva():
+    p = subprocess.run(
+        (
+            "../SBVA/sbva",
+            "-i",
+            "../data/unxz.cnf",
+            "-o",
+            "../data/sbva.cnf",
+            "-t",
+            str(int(TIMEOUT)),
+        ),
     )
 
-    assert p.stdout is not None
-    try:
-        return await asyncio.wait_for(p.stdout.read(), TIMEOUT)
-    except asyncio.TimeoutError:
-        p.kill()
-        return b"TimeoutError"
+    if p.returncode != 0:
+        os.remove("../data/sbva.cnf")
+        return "SbvaError"
 
-def svba_cadical():
-    return f"cryptominisat", lambda problem: check_s(lambda: check_sbva_cadical(problem))
+    return "OK"
 
 
 PROGRAMS = (
-    *(antisat(i, False) for i in range(18)),
-    *(antisat(i, True) for i in range(18)),
-    minisat("1.12b"),
-    minisat("1.14"),
-    cadical(),
-    cryptominisat(),
-    svba_cadical(),
+    ("unxz", unxz),
+    ("presort", lambda _: presort_clauses(mode="global", seed="", shuffle=False)),
+    ("sbva", lambda _: sbva()),
+    ("presort_sbva", lambda _: presort_clauses(mode="global", seed="", shuffle=False, sbva=True)),
+    *(antisat(i, "presort_sbva", "f", "_presort_fixedtrie_sbva") for i in range(12)),
+    *(antisat(i, "sbva", "f", "_fixedtrie_sbva") for i in range(12)),
+    *(antisat(i, "presort_sbva", "t", "_presort_trie_sbva") for i in range(12)),
+    *(antisat(i, "sbva", "t", "_trie_sbva") for i in range(12)),
+    *(antisat(i, "sbva", "", "_clause_sbva") for i in range(6)),
+    minisat("1.12b", "sbva"),
+    minisat("1.14", "sbva"),
+    cadical("sbva"),
+    cryptominisat("sbva"),
+    *(antisat(i, "presort", "f", "_presort_fixedtrie") for i in range(12)),
+    *(antisat(i, "unxz", "f", "_fixedtrie") for i in range(12)),
+    *(antisat(i, "presort", "t", "_presort_trie") for i in range(12)),
+    *(antisat(i, "unxz", "t", "_trie") for i in range(12)),
+    *(antisat(i, "unxz", "", "_clause") for i in range(6)),
+    minisat("1.12b", "unxz"),
+    minisat("1.14", "unxz"),
+    cadical("unxz"),
+    cryptominisat("unxz"),
 )
 
+DRY_RUN = True
+WRITE_MODE = "a"
 
-times_f = open("times_sat.csv", "w")
-results_f = open("results_sat.csv", "w")
+if DRY_RUN:
+    times_f = sys.stdout
+    results_f = sys.stdout
+else:
+    times_f = open("times_sat.csv", WRITE_MODE)
+    results_f = open("results_sat.csv", WRITE_MODE)
 
 
-def measure_with(problem, program):
+def measure_with(problem, program, quiet=False):
     print(f"{problem}\t{program[0]}", end="\t", flush=True)
     tic = time.time()
-    result = program[1](problem=problem)
-    print(result, end=" ", file=results_f, flush=True)
+    result = program[1](problem)
+    if not quiet:
+        print(result, end=" ", file=results_f, flush=True)
     toc = time.time()
     print(f"{result}\t{toc - tic:.2f}", flush=True)
-    print(f"{toc - tic:.2f}", end=" ", file=times_f, flush=True)
+    if not quiet:
+        print(f"{toc - tic:.2f}", end=" ", file=times_f, flush=True)
 
 
 random.seed("qveo3tj309rfkv240")
-for i, problem in enumerate(random.sample(PROBLEMS, 100)):
-    if i == 21:
+for i, problem in enumerate(random.sample(PROBLEMS, 100)): # if i <= 25:
+    # if i < 18:
+    #     continue
+
+    if i != 49:
+        continue
+
+    if i == 49:
         print(problem)
         for j, program in enumerate(PROGRAMS):
-            if j == 26:
+            if j == 7:
                 print(program)
-    # for program in PROGRAMS:
-    #     measure_with(problem, program)
+            if j == 60:
+                print(program)
+
+    for j, program in enumerate(PROGRAMS):
+        if j < 4:
+            measure_with(problem, program, quiet=True)
+        elif j in (7, 60):
+            measure_with(problem, program, quiet=True)
+
+
+    # for j, program in enumerate(PROGRAMS):
+    #     if i > 18 or j >= 103:
+    #         measure_with(problem, program)
+    #     elif j < 4:
+    #         measure_with(problem, program, quiet=True)
 
     # print(file=results_f, flush=True)
     # print(file=times_f, flush=True)

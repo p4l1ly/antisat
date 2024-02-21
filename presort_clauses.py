@@ -2,7 +2,8 @@ from collections import Counter
 import sys
 import random
 
-random.seed(sys.argv[2])
+if sys.argv[2]:
+    random.seed(sys.argv[2])
 
 headers = []
 
@@ -51,8 +52,10 @@ for header in headers:
 
 print("all_vars", var_count, file=sys.stderr)
 all_vars = list(range(1, var_count + 1))
-print("shuffle", file=sys.stderr)
-random.shuffle(all_vars)
+
+if sys.argv[4] == "shuffle":
+    print("shuffle", file=sys.stderr)
+    random.shuffle(all_vars)
 
 print("renumber", file=sys.stderr)
 renumbering = [0] * 2 * (var_count + 1)
@@ -60,7 +63,9 @@ for i, var in enumerate(all_vars, 1):
     renumbering[var] = i
     renumbering[-var] = -i
 
-GLOBAL_SORT = False
+GLOBAL_SORT = sys.argv[3] == "global"
+RANDOM_SHUFFLE = sys.argv[3] == "random"
+NO_REORDER = sys.argv[3] == "noreorder"
 
 print("write", file=sys.stderr)
 
@@ -74,7 +79,12 @@ with open(sys.argv[1], "r") as f:
         for word in words:
             if word == "0":
                 clause = [renumbering[x] for x in clause]
-                clause.sort(key=lambda x: (-counter[x], x) if GLOBAL_SORT else -counter[x])
+                if NO_REORDER:
+                    pass
+                elif RANDOM_SHUFFLE:
+                    random.shuffle(clause)
+                else:
+                    clause.sort(key=lambda x: (-counter[x], x) if GLOBAL_SORT else -counter[x])
                 print(*clause, 0)
                 clause = []
             else:
