@@ -31,10 +31,8 @@ enum WhatToDo {
   WATCH,
   DONE,
   EXHAUST,
-  RIGHT_VER,
-  RIGHT_HOR,
-  DOWN_VER,
-  DOWN_HOR
+  RIGHT,
+  DOWN,
 };
 
 enum MultimoveEnd {
@@ -141,19 +139,12 @@ public:
 
   MultimoveCtx(vec<char> &assigns_) : assigns(assigns_) {}
 
-  pair<Head*, WhatToDo> move_down_ver(Head* x);
-  pair<Head*, WhatToDo> move_down_hor(Head* x);
-  pair<Head*, WhatToDo> move_right_ver(Head* x);
-  pair<Head*, WhatToDo> move_right_hor(Head* x);
-
   pair<Head*, WhatToDo> move_right(Head* x);
   pair<Head*, WhatToDo> move_down(Head* x);
 
-  void branch_ver(Head* x);
-  void branch_hor(Head* x);
+  void branch(Head* x);
 
-  WhatToDo after_right(Head* x);
-  WhatToDo after_down(Head* x);
+  WhatToDo get_what_to_do(Head* x);
 
   pair<Head *, MultimoveEnd> multimove(pair<Head *, WhatToDo> move);
   pair<Head *, MultimoveEnd> first(pair<Head *, WhatToDo> move);
@@ -168,8 +159,8 @@ public:
   // Constant fields.
   Lit tag;
   bool is_ver;
-  Head *next;
-  Head *dual_next;
+  Head *right;
+  Head *down;
   Head *above;
   unsigned external;
   unsigned depth;
@@ -183,8 +174,8 @@ public:
   Head()
   : tag(lit_Undef)
   , is_ver(true)
-  , next(NULL)
-  , dual_next(NULL)
+  , right(NULL)
+  , down(NULL)
   , above(NULL)
   , external(0)
   , depth(0)
@@ -195,8 +186,8 @@ public:
   Head(Lit tag_)
   : tag(tag_)
   , is_ver(false)
-  , next(NULL)
-  , dual_next(NULL)
+  , right(NULL)
+  , down(NULL)
   , above(NULL)
   , external(0)
   , depth(0)
@@ -207,8 +198,8 @@ public:
   Head(Head&& old) noexcept
   : tag(old.tag)
   , is_ver(old.is_ver)
-  , next(old.next)
-  , dual_next(old.dual_next)
+  , right(old.right)
+  , down(old.down)
   , above(old.above)
   , external(old.external)
   , depth(old.depth)
@@ -231,9 +222,6 @@ public:
 
   void remove    (Solver& S, bool just_dealloc = false) { };
   bool simplify  (Solver& S) { return false; };
-
-  inline Head* right() { return is_ver ? dual_next : next; }
-  inline Head* down() { return is_ver ? next : dual_next; }
 
   Head* full_multimove_on_propagate(
     Solver &S,

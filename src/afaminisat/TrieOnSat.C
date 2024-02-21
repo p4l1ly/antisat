@@ -113,10 +113,7 @@ void Trie::onSat(
     else cut = deepest_place->above->above;
 
     if (verbosity >= 2) cout << "NO_ADDED_VAR " << *cut << endl;
-
-    if (cut->is_ver) cut->next = NULL;
-    else cut->dual_next = NULL;
-
+    cut->down = NULL;
     S.cancelUntil(max_level);
     return;
   }
@@ -150,11 +147,10 @@ void Trie::onSat(
     }
     Head &verhead = *verheadptr;
 
-    verhead.next = NULL;
+    verhead.right = NULL;
     verhead.external = horline_ix;
     unsigned depth = verhead.depth = deepest_place->depth;
-    if (deepest_place->is_ver) deepest_place->dual_next = verheadptr;
-    else deepest_place->next = verheadptr;
+    deepest_place->right = verheadptr;
 
     Head *verline = verlines.emplace_back(new Head[added_vars.size() - 1]);
 
@@ -164,8 +160,8 @@ void Trie::onSat(
       horhead.tag = added_vars[i].second;
       horhead.above = above;
 
-      if (i == 1) verhead.dual_next = &horhead;
-      else above->next = &horhead;
+      if (i == 1) verhead.down = &horhead;
+      else above->down = &horhead;
 
       horhead.depth = ++depth;
       above = &horhead;
@@ -198,7 +194,7 @@ void Trie::onSat(
     while (last_van_level < last_rear_level) {
       int lvl;
       while ((lvl = S.level[var(van_place->tag)]) <= last_van_level) {
-        van_place = van_place->down();
+        van_place = van_place->down;
         if (van_place == NULL) goto no_van_place;
       }
       lvl = min(lvl, last_rear_level);
@@ -227,7 +223,7 @@ void Trie::onSat(
 #endif
 
     Head *rear_place = van_place;
-    van_place = van_place->down();
+    van_place = van_place->down;
 
     if (van_place == NULL) goto no_van_place;
 
@@ -235,7 +231,7 @@ void Trie::onSat(
       int lvl;
       while ((lvl = S.level[var(rear_place->tag)]) <= last_rear_level) {
         rear_place = van_place;
-        van_place = van_place->down();
+        van_place = van_place->down;
         if (van_place == NULL) goto no_van_place;
       }
 

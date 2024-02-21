@@ -63,8 +63,8 @@ bool Trie::add_clause(
         horhead.tag = preprocessed_clause[i];
         horhead.above = above;
 
-        if (i == 1) verhead.dual_next = &horhead;
-        else above->next = &horhead;
+        if (i == 1) verhead.down = &horhead;
+        else above->down = &horhead;
 
         horhead.depth = ++depth;
 
@@ -86,13 +86,12 @@ bool Trie::add_clause(
           deepest_place = &horline->elems.back();
           break;
         }
-        deepest_place = horline->elems[it->second].down();
+        deepest_place = horline->elems[it->second].down;
         while (true) {
-          if (deepest_place == NULL) {result = true; printf("ABSORBED\n"); goto finally;}
-          if (deepest_place->tag == preprocessed_clause[++i]) deepest_place = deepest_place->down();
+          if (deepest_place == NULL) {result = true; goto finally;}
+          if (deepest_place->tag == preprocessed_clause[++i]) deepest_place = deepest_place->down;
           else {
-            Head *right = deepest_place->right();
-            if (right == NULL) goto found;
+            if (deepest_place->right == NULL) goto found;
             horline = &horlines[deepest_place->external];
             break;
           }
@@ -105,18 +104,14 @@ found:
     int max_depth = -1;
 
     MultimoveCtx ctx(mask);
-    pair<Head*, MultimoveEnd> move = ctx.first(pair(root, ctx.after_right(root)));
+    pair<Head*, MultimoveEnd> move = ctx.first(pair(root, ctx.get_what_to_do(root)));
 
     while (move.first != NULL) {
       switch (move.second) {
         case MultimoveEnd::E_EXHAUST: result = true; goto finally;
         default: {
           if ((int)move.first->depth > max_depth) {
-            if (move.first->is_ver) {
-              if (move.first->dual_next != NULL) break;
-            } else {
-              if (move.first->next != NULL) break;
-            }
+            if (move.first->right != NULL) break;
             if (verbosity >= 2) cout << "MAX_DEPTH " << move.first->depth << endl;
             max_depth = move.first->depth;
             deepest_place = move.first;
@@ -149,10 +144,7 @@ found:
       Head *above = deepest_place;
       if (above->is_ver) above = above->above;
       else above = horlines[above->external].above;
-
-      if (above->is_ver) above->next = NULL;
-      else above->dual_next = NULL;
-
+      above->down = NULL;
       result = true; goto finally;
     }
 
@@ -163,7 +155,7 @@ found:
       if (deepest_place->is_ver) {
         horline_ix = horlines.size();
         deepest_place->external = horline_ix;
-        Horline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place->above);
+        Horline &horline = horlines.emplace_back(&deepest_place->right, deepest_place->above);
 
 #ifdef FIXED_ORDER
         horline.lit_to_ix[index(added_vars[0])] = horline.elems.size();
@@ -189,24 +181,23 @@ found:
           *horline.ptr_to_first = next = &horline.elems[0];
 
           while(true) {
-            Head *dual_next = next->dual_next;
-            if (dual_next != NULL) {
-              dual_next->above = next;
-              if (dual_next->dual_next != NULL) horlines[dual_next->external].above = next;
+            Head *dwn = next->down;
+            if (dwn != NULL) {
+              dwn->above = next;
+              if (dwn->right != NULL) horlines[dwn->external].above = next;
             }
-            Head *prev = next++;
+            Head *left = next++;
             if (next == verheadptr) break;
-            prev->next = next;
+            left->right = next;
           }
         }
       }
       Head &verhead = *verheadptr;
 
-      verhead.next = NULL;
+      verhead.right = NULL;
       verhead.external = horline_ix;
       unsigned depth = verhead.depth = deepest_place->depth;
-      if (deepest_place->is_ver) deepest_place->dual_next = verheadptr;
-      else deepest_place->next = verheadptr;
+      deepest_place->right = verheadptr;
 
       Head *verline = verlines.emplace_back(new Head[added_vars.size() - 1]);
 
@@ -216,8 +207,8 @@ found:
         horhead.tag = added_vars[i];
         horhead.above = above;
 
-        if (i == 1) verhead.dual_next = &horhead;
-        else above->next = &horhead;
+        if (i == 1) verhead.down = &horhead;
+        else above->down = &horhead;
 
         horhead.depth = ++depth;
         above = &horhead;
@@ -243,101 +234,49 @@ inline void Head::set_watch(Solver &S) {
   watches.push(this);
 }
 
-
-WhatToDo MultimoveCtx::after_right(Head *x) {
+WhatToDo MultimoveCtx::get_what_to_do(Head *x) {
   Lit tag = x->tag;
   char val = assigns[var(tag)];
   if (verbosity >= 2) cout << "AFTER_RIGHT " << *x << " " << (int)val << endl;
 
   if (val == 0) return WhatToDo::WATCH;
-  if ((val == 1) != sign(tag)) return WhatToDo::RIGHT_HOR;
-  if (x->dual_next == NULL) return WhatToDo::EXHAUST;
-  return WhatToDo::DOWN_HOR;
+  if ((val == 1) != sign(tag)) return WhatToDo::RIGHT;
+  if (x->down == NULL) return WhatToDo::EXHAUST;
+  return WhatToDo::DOWN;
 }
 
-WhatToDo MultimoveCtx::after_down(Head *x) {
-  Lit tag = x->tag;
-  char val = assigns[var(tag)];
-  if (verbosity >= 2) cout << "AFTER_DOWN " << *x << " " << (int)val << endl;
-
-  if (val == 0) return WhatToDo::WATCH;
-  if ((val == 1) != sign(tag)) return WhatToDo::RIGHT_VER;
-  if (x->next == NULL) return WhatToDo::EXHAUST;
-  return WhatToDo::DOWN_VER;
-}
-
-void MultimoveCtx::branch_ver(Head *x) {
-  Head *nxt = x->dual_next;
+void MultimoveCtx::branch(Head *x) {
+  Head *nxt = x->right;
   if (nxt == NULL) return;
-  if (verbosity >= 2) std::cout << "BRANCH_VER " << *nxt << endl;
+  if (verbosity >= 2) std::cout << "BRANCH " << *nxt << endl;
   stack.emplace_back(nxt);
-}
-
-void MultimoveCtx::branch_hor(Head *x) {
-  Head *nxt = x->next;
-  if (nxt == NULL) return;
-  if (verbosity >= 2) std::cout << "BRANCH_HOR " << *nxt << endl;
-  stack.emplace_back(nxt);
-}
-
-pair<Head *, WhatToDo> MultimoveCtx::move_down_ver(Head *x) {
-  Head *nxt = x->next;
-  if (nxt == NULL) return pair(x, WhatToDo::EXHAUST);
-  return pair(nxt, after_down(nxt));
-}
-
-pair<Head *, WhatToDo> MultimoveCtx::move_down_hor(Head *x) {
-  Head *nxt = x->dual_next;
-  if (nxt == NULL) return pair(x, WhatToDo::EXHAUST);
-  return pair(nxt, after_down(nxt));
-}
-
-pair<Head *, WhatToDo> MultimoveCtx::move_right_ver(Head *x) {
-  Head *nxt = x->dual_next;
-  if (nxt == NULL) return pair(x, WhatToDo::DONE);
-  return pair(nxt, after_right(nxt));
-}
-
-pair<Head *, WhatToDo> MultimoveCtx::move_right_hor(Head *x) {
-  Head *nxt = x->next;
-  if (nxt == NULL) return pair(x, WhatToDo::DONE);
-  return pair(nxt, after_right(nxt));
-}
-
-pair<Head *, WhatToDo> MultimoveCtx::move_right(Head *x) {
-  return x->is_ver ? move_right_ver(x) : move_right_hor(x);
 }
 
 pair<Head *, WhatToDo> MultimoveCtx::move_down(Head *x) {
-  return x->is_ver ? move_down_ver(x) : move_down_hor(x);
+  Head *nxt = x->down;
+  if (nxt == NULL) return pair(x, WhatToDo::EXHAUST);
+  return pair(nxt, get_what_to_do(nxt));
+}
+
+pair<Head *, WhatToDo> MultimoveCtx::move_right(Head *x) {
+  Head *nxt = x->right;
+  if (nxt == NULL) return pair(x, WhatToDo::DONE);
+  return pair(nxt, get_what_to_do(nxt));
 }
 
 pair<Head *, MultimoveEnd> MultimoveCtx::multimove(pair<Head*, WhatToDo> move) {
   while (true) {
     switch (move.second) {
-      case RIGHT_VER: {
-        if (verbosity >= 2) cout << "RIGHT_VER " << *move.first << endl;
-        move = move_right_ver(move.first);
+      case RIGHT: {
+        if (verbosity >= 2) cout << "RIGHT " << *move.first << endl;
+        move = move_right(move.first);
         continue;
       }
 
-      case RIGHT_HOR: {
-        if (verbosity >= 2) cout << "RIGHT_HOR " << *move.first << endl;
-        move = move_right_hor(move.first);
-        continue;
-      }
-
-      case DOWN_VER: {
-        if (verbosity >= 2) cout << "DOWN_VER " << *move.first << endl;
-        branch_ver(move.first);
-        move = move_down_ver(move.first);
-        continue;
-      }
-
-      case DOWN_HOR: {
-        if (verbosity >= 2) cout << "DOWN_HOR " << *move.first << endl;
-        branch_hor(move.first);
-        move = move_down_hor(move.first);
+      case DOWN: {
+        if (verbosity >= 2) cout << "DOWN " << *move.first << endl;
+        branch(move.first);
+        move = move_down(move.first);
         continue;
       }
 
@@ -364,7 +303,7 @@ pair<Head *, MultimoveEnd> MultimoveCtx::first(pair<Head*, WhatToDo> move) {
   switch (result.second) {
     case MultimoveEnd::E_WATCH: {
       Head *y = result.first;
-      Head *nxt = y->is_ver ? y->dual_next : y->next;
+      Head *nxt = y->right;
       if (nxt != NULL) stack.emplace_back(nxt);
       return result;
     }
@@ -377,7 +316,7 @@ pair<Head *, MultimoveEnd> MultimoveCtx::next() {
   if (stack.empty()) return pair((Head*)NULL, MultimoveEnd::E_DONE);
   Head *move = stack.back();
   stack.pop_back();
-  return first(pair(move, after_right(move)));
+  return first(pair(move, get_what_to_do(move)));
 }
 
 pair<Head *, MultimoveEnd> MultimoveCtx::first_solo(pair<Head*, WhatToDo> move, Solver &S) {
@@ -388,18 +327,13 @@ again:
       Head *y = result.first;
       Head *nxt;
       Head *below;
-      if (y->is_ver) {
-        nxt = y->dual_next;
-        below = y->next;
-      } else {
-        nxt = y->next;
-        below = y->dual_next;
-      }
+      nxt = y->right;
+      below = y->down;
 
       if (below == NULL) {
         check(S.enqueue(y->tag, GClause_new(y)));
         if (nxt == NULL) return pair(y, MultimoveEnd::E_DONE);
-        move = pair(nxt, after_right(nxt));
+        move = pair(nxt, get_what_to_do(nxt));
         goto again;
       }
 
@@ -415,7 +349,7 @@ pair<Head *, MultimoveEnd> MultimoveCtx::next_solo(Solver &S) {
   if (stack.empty()) return pair((Head*)NULL, MultimoveEnd::E_DONE);
   Head *move = stack.back();
   stack.pop_back();
-  return first_solo(pair(move, after_right(move)), S);
+  return first_solo(pair(move, get_what_to_do(move)), S);
 }
 
 MinusSnapshot *Head::save_to_msnap(Trie &trie, MinusSnapshot *msnap) {
@@ -477,10 +411,10 @@ Head* Head::full_multimove_on_propagate(
       }
       case MultimoveEnd::E_DONE:
 #ifdef AFA
-        if (x->right() == NULL) {
+        if (x->right == NULL) {
           if (
             rear->guard.deepest_rightmost_van == NULL ||
-            rear->guard.deepest_rightmost_van->right() ||
+            rear->guard.deepest_rightmost_van->right ||
             x->depth > rear->guard.deepest_rightmost_van->depth
           ) {
             rear->guard.deepest_rightmost_van = x;
@@ -570,10 +504,10 @@ Head* Head::full_multimove_on_propagate_solo(
 
 #ifdef AFA
 void Trie::deepest_rightmost_candidate(Head *rear) {
-  if (rear->right() == NULL) {
+  if (rear->right == NULL) {
     if (
       deepest_rightmost_rear == NULL ||
-      deepest_rightmost_rear->right() ||
+      deepest_rightmost_rear->right ||
       rear->depth > deepest_rightmost_rear->depth
     ) {
       deepest_rightmost_rear = rear;
@@ -1010,9 +944,9 @@ Head* Trie::reset(Solver &S) {
   root_minus_snapshots.clear_nodestroy();
 
 #ifdef ALL_SOLO
-  return root->full_multimove_on_propagate_solo(S, multimove_ctx.after_right(root), NULL);
+  return root->full_multimove_on_propagate_solo(S, multimove_ctx.get_what_to_do(root), NULL);
 #else
-  pair<Head*, WhatToDo> move0 = pair(root, multimove_ctx2.after_right(root));
+  pair<Head*, WhatToDo> move0 = pair(root, multimove_ctx2.get_what_to_do(root));
   pair<Head*, MultimoveEnd> move = multimove_ctx2.first(move0);
   while (move.first != NULL) {
     Head *vanptr = move.first;
@@ -1027,7 +961,7 @@ Head* Trie::reset(Solver &S) {
             return vanptr;
           }
 #ifdef AFA
-          if (vanptr->right() == NULL) {
+          if (vanptr->right == NULL) {
             if (deepest_rightmost_rear == NULL || vanptr->depth > deepest_rightmost_rear->depth) {
               deepest_rightmost_rear = vanptr;
             }
@@ -1059,7 +993,7 @@ Head* Trie::reset(Solver &S) {
       }
       case MultimoveEnd::E_DONE: {
 #ifdef AFA
-        if (vanptr->right() == NULL) {
+        if (vanptr->right == NULL) {
           if (deepest_rightmost_rear == NULL || vanptr->depth > deepest_rightmost_rear->depth) {
             deepest_rightmost_rear = vanptr;
           }
@@ -1087,11 +1021,11 @@ unsigned Head::count() {
     pair<Head*, Head*> horline = stack.back();
     stack.pop_back();
 
-    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
+    for (Head *verhead = horline.second; verhead; verhead = verhead->right) {
       ++result;
-      for (Head *horhead2 = verhead->dual_next; horhead2; horhead2 = horhead2->next) {
+      for (Head *horhead2 = verhead->down; horhead2; horhead2 = horhead2->down) {
         ++result;
-        if (horhead2->dual_next != NULL) stack.emplace_back(horhead2, horhead2->dual_next);
+        if (horhead2->right != NULL) stack.emplace_back(horhead2, horhead2->right);
       }
     }
   }
@@ -1111,25 +1045,25 @@ Head* Head::solidify() {
     pair<Head*, Head*> horline = stack.back();
     stack.pop_back();
 
-    if (horline.first) horline.first->dual_next = mem;
+    if (horline.first) horline.first->right = mem;
 
     Head *bef_hor = NULL;
-    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
+    for (Head *verhead = horline.second; verhead; verhead = verhead->right) {
       new(mem) Head(std::move(*verhead));
       if (mem->above) mem->above = horline.first->above;
-      if (bef_hor != NULL) bef_hor->next = mem;
+      if (bef_hor != NULL) bef_hor->right = mem;
       bef_hor = mem;
 
-      if (mem->dual_next != NULL) mem->dual_next = mem + 1;
+      if (mem->down != NULL) mem->down = mem + 1;
       ++mem;
 
-      for (Head *horhead = verhead->dual_next; horhead; horhead = horhead->next) {
+      for (Head *horhead = verhead->down; horhead; horhead = horhead->down) {
         new(mem) Head(std::move(*horhead));
         mem->above = mem - 1;
 
-        if (horhead->dual_next != NULL) stack.emplace_back(mem, horhead->dual_next);
+        if (horhead->right != NULL) stack.emplace_back(mem, horhead->right);
 
-        if (mem->next) mem->next = mem + 1;
+        if (mem->down) mem->down = mem + 1;
         ++mem;
       }
     }
@@ -1167,7 +1101,7 @@ void Trie::to_dot(Solver& S, const char *filename) {
     // Pose the line horizontally.
     file << "subgraph { rank=same";
     if (horline.first) file << "; \"" << horline.first << '"';
-    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
+    for (Head *verhead = horline.second; verhead; verhead = verhead->right) {
       file << "; \"" << verhead << '"';
     }
     file << " };\n";
@@ -1178,20 +1112,18 @@ void Trie::to_dot(Solver& S, const char *filename) {
       file << '"' << horline.first << "\" -- \"" << horline.second << "\" [constraint=false];\n";
     }
 
-    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
-      if (verhead->next == NULL) break;
-      file << DotHead(verhead->next, S) << ";\n";
-      file << '"' << verhead << "\" -- \"" << verhead->next << "\" [constraint=false];\n";
+    for (Head *verhead = horline.second; verhead; verhead = verhead->right) {
+      if (verhead->right == NULL) break;
+      file << DotHead(verhead->right, S) << ";\n";
+      file << '"' << verhead << "\" -- \"" << verhead->right << "\" [constraint=false];\n";
     }
 
     // Draw the vertical lines and recur into branching horizontal lines.
-    for (Head *verhead = horline.second; verhead; verhead = verhead->next) {
-      for (Head *horhead2 = verhead->dual_next; horhead2; horhead2 = horhead2->next) {
+    for (Head *verhead = horline.second; verhead; verhead = verhead->right) {
+      for (Head *horhead2 = verhead->down; horhead2; horhead2 = horhead2->down) {
         file << DotHead(horhead2, S) << ";\n";
         file << '"' << horhead2->above << "\" -- \"" << horhead2 << "\";\n";
-        if (horhead2->dual_next != NULL) {
-          stack.emplace_back(horhead2, horhead2->dual_next);
-        }
+        if (horhead2->right != NULL) stack.emplace_back(horhead2, horhead2->right);
       }
     }
   }
