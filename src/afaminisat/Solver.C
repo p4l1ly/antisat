@@ -746,7 +746,12 @@ lbool Solver::search()
 #elif SAT_TRIE_WATCH
             int old_guess_line1 = watch_order.guess_line;
             Lit guess = watch_order.select(*this);
-            if (guess == lit_Undef) return l_True;
+            if (guess == lit_Undef) {
+              // for (int i = 0; i < assigns.size(); ++i) {
+              //   printf("%d\n", assigns[i]);
+              // }
+              return l_True;
+            }
             check(assume(guess));
             watch_order.after_select(old_guess_line1, *this);
             trie.new_snapshot(); undos.push_back(&trie);

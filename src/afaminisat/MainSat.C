@@ -74,8 +74,8 @@ bool parse_dimacs(
       lits.clear();
       --nClauses;
 
-      if (S.nConstrs % 10000 == 0) {
-        cerr << "PARSED_CLAUSES " << S.nConstrs << endl << std::flush;
+      if (nClauses % 50000 == 0) {
+        cerr << "PARSED_CLAUSES_TRIE " << nClauses << endl << std::flush;
       }
     } else {
       lits.emplace_back(abs(n) - 1, n < 0);
@@ -87,8 +87,6 @@ bool parse_dimacs(
       verhead.above = horline.above;
     }
   }
-
-  cout << "TRIE_SIZE " << S.trie.count() << endl;
 
 #else
 
@@ -104,8 +102,8 @@ bool parse_dimacs(
       lits.clear();
       --nClauses;
 
-      if (S.nConstrs % 10000 == 0) {
-        cerr << "PARSED_CLAUSES " << S.nConstrs << endl << std::flush;
+      if (nClauses % 1000000 == 0) {
+        cerr << "PARSED_CLAUSES " << nClauses << endl << std::flush;
       }
     } else {
       lits.push(Lit(abs(n) - 1, n < 0));
@@ -156,6 +154,7 @@ bool run() {
 #ifdef SOLIDIFY
     cerr << "SOLIDIFY" << endl;
     solid = S.trie.solidify();
+    cerr << "TRIE_SIZE " << S.trie.count() << endl;
 #endif
 
     vector<int> order;

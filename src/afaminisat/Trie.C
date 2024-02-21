@@ -48,6 +48,10 @@ bool Trie::add_clause(
       Horline &horline = horlines.emplace_back(&root, (Head*)NULL);
       Head &verhead = horline.elems.emplace_back(preprocessed_clause[0]);
 
+#ifdef FIXED_ORDER
+      horline.lit_to_ix[index(preprocessed_clause[0])] = 0;
+#endif
+
       unsigned depth = 0;
       root = &verhead;
 
@@ -72,23 +76,32 @@ bool Trie::add_clause(
     Head *deepest_place;
 
 #ifdef FIXED_ORDER
-    deepest_place = root;
+    Horline *horline = &horlines[0];
 
     {
       int i = 0;
       while (true) {
-        if (deepest_place->tag == preprocessed_clause[i]) {
-          deepest_place = deepest_place->down();
-          if (deepest_place == NULL) {result = true; goto finally;}
-        } else {
-          Head *right = deepest_place->right();
-          if (right) deepest_place = right;
-          else break;
+        auto it = horline->lit_to_ix.find(index(preprocessed_clause[i]));
+        if (it == horline->lit_to_ix.end()) {
+          deepest_place = &horline->elems.back();
+          break;
+        }
+        deepest_place = horline->elems[it->second].down();
+        while (true) {
+          if (deepest_place == NULL) {result = true; printf("ABSORBED\n"); goto finally;}
+          if (deepest_place->tag == preprocessed_clause[++i]) deepest_place = deepest_place->down();
+          else {
+            Head *right = deepest_place->right();
+            if (right == NULL) goto found;
+            horline = &horlines[deepest_place->external];
+            break;
+          }
         }
       }
     }
-#else
+found:
 
+#else
     int max_depth = -1;
 
     MultimoveCtx ctx(mask);
@@ -151,11 +164,21 @@ bool Trie::add_clause(
         horline_ix = horlines.size();
         deepest_place->external = horline_ix;
         Horline &horline = horlines.emplace_back(&deepest_place->dual_next, deepest_place->above);
+
+#ifdef FIXED_ORDER
+        horline.lit_to_ix[index(added_vars[0])] = horline.elems.size();
+#endif
+
         verheadptr = &horline.elems.emplace_back(added_vars[0]);
       } else {
         horline_ix = deepest_place->external;
         Horline &horline = horlines[horline_ix];
         bool realloc = horline.elems.capacity() == horline.elems.size();
+
+#ifdef FIXED_ORDER
+        horline.lit_to_ix[index(added_vars[0])] = horline.elems.size();
+#endif
+
         verheadptr = &horline.elems.emplace_back(added_vars[0]);
 
         Head *next;
@@ -247,14 +270,14 @@ void MultimoveCtx::branch_ver(Head *x) {
   Head *nxt = x->dual_next;
   if (nxt == NULL) return;
   if (verbosity >= 2) std::cout << "BRANCH_VER " << *nxt << endl;
-  stack.emplace_back(nxt, after_right(nxt));
+  stack.emplace_back(nxt);
 }
 
 void MultimoveCtx::branch_hor(Head *x) {
   Head *nxt = x->next;
   if (nxt == NULL) return;
   if (verbosity >= 2) std::cout << "BRANCH_HOR " << *nxt << endl;
-  stack.emplace_back(nxt, after_right(nxt));
+  stack.emplace_back(nxt);
 }
 
 pair<Head *, WhatToDo> MultimoveCtx::move_down_ver(Head *x) {
@@ -342,7 +365,7 @@ pair<Head *, MultimoveEnd> MultimoveCtx::first(pair<Head*, WhatToDo> move) {
     case MultimoveEnd::E_WATCH: {
       Head *y = result.first;
       Head *nxt = y->is_ver ? y->dual_next : y->next;
-      if (nxt != NULL) stack.emplace_back(nxt, after_right(nxt));
+      if (nxt != NULL) stack.emplace_back(nxt);
       return result;
     }
     case MultimoveEnd::E_EXHAUST: stack.clear();
@@ -352,9 +375,9 @@ pair<Head *, MultimoveEnd> MultimoveCtx::first(pair<Head*, WhatToDo> move) {
 
 pair<Head *, MultimoveEnd> MultimoveCtx::next() {
   if (stack.empty()) return pair((Head*)NULL, MultimoveEnd::E_DONE);
-  auto move = stack.back();
+  Head *move = stack.back();
   stack.pop_back();
-  return first(move);
+  return first(pair(move, after_right(move)));
 }
 
 pair<Head *, MultimoveEnd> MultimoveCtx::first_solo(pair<Head*, WhatToDo> move, Solver &S) {
@@ -380,7 +403,7 @@ again:
         goto again;
       }
 
-      if (nxt != NULL) stack.emplace_back(nxt, after_right(nxt));
+      if (nxt != NULL) stack.emplace_back(nxt);
       return result;
     }
     case MultimoveEnd::E_EXHAUST: stack.clear();
@@ -390,9 +413,9 @@ again:
 
 pair<Head *, MultimoveEnd> MultimoveCtx::next_solo(Solver &S) {
   if (stack.empty()) return pair((Head*)NULL, MultimoveEnd::E_DONE);
-  auto move = stack.back();
+  Head *move = stack.back();
   stack.pop_back();
-  return first_solo(move, S);
+  return first_solo(pair(move, after_right(move)), S);
 }
 
 MinusSnapshot *Head::save_to_msnap(Trie &trie, MinusSnapshot *msnap) {
