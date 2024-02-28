@@ -44,6 +44,15 @@ Solver::~Solver(void) {
     for (int i = 0; i < constrs.size(); i++) xfree(constrs[i]);
 }
 
+
+void Solver::initVars(int count) {
+  watches.growTo(2*count);
+  reason.growTo(count, GClause_NULL);
+  assigns.growTo(count, 0);
+  level.growTo(count, -1);
+  activity.growTo(count, 0);
+}
+
 // Creates a new SAT variable in the solver. If 'decision_var' is cleared, variable will not be
 // used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
 //

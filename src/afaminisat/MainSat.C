@@ -49,7 +49,7 @@ bool parse_dimacs(
     std::cerr << "Expected p or c line.\n"; exit(1);
   }
 
-  for (int i = nVars; i; --i) S.newVar();
+  S.initVars(nVars);
 
 #ifdef TRIE_FOR_INPUT
   vec<char> mask;
@@ -155,6 +155,9 @@ bool run() {
     cerr << "SOLIDIFY" << endl;
     solid = S.trie.solidify();
     cerr << "TRIE_SIZE " << S.trie.count() << endl;
+    vector<Horline>().swap(horlines);
+    for (Head *verline: verlines) delete[] verline;
+    vector<Head*>().swap(verlines);
 #endif
 
     vector<int> order;
@@ -178,6 +181,7 @@ bool run() {
       S.watch_on(clause->data[0]);
     }
 #endif
+    vector<Clause*>().swap(clauses_ww);
 
     cerr << "SOLVING" << endl;
     if (verbosity >= -3) printf("SOLVING\n");

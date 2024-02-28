@@ -345,6 +345,7 @@ public:
 
     // Problem specification:
     //
+    void    initVars (int count);
     Var     newVar ();
     int     nVars  (void)  { return assigns.size(); }
     void    addUnit(Lit p) { if (ok) enqueue(p); }

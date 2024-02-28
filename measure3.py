@@ -467,25 +467,35 @@ def unxz(problem):
 
 
 def presort_clauses(mode="global", seed="", shuffle=True, sbva=False):
-    path = f"../data/presort{'_sbva' if sbva else ''}.cnf"
+    wpath = f"../data/presort{'_sbva' if sbva else ''}.cnf"
+    rpath = f"../data/{'sbva' if sbva else 'unxz'}.cnf"
     try:
-        with open(path, "w") as f2:
-            p = subprocess.Popen(
-                (
-                    "python3",
-                    "presort_clauses.py",
-                    f"../data/{'sbva' if sbva else 'unxz'}.cnf",
-                    seed,
-                    mode,
-                    "shuffle" if shuffle else "noshuffle",
-                ),
-                stdout=f2,
-            )
-            p.wait()
-        return "OK"
+        with open(rpath, "r"):
+            pass
     except FileNotFoundError:
-        os.remove(path)
+        try:
+            os.remove(wpath)
+        except FileNotFoundError:
+            pass
         return "NotFound"
+
+    with open(wpath, "w") as f2:
+        p = subprocess.Popen(
+            (
+                "python3",
+                "presort_clauses.py",
+                rpath,
+                seed,
+                mode,
+                "shuffle" if shuffle else "noshuffle",
+            ),
+            stdout=f2,
+        )
+        ret = p.wait()
+        if ret != 0:
+            os.remove(wpath)
+            return "NotFound"
+    return "OK"
 
 
 loop = asyncio.get_event_loop()
@@ -578,36 +588,76 @@ def sbva():
 
     return "OK"
 
+with open("sat_trie_fixed.tags", "r") as f:
+    ftagss = [line.strip().split() for line in f]
+
+with open("sat_trie.tags", "r") as f:
+    ttagss = [line.strip().split() for line in f]
+
+with open("sat_clause.tags", "r") as f:
+    ctagss = [line.strip().split() for line in f]
+
 
 PROGRAMS = (
-    ("unxz", unxz),
-    ("presort", lambda _: presort_clauses(mode="global", seed="", shuffle=False)),
-    ("sbva", lambda _: sbva()),
-    ("presort_sbva", lambda _: presort_clauses(mode="global", seed="", shuffle=False, sbva=True)),
-    *(antisat(i, "presort_sbva", "f", "_presort_fixedtrie_sbva") for i in range(12)),
-    *(antisat(i, "sbva", "f", "_fixedtrie_sbva") for i in range(12)),
-    *(antisat(i, "presort_sbva", "t", "_presort_trie_sbva") for i in range(12)),
-    *(antisat(i, "sbva", "t", "_trie_sbva") for i in range(12)),
-    *(antisat(i, "sbva", "", "_clause_sbva") for i in range(6)),
-    minisat("1.12b", "sbva"),
-    minisat("1.14", "sbva"),
-    cadical("sbva"),
-    cryptominisat("sbva"),
-    *(antisat(i, "presort", "f", "_presort_fixedtrie") for i in range(12)),
-    *(antisat(i, "unxz", "f", "_fixedtrie") for i in range(12)),
-    *(antisat(i, "presort", "t", "_presort_trie") for i in range(12)),
-    *(antisat(i, "unxz", "t", "_trie") for i in range(12)),
-    *(antisat(i, "unxz", "", "_clause") for i in range(6)),
-    minisat("1.12b", "unxz"),
-    minisat("1.14", "unxz"),
-    cadical("unxz"),
-    cryptominisat("unxz"),
+    (("unxz", unxz), ["unxz", "preprocess"]),
+    (("presort", lambda _: presort_clauses(mode="global", seed="", shuffle=False)), ["presort", "preprocess"]),
+    (("sbva", lambda _: sbva()), ["sbva", "preprocess"]),
+    (("presort_sbva", lambda _: presort_clauses(mode="global", seed="", shuffle=False, sbva=True)), ["presort", "sbva", "preprocess"]),
+    *zip(
+        (antisat(i, "presort_sbva", "f", "_presort_fixedtrie_sbva") for i in range(12)),
+        (tags + ["presort", "sbva", "antisat", "nopreprocess"] for tags in ftagss),
+    ),
+    *zip(
+        (antisat(i, "sbva", "f", "_fixedtrie_sbva") for i in range(12)),
+        (tags + ["nopresort", "sbva", "antisat", "nopreprocess"] for tags in ftagss),
+    ),
+    *zip(
+        (antisat(i, "presort_sbva", "t", "_presort_trie_sbva") for i in range(12)),
+        (tags + ["presort", "sbva", "antisat", "nopreprocess"] for tags in ttagss),
+    ),
+    *zip(
+        (antisat(i, "sbva", "t", "_trie_sbva") for i in range(12)),
+        (tags + ["nopresort", "sbva", "antisat", "nopreprocess"] for tags in ttagss),
+    ),
+    *zip(
+        (antisat(i, "sbva", "", "_clause_sbva") for i in range(6)),
+        (tags + ["sbva", "antisat", "nopreprocess"] for tags in ctagss),
+    ),
+    (minisat("1.12b", "sbva"), ["minisat", "1.12b", "sbva", "noantisat", "nopreprocess"]),
+    (minisat("1.14", "sbva"), ["minisat", "1.14", "sbva", "noantisat", "nopreprocess"]),
+    (cadical("sbva"), ["cadical", "sbva", "noantisat", "nopreprocess"]),
+    (cryptominisat("sbva"), ["cryptominisat", "sbva", "noantisat", "nopreprocess"]),
+    *zip(
+        (antisat(i, "presort", "f", "_presort_fixedtrie") for i in range(12)),
+        (tags + ["presort", "antisat", "nosbva", "nopreprocess"] for tags in ftagss),
+    ),
+    *zip(
+        (antisat(i, "unxz", "f", "_fixedtrie") for i in range(12)),
+        (tags + ["nopresort", "antisat", "nosbva", "nopreprocess"] for tags in ftagss),
+    ),
+    *zip(
+        (antisat(i, "presort", "t", "_presort_trie") for i in range(12)),
+        (tags + ["presort", "antisat", "nosbva", "nopreprocess"] for tags in ttagss),
+    ),
+    *zip(
+        (antisat(i, "unxz", "t", "_trie") for i in range(12)),
+        (tags + ["nopresort", "antisat", "nosbva", "nopreprocess"] for tags in ttagss),
+    ),
+    *zip(
+        (antisat(i, "unxz", "", "_clause") for i in range(6)),
+        (tags + ["antisat", "nosbva", "nopreprocess"] for tags in ctagss),
+    ),
+    (minisat("1.12b", "unxz"), ["minisat", "1.12b", "nosbva", "noantisat", "nopreprocess"]),
+    (minisat("1.14", "unxz"), ["minisat", "1.14", "nosbva", "noantisat", "nopreprocess"]),
+    (cadical("unxz"), ["cadical", "nosbva", "noantisat", "nopreprocess"]),
+    (cryptominisat("unxz"), ["cryptominisat", "nosbva", "noantisat", "nopreprocess"]),
 )
 
+PRINT_TAGS = False
 DRY_RUN = True
-WRITE_MODE = "a"
+WRITE_MODE = "w"
 
-if DRY_RUN:
+if PRINT_TAGS or DRY_RUN:
     times_f = sys.stdout
     results_f = sys.stdout
 else:
@@ -627,34 +677,26 @@ def measure_with(problem, program, quiet=False):
         print(f"{toc - tic:.2f}", end=" ", file=times_f, flush=True)
 
 
-random.seed("qveo3tj309rfkv240")
-for i, problem in enumerate(random.sample(PROBLEMS, 100)): # if i <= 25:
-    # if i < 18:
-    #     continue
+if PRINT_TAGS:
+    for (_, tags) in PROGRAMS:
+        print(*tags)
+else:
+    random.seed("qveo3tj309rfkv240")
+    for i, problem in enumerate(random.sample(PROBLEMS, 50)): # if i <= 25:
+        # if i < 18:
+        #     continue
 
-    if i != 49:
-        continue
+        # if i == 49:
+        #     print(problem)
+        #     for j, program in enumerate(PROGRAMS):
+        #         if j == 7:
+        #             print(program)
+        #         if j == 60:
+        #             print(program)
 
-    if i == 49:
-        print(problem)
-        for j, program in enumerate(PROGRAMS):
-            if j == 7:
-                print(program)
-            if j == 60:
-                print(program)
+        for j, (program, _) in enumerate(PROGRAMS):
+            if i == 9 and j in (0, 1, 2, 3, 18):
+                measure_with(problem, program)
 
-    for j, program in enumerate(PROGRAMS):
-        if j < 4:
-            measure_with(problem, program, quiet=True)
-        elif j in (7, 60):
-            measure_with(problem, program, quiet=True)
-
-
-    # for j, program in enumerate(PROGRAMS):
-    #     if i > 18 or j >= 103:
-    #         measure_with(problem, program)
-    #     elif j < 4:
-    #         measure_with(problem, program, quiet=True)
-
-    # print(file=results_f, flush=True)
-    # print(file=times_f, flush=True)
+        # print(file=results_f, flush=True)
+        # print(file=times_f, flush=True)

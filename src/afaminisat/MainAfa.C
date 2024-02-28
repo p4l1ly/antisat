@@ -75,6 +75,7 @@ bool parse_cnfafa(
     }
   }
 
+  S.initVars(nVars);
   S.var_types.resize(nVars, GUESS_VAR);
 
 #ifdef NOGUESS_VARS
@@ -120,8 +121,6 @@ bool parse_cnfafa(
 #endif
 
   for (int final_: finals) finals_set.insert(final_);
-
-  while (nVars > S.nVars()) S.newVar();
 
   {
     vec<Lit>    lits;
@@ -277,8 +276,8 @@ bool run() {
     horhead.tag = outputs[i];
     horhead.above = above;
 
-    if (i == 1) verhead.dual_next = &horhead;
-    else above->next = &horhead;
+    if (i == 1) verhead.down = &horhead;
+    else above->down = &horhead;
 
     horhead.depth = ++depth;
 

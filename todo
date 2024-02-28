@@ -64,3 +64,15 @@ Then, AFA related
 - Compare thoroughly in all settings with all AFA model checkers and the selected SAT solvers. 1d
 
 - WONT_DO learnt clauses in trie?
+
+Measurements
+============
+
+AFA
+  - tiny: measure5 with 1000 benchmarks per bench set (60 was still quite a little to see impact of
+    flags clearly)
+
+  # On some Verifit server?
+  - all benchmarks: vanilla clause, best clause, vanilla trie, best trie, (nuXmv), abc, mata
+
+SAT if we have time: presort+trie, then, maybe run all again with sbva
