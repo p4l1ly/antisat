@@ -10,11 +10,11 @@ for i, line in enumerate(sys.stdin):
         success_counts = [0] * len(words)
 
     if len(words) == len(success_counts):
-        for i, word in enumerate(words):
-            if word in ("EMPTY", "NOT_EMPTY", "SAT", "UNSAT"):
-                success_counts[i] += 1
+        for j, word in enumerate(words):
+            if word in ("EMPTY", "NOT_EMPTY", "NONEMPTY", "SAT", "UNSAT"):
+                success_counts[j] += 1
 
-    if "EMPTY" in words and "NOT_EMPTY" in words:
+    if "EMPTY" in words and ("NOT_EMPTY" in words or "NONEMPTY" in words):
         print(f"INCONSISTENCY: {i} {line}")
 
     if "SAT" in words and "UNSAT" in words:
@@ -24,7 +24,18 @@ for i, line in enumerate(sys.stdin):
         print(f"ERROR: {i} {line}")
     else:
         for word in words:
-            if word not in ("TimeoutExpired", "TimeoutError", "EMPTY", "NOT_EMPTY", "SAT", "UNSAT", "OK"):
+            if word not in (
+                "TimeoutExpired",
+                "TimeoutError",
+                "EMPTY",
+                "NOT_EMPTY",
+                "NONEMPTY",
+                "SAT",
+                "UNSAT",
+                "OK",
+                "CalledProcessError-6",
+                "BadAlloc",
+            ):
                 print(f"ERROR2: {i} {line}")
 
 assert success_counts is not None

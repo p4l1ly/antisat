@@ -22,7 +22,7 @@ using std::string;
 #ifdef MY_DEBUG
 int verbosity = 5;
 #endif
-const bool write_debug_dots = true;
+const bool write_debug_dots = false;
 
 
 std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
@@ -320,13 +320,13 @@ bool run() {
 #ifdef USE_TRIE
     if (verbosity >= 2) {
       S.trie.print_guards(S);
-      if (write_debug_dots) {
-        std::stringstream ss;
-        ss << "debug/trie" << solveCnt << ".dot";
-        string s;
-        ss >> s;
-        S.trie.to_dot(S, s.c_str());
-      }
+    }
+    if (write_debug_dots) {
+      std::stringstream ss;
+      ss << "debug/trie" << solveCnt << ".dot";
+      string s;
+      ss >> s;
+      S.trie.to_dot(S, s.c_str());
     }
 #endif
 
@@ -345,13 +345,13 @@ bool run() {
       if (verbosity >= 2) {
         S.trie.print_guards(S);
 
-        if (write_debug_dots) {
-          std::stringstream ss;
-          ss << "debug/trie" << solveCnt << ".dot";
-          string s;
-          ss >> s;
-          S.trie.to_dot(S, s.c_str());
-        }
+      }
+      if (write_debug_dots) {
+        std::stringstream ss;
+        ss << "debug/trie" << solveCnt << ".dot";
+        string s;
+        ss >> s;
+        S.trie.to_dot(S, s.c_str());
       }
 #endif
 

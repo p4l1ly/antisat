@@ -13,22 +13,28 @@ def let(x):
 
 print("PARSE")
 
+BENCHTAG_COLUMNS = (0,)
+
 with open(sys.argv[1], "r") as f:
     times = [[float(t) for t in line.strip().split()] for line in f]
 with open(sys.argv[2], "r") as f:
     results = [[r for r in line.strip().split()] for line in f]
 with open(sys.argv[3], "r") as f:
     tagss = [[r for r in line.strip().split()] for line in f]
+with open(sys.argv[4], "r") as f:
+    benchtags = [[r for r in line.strip().split()] for line in f]
+
+print(benchtags)
 
 constr1 = [
-    clause.split(",") for clause in (sys.argv[5].split(':') if sys.argv[5] else ())
+    clause.split(",") for clause in (sys.argv[6].split(':') if sys.argv[6] else ())
 ]
 constr2 = [
-    clause.split(",") for clause in (sys.argv[6].split(':') if sys.argv[6] else ())
+    clause.split(",") for clause in (sys.argv[7].split(':') if sys.argv[7] else ())
 ]
 common = [
     [clause.split(",") for clause in clauses.split(':')]
-    for clauses in (sys.argv[7].split('_') if sys.argv[7] else ())
+    for clauses in (sys.argv[8].split('_') if sys.argv[8] else ())
 ]
 
 columns1 = [
@@ -60,19 +66,40 @@ common_mask2 = [
 SHAPES = ["o", "v", "^", "<", ">", "1", "2", "3", "4", "s", "p", "P", "*", "+", "x", "X", "D", "d"]
 COLORS = ["b", "g", "r", "c", "m", "y"]
 
+if BENCHTAG_COLUMNS:
+    color_benchtags = sorted({
+        tuple(benchtag[j] for j in BENCHTAG_COLUMNS) for benchtag in benchtags
+    })
+    color_benchtags = dict(zip(color_benchtags, cycle(COLORS)))
+
+    benchtags_by_color = defaultdict(list)
+    for benchtag, color in color_benchtags.items():
+        benchtags_by_color[color].append(benchtag)
+    print(benchtags_by_color)
+    benchtags_by_color = {k: "/".join((",".join(vv) for vv in v)) for k, v in benchtags_by_color.items()}
+else:
+    color_benchtags = {}
+    benchtags_by_color = {}
+
 print()
 for shape, i in zip(cycle(SHAPES), columns1):
     print(shape, i, *tagss[i])
 print()
-for color, i in zip(cycle(COLORS), columns2):
-    print(color, i, *tagss[i])
+if BENCHTAG_COLUMNS:
+    for benchtag, color in color_benchtags.items():
+        print(color, benchtag)
+else:
+    for color, i in zip(cycle(COLORS), columns2):
+        print(color, i, *tagss[i])
+
+print()
 print()
 
 inf_line = 1
 
 print("MAX")
 
-if sys.argv[4] == "-":
+if sys.argv[5] == "-":
     max_ab = max(
         (
             tcols[i]
@@ -80,17 +107,17 @@ if sys.argv[4] == "-":
             if len(rcols) == len(tcols) == len(results[0])
             for columns in (columns1, columns2)
             for i in columns
-            if rcols[i] in ("SAT", "UNSAT", "EMPTY", "NOT_EMPTY")
+            if rcols[i] in ("SAT", "UNSAT", "EMPTY", "NOT_EMPTY", "NONEMPTY")
         ),
         default=1,
     )
 else:
-    max_ab = float(sys.argv[4])
+    max_ab = float(sys.argv[5])
 
 inf_line = max_ab * 1.15
 
 def score(r, t):
-    if r in ("SAT", "UNSAT", "EMPTY", "NOT_EMPTY") and t <= max_ab:
+    if r in ("SAT", "UNSAT", "EMPTY", "NOT_EMPTY", "NONEMPTY") and t <= max_ab:
         return t
     else:
         return inf_line
@@ -117,9 +144,12 @@ for k, (rcols, tcols) in enumerate(zip(results, times)):
     for mask1, (score1, i) in bests1.items():
         if bests2.get(mask1) is not None:
             score2, j = bests2[mask1]
-            if score1 < 2 and score2 > 15 or score1 < 20 and score2 > 20 or score1 > 5 and score1 < 10:
-                print((columns1[i], columns2[j], k, score1, score2))
-            points.append((score1, score2, SHAPES[i % len(SHAPES)], COLORS[j % len(COLORS)]))
+            if BENCHTAG_COLUMNS:
+                color = color_benchtags[tuple(benchtags[k][l] for l in BENCHTAG_COLUMNS)]
+            else:
+                color = COLORS[j % len(COLORS)]
+
+            points.append((score1, score2, SHAPES[i % len(SHAPES)], color))
 
 print("PARTITION", len(points))
 
@@ -138,6 +168,7 @@ ymin = 0
 xmax = inf_line
 ymax = inf_line
 
+colorplots = []
 for (shape, color), points in points_by_style.items():
     xy = np.array(points).T
 
@@ -163,7 +194,14 @@ for (shape, color), points in points_by_style.items():
     ymax = max(ymax, yr.max())
 
     plt.scatter(x, y, s=10, zorder=2, color="black")
-    plt.scatter(xr, yr, s=20, zorder=1, alpha=0.3, marker=shape, color=color)
+    colorplots.append(plt.scatter(xr, yr, s=20, zorder=1, alpha=0.3, marker=shape, color=color,
+                                  label=benchtags_by_color[color]))
+
+# Shrink current axis by 20%
+box = ax.get_position()
+ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+# Put a legend to the right of the current axis
+ax.legend(handles=colorplots, loc='center left', bbox_to_anchor=(1, 0.5))
 
 
 plt.xlim([xmin, xmax])
