@@ -35,9 +35,9 @@ if DRY_RUN:
     results_f = sys.stdout
     benchtags_f = sys.stdout
 else:
-    times_f = open(f"times_afacomp_sample100_trieheap.csv", "w")
-    results_f = open(f"results_afacomp_sample100_trieheap.csv", "w")
-    benchtags_f = open(f"benchtags_afacomp_sample100_trieheap.csv", "w")
+    times_f = open(f"times_afacomp.csv", "a")
+    results_f = open(f"results_afacomp.csv", "a")
+    benchtags_f = open(f"benchtags_afacomp.csv", "a")
 
 
 def tool_mata(sim, group, instance):
@@ -47,16 +47,17 @@ def tool_mata(sim, group, instance):
         skip = f.read() == ""
 
     if skip:
-        print("NotApplicable ", file=results_f, flush=True)
-        print("0.0 ", file=times_f, flush=True)
+        print("NotApplicable", end=" ", file=results_f, flush=True)
+        print("0.0", end=" ", file=times_f, flush=True)
     else:
         nfas = subprocess.run(
-            "ls " + ipath + ".nfas/*",
+            f"ls {ipath}.nfas | sort -n",
             shell=True,
             stdout=subprocess.PIPE,
             check=True
         )
         nfas = nfas.stdout.decode("utf8").strip().split("\n")
+        nfas = [f"{ipath}.nfas/{nfa}" for nfa in nfas]
 
         tic = time.time()
         try:
@@ -96,6 +97,11 @@ def tool_mata(sim, group, instance):
 
 
 def tool_antisat(program, group, instance):
+    if program == "./buildafa_trie/triesat":
+        print("NotApplicable", end=" ", file=results_f, flush=True)
+        print("0.0", end=" ", file=times_f, flush=True)
+        return
+
     path = f"{BENCHDIR}/afacomp_simpl_tseytin/{group}/{instance}.{SUFFIX_ANTISAT}"
     tic = time.time()
     try:
@@ -224,16 +230,12 @@ def tool_nuxmv(group, instance):
 
 
 TOOLS = (
-    # ("antisat_clause_heap", partial(tool_antisat, "./buildafa_clause_heap/triesat")),
-    # ("antisat_clause", partial(tool_antisat, "./buildafa_clause/triesat")),
+    ("antisat_clause_heap", partial(tool_antisat, "./buildafa_clause_heap/triesat")),
     ("antisat_trie_heap", partial(tool_antisat, "./buildafa_trie_heap/triesat")),
     ("antisat_trie", partial(tool_antisat, "./buildafa_trie/triesat")),
-    ("antisat_trie_watch", partial(tool_antisat, "./buildafa_trie_watch/triesat")),
-    # ("antisat_trie", partial(tool_antisat, "./buildafa_trie/triesat")),
-    # ("antisat_trie_solo", partial(tool_antisat, "./buildafa_trie_solo/triesat")),
-    # ("mata", partial(tool_mata, False)),  # mata seems to return incorrect results
-    # ("abc", tool_abc),
-    # ("nuxmv", tool_nuxmv),  # nuxmv throws segfaults
+    ("antisat_trie_heap_solo", partial(tool_antisat, "./buildafa_trie_heap_solo/triesat")),
+    ("mata", partial(tool_mata, False)),
+    ("abc", tool_abc),
 )
 
 random.seed("qveo3tj309rfkv240")
@@ -250,12 +252,12 @@ print(input_paths)
 global_ix = 0
 
 maximums = {
-    "automata_inclusion": 0,
-    "bool_comb": 0,
-    "email_filter": 50,
-    "ltl_afa": 500,
-    "noodler": 50,
-    "stranger_afa": 300,
+    "automata_inclusion": 100000,
+    "bool_comb": 100000,
+    "email_filter": 100000,
+    "ltl_afa": 100000,
+    "noodler": 100000,
+    "stranger_afa": 100000,
 }
 
 groups = []
@@ -273,6 +275,8 @@ for input_path in input_paths:
     maximum = maximums[input_path]
     groups.append((input_path, iter(random.sample(input_paths2, min(len(input_paths2), maximum)))))
 
+tools_mask = (True,) * 6
+
 end = False
 while not end:
     end = True
@@ -284,15 +288,17 @@ while not end:
         end = False
 
         global_ix += 1
-        if global_ix < 94:
+
+        if global_ix < 3857:
             continue
 
         print(input_path, ipath, file=benchtags_f, flush=True)
         print("MEASURE", global_ix, input_path, ipath)
 
-        for tool_name, tool in TOOLS:
-            print(tool_name)
-            tool(input_path, ipath)
+        for allowed, (tool_name, tool) in zip(tools_mask, TOOLS):
+            if allowed:
+                print(tool_name)
+                tool(input_path, ipath)
 
         print(file=results_f, flush=True)
         print(file=times_f, flush=True)

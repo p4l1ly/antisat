@@ -154,6 +154,17 @@ flags0 = {
         (["trie"], ("ALL_SOLO", "OFF"), [["noAllSolo"]]),
         (["sat", "trie"], ("FIXED_ORDER", "ON"), [["fixedOrder"]]),
     ),
+    "sat_small_heap": (
+        ([], None, [["sat"]]),
+        ([], None, [["trie"], ["clause"]]),
+        (["sat", "clause"], ("MODE", "SAT_CLAUSE_HEAP"), [["anyBubble"]]),
+        (["sat", "trie"], ("MODE", "SAT_TRIE_HEAP"), [["anyBubble"]]),
+        ([], ("NEW_ANALYZE", "OFF"), [["oldAnalyze"]]),
+        ([], ("STRENGTHENCC", "ON"), [["strengthencc"]]),
+        (["sat", "trie"], ("SOLIDIFY", "ON"), [["solidify"]]),
+        (["trie"], ("ALL_SOLO", "OFF"), [["noAllSolo"]]),
+        (["sat", "trie"], ("FIXED_ORDER", "ON"), [["fixedOrder"]]),
+    ),
 }[sys.argv[2]]
 
 suffix = {
@@ -164,6 +175,7 @@ suffix = {
     "sat_trie": "satt",
     "sat_trie_fixed": "satf",
     "sat_small": "sats",
+    "sat_small_heap": "satsh",
 }[sys.argv[2]]
 
 visited = set()

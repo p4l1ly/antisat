@@ -8,8 +8,19 @@ import time
 import traceback
 from functools import partial
 from typing import Union
+import numpy.random as npr
+import resource
 
-PROBLEMS = (
+MAX_VIRTUAL_MEMORY = 10 * 1024 * 1024 * 1024 # 10 GiB
+
+def limit_virtual_memory():
+    # The tuple below is of the form (soft limit, hard limit). Limit only
+    # the soft part so that the limit can be increased later (setting also
+    # the hard limit would prevent that).
+    # When the limit cannot be changed, setrlimit() raises ValueError.
+    resource.setrlimit(resource.RLIMIT_AS, (MAX_VIRTUAL_MEMORY, resource.RLIM_INFINITY))
+
+PROBLEMS = [
     "../data/sat2023/0297c2a35f116ffd5382aea5b421e6df-Urquhart-s3-b3.shuffled-as.sat03-1556.cnf.xz",
     "../data/sat2023/004b0f451f7d96f6a572e9e76360f51a-spg_420_280.cnf.xz",
     "../data/sat2023/008e7716c69009090ff6bd0048dc55f8-SAT_dat.k10.cnf.xz",
@@ -410,7 +421,7 @@ PROBLEMS = (
     "../data/sat2023/fee70cede2b5b55bfbdb6e48fbe7ce4f-DLTM_twitter690_74_16.cnf.xz",
     "../data/sat2023/ff5170c690129f8c94658e82b6aab05c-Urquhart-s5-b4.shuffled.cnf.xz",
     "../data/sat2023/ff867fd35aa52058382a8b0c21cd1f38-mchess20-mixed-35percent-blocked.cnf.xz",
-)
+]
 
 TIMEOUT = float(sys.argv[1])
 
@@ -440,6 +451,7 @@ async def check_stdin_unpacked(problem, program) -> Union[bytes, Exception]:
                 program,
                 stdin=f,
                 stdout=asyncio.subprocess.PIPE,
+                preexec_fn=limit_virtual_memory,
             )
 
             assert p.stdout is not None
@@ -580,10 +592,11 @@ def sbva():
             "-t",
             str(int(TIMEOUT)),
         ),
+        preexec_fn=limit_virtual_memory,
     )
 
     if p.returncode != 0:
-        os.remove("../data/sbva.cnf")
+        subprocess.call("cp ../data/unxz.cnf ../data/sbva.cnf", shell=True)
         return "SbvaError"
 
     return "OK"
@@ -595,14 +608,22 @@ with open("sat_small.tags", "r") as f:
 
 PROGRAMS = (
     (("unxz", unxz), ["unxz", "preprocess"]),
-    *zip(
-        (antisat(i, "unxz", "s", "") for i in range(2)),
+    (("sbva", lambda _: sbva()), ["sbva", "preprocess"]),
+    (("presort", partial(presort_clauses, sbva=True, seed="gq92mgvw3ngwjb")), ["presort", "preprocess"]),
+    *tuple(zip(
+        (antisat(i, "sbva", "s", "") for i in range(2)),
         (tags + ["nopresort", "antisat", "nosbva", "nopreprocess"] for tags in stagss),
-    ),
-    (minisat("1.12b", "unxz"), ["minisat", "1.12b", "nosbva", "noantisat", "nopreprocess"]),
-    (minisat("1.14", "unxz"), ["minisat", "1.14", "nosbva", "noantisat", "nopreprocess"]),
-    (cadical("unxz"), ["cadical", "nosbva", "noantisat", "nopreprocess"]),
-    (cryptominisat("unxz"), ["cryptominisat", "nosbva", "noantisat", "nopreprocess"]),
+    )),
+    *tuple(zip(
+        (antisat(i, "sbva", "sh", "") for i in range(2)),
+        (tags + ["nopresort", "antisat", "nosbva", "nopreprocess"] for tags in stagss),
+    )),
+    # (antisat(1, "presort", "s", "_presort"), stagss[1] + ["presort", "antisat", "nosbva", "nopreprocess"]),
+    (antisat(1, "presort_sbva", "sh", "_presort"), stagss[1] + ["presort", "antisat", "nosbva", "nopreprocess"]),
+    (minisat("1.12b", "sbva"), ["minisat", "1.12b", "nosbva", "noantisat", "nopreprocess"]),
+    (minisat("1.14", "sbva"), ["minisat", "1.14", "nosbva", "noantisat", "nopreprocess"]),
+    (cadical("sbva"), ["cadical", "nosbva", "noantisat", "nopreprocess"]),
+    # (cryptominisat("sbva"), ["cryptominisat", "nosbva", "noantisat", "nopreprocess"]),
 )
 
 PRINT_TAGS = False
@@ -612,9 +633,11 @@ WRITE_MODE = "a"
 if PRINT_TAGS or DRY_RUN:
     times_f = sys.stdout
     results_f = sys.stdout
+    benchtags_f = sys.stdout
 else:
-    times_f = open("times_sat_small.csv", WRITE_MODE)
-    results_f = open("results_sat_small.csv", WRITE_MODE)
+    times_f = open("times_sat_small2.csv", WRITE_MODE)
+    results_f = open("results_sat_small2.csv", WRITE_MODE)
+    benchtags_f = open("benchtags_sat_small2.csv", WRITE_MODE)
 
 
 def measure_with(problem, program, quiet=False):
@@ -632,11 +655,13 @@ if PRINT_TAGS:
     for (_, tags) in PROGRAMS:
         print(*tags)
 else:
-    random.seed("qveo3tj309rfkv240")
-    for i, problem in enumerate(random.sample(PROBLEMS, 400)): # if i <= 25:
-        if i < 295:
+    rangen = npr.default_rng(seed=list(b"qveo3tj309rfkv240"))
+    rangen.shuffle(PROBLEMS)
+    for i, problem in enumerate(PROBLEMS, 1): # if i <= 25:
+        if i < 362:
             continue
 
+        print(problem, file=benchtags_f, flush=True)
         # if i == 49:
         #     print(problem)
         #     for j, program in enumerate(PROGRAMS):
@@ -645,7 +670,7 @@ else:
         #         if j == 60:
         #             print(program)
 
-        for j, (program, _) in enumerate(PROGRAMS):
+        for j, (program, _) in enumerate(PROGRAMS, 1):
             measure_with(problem, program)
 
         print(file=results_f, flush=True)

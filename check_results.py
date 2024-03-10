@@ -35,6 +35,7 @@ for i, line in enumerate(sys.stdin):
                 "OK",
                 "CalledProcessError-6",
                 "BadAlloc",
+                "NotApplicable",
             ):
                 print(f"ERROR2: {i} {line}")
 

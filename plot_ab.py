@@ -21,10 +21,11 @@ with open(sys.argv[2], "r") as f:
     results = [[r for r in line.strip().split()] for line in f]
 with open(sys.argv[3], "r") as f:
     tagss = [[r for r in line.strip().split()] for line in f]
-with open(sys.argv[4], "r") as f:
-    benchtags = [[r for r in line.strip().split()] for line in f]
-
-print(benchtags)
+if sys.argv[4]:
+    with open(sys.argv[4], "r") as f:
+        benchtags = [[r for r in line.strip().split()] for line in f]
+else:
+    BENCHTAG_COLUMNS = ()
 
 constr1 = [
     clause.split(",") for clause in (sys.argv[6].split(':') if sys.argv[6] else ())
@@ -116,7 +117,13 @@ else:
 
 inf_line = max_ab * 1.15
 
+
+class NotApplicable(Exception):
+    pass
+
 def score(r, t):
+    if r == "NotApplicable":
+        raise NotApplicable
     if r in ("SAT", "UNSAT", "EMPTY", "NOT_EMPTY", "NONEMPTY") and t <= max_ab:
         return t
     else:
@@ -129,27 +136,42 @@ points = []
 for k, (rcols, tcols) in enumerate(zip(results, times)):
     if not len(rcols) == len(tcols) == len(results[0]):
         continue
-    bests1 = defaultdict(lambda: (np.inf, -1))
-    for ii, i, mask in zip(count(), columns1, common_mask1):
-        score_ = score(rcols[i], tcols[i])
-        if bests1[mask][0] > score_:
-            bests1[mask] = score_, ii
 
-    bests2 = defaultdict(lambda: (np.inf, -1))
-    for ii, i, mask in zip(count(), columns2, common_mask2):
-        score_ = score(rcols[i], tcols[i])
-        if bests2[mask][0] > score_:
-            bests2[mask] = score_, ii
+    try:
+        bests1 = defaultdict(lambda: (np.inf, -1))
+        for ii, i, mask in zip(count(), columns1, common_mask1):
+            score_ = score(rcols[i], tcols[i])
+            if bests1[mask][0] > score_:
+                bests1[mask] = score_, ii
 
-    for mask1, (score1, i) in bests1.items():
-        if bests2.get(mask1) is not None:
-            score2, j = bests2[mask1]
-            if BENCHTAG_COLUMNS:
-                color = color_benchtags[tuple(benchtags[k][l] for l in BENCHTAG_COLUMNS)]
-            else:
-                color = COLORS[j % len(COLORS)]
+        bests2 = defaultdict(lambda: (np.inf, -1))
+        for ii, i, mask in zip(count(), columns2, common_mask2):
+            score_ = score(rcols[i], tcols[i])
+            if bests2[mask][0] > score_:
+                bests2[mask] = score_, ii
 
-            points.append((score1, score2, SHAPES[i % len(SHAPES)], color))
+        for mask1, (score1, i) in bests1.items():
+            if bests2.get(mask1) is not None:
+                score2, j = bests2[mask1]
+
+                if len(columns1) == 1:
+                    if "EMPTY" in rcols or "UNSAT" in rcols:
+                        shape = "v"
+                    elif "NOT_EMPTY" in rcols or "SAT" in rcols:
+                        shape = "o"
+                    else:
+                        shape = "x"
+                else:
+                    shape = SHAPES[i % len(SHAPES)]
+
+                if BENCHTAG_COLUMNS:
+                    color = color_benchtags[tuple(benchtags[k][l] for l in BENCHTAG_COLUMNS)]
+                else:
+                    color = COLORS[j % len(COLORS)]
+
+                points.append((score1, score2, shape, color))
+    except NotApplicable:
+        pass
 
 print("PARTITION", len(points))
 
@@ -168,8 +190,12 @@ ymin = 0
 xmax = inf_line
 ymax = inf_line
 
+visited_colors = set()
 colorplots = []
-for (shape, color), points in points_by_style.items():
+for (shape, color), points in sorted(
+    points_by_style.items(),
+    key=lambda x: (benchtags_by_color[x[0][1]] if BENCHTAG_COLUMNS else (), x[0][0]),
+):
     xy = np.array(points).T
 
     x = xy[0]
@@ -193,9 +219,20 @@ for (shape, color), points in points_by_style.items():
     xmax = max(xmax, xr.max())
     ymax = max(ymax, yr.max())
 
-    plt.scatter(x, y, s=10, zorder=2, color="black")
-    colorplots.append(plt.scatter(xr, yr, s=20, zorder=1, alpha=0.3, marker=shape, color=color,
-                                  label=benchtags_by_color[color]))
+    plt.scatter(x, y, s=10, zorder=20, color="black")
+    if BENCHTAG_COLUMNS:
+        kwargs = {"label": benchtags_by_color[color]}
+    else:
+        kwargs = {}
+
+    # split xr to 10 equally big parts
+    for i in range(10):
+        ixs = np.array(range(i, len(xr), 10), dtype=int)
+        colorplot = plt.scatter(xr[ixs], yr[ixs], s=20, zorder=i + 1, alpha=0.3, marker=shape, color=color, **kwargs)
+        if color not in visited_colors:
+            visited_colors.add(color)
+            print(color, kwargs)
+            colorplots.append(colorplot)
 
 # Shrink current axis by 20%
 box = ax.get_position()
