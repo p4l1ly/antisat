@@ -25,6 +25,9 @@ option(NO_POSNEG_OUTPUTS "output literals that appear in both signs are not outp
 option(ONE_ORDER "guessing of output literals is not prioritized" OFF)
 option(NO_OUTPUTS "output literals have no special meaning in the sat (except that they appear in the antichain)" OFF)
 option(FIXED_ORDER "trie has fixed variable order" OFF)
+option(REVERSE_ADD "add trie branches in reverse level order" OFF)
+option(SET_SUCCESSOR_ONE "set nonzero successors to one instead of keeping them unassigned" OFF)
+option(PRINT_SAT_TIMES "print timestamps of SAT calls" OFF)
 
 set(MODE "${MODE}" CACHE STRING "modus_operandi" FORCE)
 
@@ -253,6 +256,18 @@ endif()
 
 if (FIXED_ORDER)
   set(FLAGS "${FLAGS} -DFIXED_ORDER")
+endif()
+
+if (REVERSE_ADD)
+  set(FLAGS "${FLAGS} -DREVERSE_ADD")
+endif()
+
+if (SET_SUCCESSOR_ONE)
+  set(FLAGS "${FLAGS} -DSET_SUCCESSOR_ONE")
+endif()
+
+if (PRINT_SAT_TIMES)
+  set(FLAGS "${FLAGS} -DPRINT_SAT_TIMES")
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS}")

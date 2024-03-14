@@ -857,7 +857,7 @@ GClause Head::propagate(Solver& S, Lit p, bool& keep_watch) {
         cout << endl;
       }
       assert(guard.dual->guard.dual != NULL);
-      if (guard.next == NULL) assert(guard.dual->guard.dual == this);
+      assert(guard.next != NULL || guard.dual->guard.dual == this);
 
       if (S.value(guard.dual->tag) == l_True) {
         if (verbosity >= 2) cout << "VAN_DISABLED_REAR " << HeadAttrs(guard.dual, S) << endl;

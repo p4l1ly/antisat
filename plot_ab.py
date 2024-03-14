@@ -2,6 +2,8 @@ import sys
 from collections import defaultdict
 from itertools import count, cycle
 
+import matplotlib
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -115,7 +117,7 @@ if sys.argv[5] == "-":
 else:
     max_ab = float(sys.argv[5])
 
-inf_line = max_ab * 1.15
+inf_line = max_ab * 1.1
 
 
 class NotApplicable(Exception):
@@ -130,6 +132,11 @@ def score(r, t):
         return inf_line
 
 print("POINTS")
+
+only1 = 0
+only2 = 0
+both = 0
+neither = 0
 
 points = []
 
@@ -169,6 +176,22 @@ for k, (rcols, tcols) in enumerate(zip(results, times)):
                 else:
                     color = COLORS[j % len(COLORS)]
 
+                if score1 == inf_line:
+                    if score2 == inf_line:
+                        neither += 1
+                    else:
+                        only2 += 1
+                elif score2 == inf_line:
+                    only1 += 1
+                else:
+                    both += 1
+
+                # if score2 > 30 and score2 < 60 and score1 == inf_line:
+                #     print(k, rcols[1], score2, *benchtags[k])
+                # if score2 < 17 and score1 > 30 and score1 != inf_line:
+                #     print(k, rcols[1], score1, score2, *benchtags[k])
+                # if score1 > 15 and benchtags[k][0] == "automata_inclusion":
+                #     print(k, rcols[1], score1, score2, *benchtags[k])
                 points.append((score1, score2, shape, color))
     except NotApplicable:
         pass
@@ -183,7 +206,7 @@ for x, y, shape, color in points:
 print("PLOT", len(points_by_style))
 
 fig, ax = plt.subplots()
-del fig
+fig.set_size_inches(6, 6)
 
 xmin = 0
 ymin = 0
@@ -219,28 +242,24 @@ for (shape, color), points in sorted(
     xmax = max(xmax, xr.max())
     ymax = max(ymax, yr.max())
 
-    plt.scatter(x, y, s=10, zorder=20, color="black")
+    plt.scatter(x, y, s=5, zorder=40, color="black")
     if BENCHTAG_COLUMNS:
-        kwargs = {"label": benchtags_by_color[color]}
+        kwargs = {"label": benchtags_by_color[color].replace("_", " ")}
     else:
         kwargs = {}
 
+    PART_COUNT = 30
     # split xr to 10 equally big parts
-    for i in range(10):
-        ixs = np.array(range(i, len(xr), 10), dtype=int)
+    for i in range(PART_COUNT):
+        ixs = np.array(range(i, len(xr), PART_COUNT), dtype=int)
         colorplot = plt.scatter(xr[ixs], yr[ixs], s=20, zorder=i + 1, alpha=0.3, marker=shape, color=color, **kwargs)
         if color not in visited_colors:
             visited_colors.add(color)
             print(color, kwargs)
             colorplots.append(colorplot)
 
-# Shrink current axis by 20%
-box = ax.get_position()
-ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
-# Put a legend to the right of the current axis
-ax.legend(handles=colorplots, loc='center left', bbox_to_anchor=(1, 0.5))
-
-
+plt.xticks([0, 10, 20, 30, 40, 50, 60, inf_line], ["0", "10", "20", "30", "40", "50", "60", ">60"])
+plt.yticks([0, 10, 20, 30, 40, 50, 60, inf_line], ["0", "10", "20", "30", "40", "50", "60", ">60"])
 plt.xlim([xmin, xmax])
 plt.ylim([ymin, xmax])
 ax.set_aspect(1)
@@ -250,4 +269,60 @@ plt.plot([0, max_ab], [0, 0], linewidth=1, color="lightgrey", zorder=0)
 plt.plot([max_ab, max_ab], [0, max_ab], linewidth=1, color="lightgrey", zorder=0)
 plt.plot([0, max_ab], [max_ab, max_ab], linewidth=1, color="lightgrey", zorder=0)
 
-plt.show()
+print(neither, only1, only2, both)
+
+FONT = "Alfios"
+
+show = True
+if len(sys.argv) > 9:
+    xlabel = sys.argv[9]
+    ylabel = sys.argv[10]
+
+    import matplotlib.font_manager
+    fpaths = matplotlib.font_manager.findSystemFonts()
+    for i in fpaths:
+        try:
+            f = matplotlib.font_manager.get_font(i)
+            print(f.family_name)
+        except:
+            pass
+
+    plt.xlabel(xlabel, fontsize=20, fontdict={"fontname": FONT})
+    plt.ylabel(ylabel, fontsize=20, fontdict={"fontname": FONT})
+
+    if len(sys.argv) > 11:
+        outpath = sys.argv[11]
+        if "legend" in outpath:
+            legend_fig = plt.figure()
+            legend_fig.legend(
+                handles=colorplots,
+                loc="center",
+                frameon=False,
+                prop={"family": FONT, "size": 13},
+            )
+            legend_fig.savefig(outpath, format="pdf", bbox_inches="tight")
+        elif "shapes" in outpath:
+            legend_fig = plt.figure()
+            fig2, ax2 = plt.subplots()
+            handles = [
+                ax2.scatter([0], [0], s=20, marker="o", color="grey", label="not empty"),
+                ax2.scatter([0], [0], s=20, marker="v", color="grey", label="empty"),
+                ax2.scatter([0], [0], s=20, marker="x", color="grey", label="unknown"),
+            ]
+            legend_fig.legend(
+                handles=handles, loc="center", frameon=False,
+                prop={"family": FONT, "size": 13},
+            )
+            legend_fig.savefig(outpath, format="pdf", bbox_inches="tight")
+        else:
+            plt.savefig(outpath, format="pdf", bbox_inches="tight")
+        show = False
+
+if show:
+    if colorplots:
+        # Shrink current axis by 20%
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+        # Put a legend to the right of the current axis
+        ax.legend(handles=colorplots, loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.show()

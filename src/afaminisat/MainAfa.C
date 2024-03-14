@@ -13,6 +13,9 @@
 #include <algorithm>
 #include <fcntl.h>
 #include <iterator>
+#ifdef PRINT_SAT_TIMES
+#include <chrono>
+#endif
 
 using std::cout;
 using std::endl;
@@ -259,6 +262,11 @@ bool run() {
       outputs.push(all_outputs[i]);
       inputs.push(Lit(i, true));
     }
+#ifdef SET_SUCCESSOR_ONE
+    else {
+      inputs.push(Lit(i, false));
+    }
+#endif
   }
 
 #ifdef USE_TRIE
@@ -314,8 +322,19 @@ bool run() {
   ERROR
 #endif
 
+#ifdef PRINT_SAT_TIMES
+  auto start_time = std::chrono::high_resolution_clock::now();
+#endif
+
   while (true) {
     if (verbosity >= -3) printf("SOLVING %u\n", solveCnt);
+
+#ifdef PRINT_SAT_TIMES
+    {
+      auto finish = std::chrono::high_resolution_clock::now();
+      std::cout << "TIC_NEW_SUCC " << std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start_time).count() << "\n";
+    }
+#endif
 
 #ifdef USE_TRIE
     if (verbosity >= 2) {
@@ -340,6 +359,12 @@ bool run() {
     result = S.solve(inputs);
     if (result) while (true) {
       if (verbosity >= -3) printf("SOLVING_RESUME %d\n", solveCnt);
+#ifdef PRINT_SAT_TIMES
+      {
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::cout << "TIC_NEXT_PRED " << std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start_time).count() << "\n";
+      }
+#endif
 
 #ifdef USE_TRIE
       if (verbosity >= 2) {
@@ -377,6 +402,11 @@ bool run() {
           inputs.push(Lit(i, true));
         }
         else if (i == 0) goto finally;
+#ifdef SET_SUCCESSOR_ONE
+        else {
+          inputs.push(Lit(i, false));
+        }
+#endif
       }
 
       cell_container.add(inputs);

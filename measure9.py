@@ -1,10 +1,10 @@
-import random
 import re
 import subprocess
 import sys
 import time
 import resource
 from functools import partial
+from collections import defaultdict
 
 MAX_VIRTUAL_MEMORY = 10 * 1024 * 1024 * 1024 # 10 GiB
 EARLY_TEST = False
@@ -35,9 +35,9 @@ if DRY_RUN:
     results_f = sys.stdout
     benchtags_f = sys.stdout
 else:
-    times_f = open(f"times_afacomp.csv", "a")
-    results_f = open(f"results_afacomp.csv", "a")
-    benchtags_f = open(f"benchtags_afacomp.csv", "a")
+    times_f = open(f"times9.csv", "w")
+    results_f = open(f"results9.csv", "w")
+    benchtags_f = open(f"benchtags9.csv", "w")
 
 
 def tool_mata(sim, group, instance):
@@ -230,75 +230,42 @@ def tool_nuxmv(group, instance):
 
 
 TOOLS = (
-    ("antisat_clause_heap", partial(tool_antisat, "./buildafa_clause_heap/triesat")),
-    ("antisat_trie_heap", partial(tool_antisat, "./buildafa_trie_heap/triesat")),
-    ("antisat_trie", partial(tool_antisat, "./buildafa_trie/triesat")),
-    ("antisat_trie_heap_solo", partial(tool_antisat, "./buildafa_trie_heap_solo/triesat")),
-    ("mata", partial(tool_mata, False)),
-    ("abc", tool_abc),
+    ("antisat_trie_heap_reverseadd", partial(tool_antisat, "./buildafa_trie_heap_reverseadd/triesat")),
+    ("antisat_trie_heap_setsuccone", partial(tool_antisat, "./buildafa_trie_heap_setsuccone/triesat")),
 )
 
-random.seed("qveo3tj309rfkv240")
+groups = defaultdict(list)
 
-input_paths = subprocess.run(
-    f"ls {BENCHDIR}/afacomp",
-    shell=True,
-    stdout=subprocess.PIPE,
-    check=True
-)
-input_paths = input_paths.stdout.decode("utf8").strip().split("\n")
-print(input_paths)
+with open("trie_good_hard.csv", "r") as f:
+    for line in f:
+        _ix, trie_result, trie_time, group, instance = line.strip().split(" ")
+        del _ix
+        groups[group].append((trie_result, trie_time, int(instance)))
+
+groups = [(group, iter(ipaths)) for group, ipaths in groups.items()]
 
 global_ix = 0
-
-maximums = {
-    "automata_inclusion": 100000,
-    "bool_comb": 100000,
-    "email_filter": 100000,
-    "ltl_afa": 100000,
-    "noodler": 100000,
-    "stranger_afa": 100000,
-}
-
-groups = []
-
-for input_path in input_paths:
-    input_paths2 = subprocess.run(
-        f"ls {BENCHDIR}/afacomp/{input_path}",
-        shell=True,
-        stdout=subprocess.PIPE,
-        check=True
-    )
-    input_paths2 = [int(p[:-4]) for p in input_paths2.stdout.decode("utf8").strip().split("\n")]
-    input_paths2.sort()
-
-    maximum = maximums[input_path]
-    groups.append((input_path, iter(random.sample(input_paths2, min(len(input_paths2), maximum)))))
-
-tools_mask = (True,) * 6
-
 end = False
 while not end:
     end = True
     for input_path, ipaths in groups:
         try:
-            ipath = next(ipaths)
+            trie_result, trie_time, ipath = next(ipaths)
         except StopIteration:
             continue
         end = False
 
         global_ix += 1
 
-        if global_ix < 17670:
-            continue
-
         print(input_path, ipath, file=benchtags_f, flush=True)
         print("MEASURE", global_ix, input_path, ipath)
 
-        for allowed, (tool_name, tool) in zip(tools_mask, TOOLS):
-            if allowed:
-                print(tool_name)
-                tool(input_path, ipath)
+        print(trie_result, end=" ", file=results_f, flush=True)
+        print(trie_time, end=" ", file=times_f, flush=True)
+
+        for tool_name, tool in TOOLS:
+            print(tool_name)
+            tool(input_path, ipath)
 
         print(file=results_f, flush=True)
         print(file=times_f, flush=True)
