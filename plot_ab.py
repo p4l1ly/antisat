@@ -140,6 +140,8 @@ neither = 0
 
 points = []
 
+stats_by_bench = defaultdict(lambda: [0, 0, 0, 0, [], []])
+
 for k, (rcols, tcols) in enumerate(zip(results, times)):
     if not len(rcols) == len(tcols) == len(results[0]):
         continue
@@ -176,15 +178,25 @@ for k, (rcols, tcols) in enumerate(zip(results, times)):
                 else:
                     color = COLORS[j % len(COLORS)]
 
+                bench = benchtags[k][0]
+                stat_by_bench = stats_by_bench[bench]
+                stat_by_bench[3] += 1
+
                 if score1 == inf_line:
                     if score2 == inf_line:
                         neither += 1
                     else:
+                        stat_by_bench[1] += 1
                         only2 += 1
                 elif score2 == inf_line:
+                    stat_by_bench[0] += 1
                     only1 += 1
                 else:
+                    stat_by_bench[2] += 1
                     both += 1
+                    if score1 > 1 or score2 > 1:
+                        stat_by_bench[4].append(score1)
+                        stat_by_bench[5].append(score2)
 
                 # if score2 > 30 and score2 < 60 and score1 == inf_line:
                 #     print(k, rcols[1], score2, *benchtags[k])
@@ -192,6 +204,8 @@ for k, (rcols, tcols) in enumerate(zip(results, times)):
                 #     print(k, rcols[1], score1, score2, *benchtags[k])
                 # if score1 > 15 and benchtags[k][0] == "automata_inclusion":
                 #     print(k, rcols[1], score1, score2, *benchtags[k])
+                # if benchtags[k][0] != "email_filter":
+                #     continue
                 points.append((score1, score2, shape, color))
     except NotApplicable:
         pass
@@ -270,6 +284,15 @@ plt.plot([max_ab, max_ab], [0, max_ab], linewidth=1, color="lightgrey", zorder=0
 plt.plot([0, max_ab], [max_ab, max_ab], linewidth=1, color="lightgrey", zorder=0)
 
 print(neither, only1, only2, both)
+for bench, stat_by_bench in sorted(stats_by_bench.items()):
+    print(bench, end=" ")
+    print(
+      *stat_by_bench[:4],
+      f"{np.mean(stat_by_bench[4]):.1f}" if stat_by_bench[4] else "0",
+      f"{np.mean(stat_by_bench[5]):.1f}" if stat_by_bench[4] else "0",
+      sep="/"
+    )
+
 
 FONT = "Alfios"
 
@@ -283,7 +306,7 @@ if len(sys.argv) > 9:
     for i in fpaths:
         try:
             f = matplotlib.font_manager.get_font(i)
-            print(f.family_name)
+            # print(f.family_name)
         except:
             pass
 
