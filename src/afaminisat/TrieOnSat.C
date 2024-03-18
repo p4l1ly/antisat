@@ -119,7 +119,16 @@ void Trie::onSat(
   }
 
   // sort added_vars by level
+#ifdef REVERSE_ADD
+  std::sort(added_vars.begin(), added_vars.end(),
+    [](const std::pair<int, Lit> &a, const std::pair<int, Lit> &b) {
+      return a.first > b.first;
+    }
+  );
+#else
   std::sort(added_vars.begin(), added_vars.end());
+#endif
+
 
   if (verbosity >= 2) {
     for (auto x: added_vars) {

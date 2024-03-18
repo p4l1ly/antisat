@@ -13,6 +13,9 @@
 #include <algorithm>
 #include <fcntl.h>
 #include <iterator>
+#ifdef PRINT_SAT_TIMES
+#include <chrono>
+#endif
 
 using std::cout;
 using std::endl;
@@ -22,7 +25,7 @@ using std::string;
 #ifdef MY_DEBUG
 int verbosity = 5;
 #endif
-const bool write_debug_dots = true;
+const bool write_debug_dots = false;
 
 
 std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
@@ -259,6 +262,11 @@ bool run() {
       outputs.push(all_outputs[i]);
       inputs.push(Lit(i, true));
     }
+#ifdef SET_SUCCESSOR_ONE
+    else {
+      inputs.push(Lit(i, false));
+    }
+#endif
   }
 
 #ifdef USE_TRIE
@@ -314,19 +322,30 @@ bool run() {
   ERROR
 #endif
 
+#ifdef PRINT_SAT_TIMES
+  auto start_time = std::chrono::high_resolution_clock::now();
+#endif
+
   while (true) {
     if (verbosity >= -3) printf("SOLVING %u\n", solveCnt);
+
+#ifdef PRINT_SAT_TIMES
+    {
+      auto finish = std::chrono::high_resolution_clock::now();
+      std::cout << "TIC_NEW_SUCC " << std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start_time).count() << "\n";
+    }
+#endif
 
 #ifdef USE_TRIE
     if (verbosity >= 2) {
       S.trie.print_guards(S);
-      if (write_debug_dots) {
-        std::stringstream ss;
-        ss << "debug/trie" << solveCnt << ".dot";
-        string s;
-        ss >> s;
-        S.trie.to_dot(S, s.c_str());
-      }
+    }
+    if (write_debug_dots) {
+      std::stringstream ss;
+      ss << "debug/trie" << solveCnt << ".dot";
+      string s;
+      ss >> s;
+      S.trie.to_dot(S, s.c_str());
     }
 #endif
 
@@ -340,18 +359,24 @@ bool run() {
     result = S.solve(inputs);
     if (result) while (true) {
       if (verbosity >= -3) printf("SOLVING_RESUME %d\n", solveCnt);
+#ifdef PRINT_SAT_TIMES
+      {
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::cout << "TIC_NEXT_PRED " << std::chrono::duration_cast<std::chrono::nanoseconds>(finish-start_time).count() << "\n";
+      }
+#endif
 
 #ifdef USE_TRIE
       if (verbosity >= 2) {
         S.trie.print_guards(S);
 
-        if (write_debug_dots) {
-          std::stringstream ss;
-          ss << "debug/trie" << solveCnt << ".dot";
-          string s;
-          ss >> s;
-          S.trie.to_dot(S, s.c_str());
-        }
+      }
+      if (write_debug_dots) {
+        std::stringstream ss;
+        ss << "debug/trie" << solveCnt << ".dot";
+        string s;
+        ss >> s;
+        S.trie.to_dot(S, s.c_str());
       }
 #endif
 
@@ -377,6 +402,11 @@ bool run() {
           inputs.push(Lit(i, true));
         }
         else if (i == 0) goto finally;
+#ifdef SET_SUCCESSOR_ONE
+        else {
+          inputs.push(Lit(i, false));
+        }
+#endif
       }
 
       cell_container.add(inputs);
