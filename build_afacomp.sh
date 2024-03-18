@@ -1,0 +1,95 @@
+cmake -S . -B buildafa_clause_heap -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_CLAUSE_HEAP_HEAP \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  ;
+cmake --build buildafa_clause_heap
+
+cmake -S . -B buildafa_clause -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_CLAUSE_BUBBLE_BUBBLE \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  ;
+cmake --build buildafa_clause
+
+cmake -S . -B buildafa_trie_heap -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_TRIE_HEAP_HEAP \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  -DALL_SOLO=OFF \
+  ;
+cmake --build buildafa_trie_heap
+
+cmake -S . -B buildafa_trie -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_TRIE_BUBBLE_BUBBLE \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  -DALL_SOLO=OFF \
+  ;
+cmake --build buildafa_trie
+
+cmake -S . -B buildafa_trie_watch -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_TRIE_WATCH_WATCH \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  -DALL_SOLO=OFF \
+  ;
+cmake --build buildafa_trie_watch
+
+cmake -S . -B buildafa_trie_solo -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_TRIE_BUBBLE_BUBBLE \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  -DALL_SOLO=ON \
+  ;
+cmake --build buildafa_trie_solo
+
+cmake -S . -B buildafa_trie_heap_solo -DCMAKE_BUILD_TYPE=Release \
+  -DMODE=AFA_TRIE_HEAP_HEAP \
+  -DSTRENGTHENCC=ON \
+  -DNO_POSNEG_OUTPUTS=ON \
+  -DONE_ORDER=OFF \
+  -DNO_OUTPUTS=OFF \
+  -DCELL_CONTAINER=SET \
+  -DNEW_ANALYZE=OFF \
+  -DOPTIONAL_CLAUSES=OFF \
+  -DNOGUESS_VARS=OFF \
+  -DALL_SOLO=ON \
+  ;
+cmake --build buildafa_trie_heap_solo
