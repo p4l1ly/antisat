@@ -8,6 +8,6 @@
 # ./buildafa_clause_heap_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/stranger_afa/1551.antisat > sattimes_clause4.log
 # ./buildafa_trie_heap_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/automata_inclusion/99.antisat > sattimes_trie5.log
 # ./buildafa_clause_heap_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/automata_inclusion/99.antisat > sattimes_clause5.log
-./buildafa_trie_heap_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/noodler/12907.antisat > sattimes_trie6.log
-./buildafa_trie_heap_reverseadd_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/noodler/12907.antisat > sattimes_trierev6.log
-./buildafa_trie_heap_setsuccone_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/noodler/12907.antisat > sattimes_triesso6.log
+# ./buildafa_trie_heap_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/noodler/12907.antisat > sattimes_trie6.log
+# ./buildafa_trie_heap_reverseadd_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/noodler/12907.antisat > sattimes_trierev6.log
+# ./buildafa_trie_heap_setsuccone_printsattimes/triesat < ../afacomp/afacomp_simpl_tseytin/noodler/12907.antisat > sattimes_triesso6.log

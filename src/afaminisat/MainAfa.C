@@ -28,6 +28,13 @@ int verbosity = 5;
 const bool write_debug_dots = false;
 
 
+int clausal_size = 0;
+int base_clausal_size = 0;
+int clause_count = 0;
+int base_clause_count = 0;
+int trie_size = 0;
+
+
 std::pair<bool, std::vector<int>> getIntLine(bool required = true) {
   std::string line;
   if (getline(std::cin, line)) {
@@ -153,6 +160,10 @@ bool parse_cnfafa(
             int var = abs(lit) - 1;
             lits.push(lit > 0 ? Lit(var) : Lit(var, true));
           }
+          base_clausal_size += lits.size();
+          base_clause_count += 1;
+          clausal_size += lits.size();
+          clause_count += 1;
           S.addUpwardClause(out, lits, upward_clauses_ww);
         } else {
 #else
@@ -162,6 +173,10 @@ bool parse_cnfafa(
             int var = abs(lit) - 1;
             lits.push(lit > 0 ? Lit(var) : Lit(var, true));
           }
+          base_clausal_size += lits.size();
+          base_clause_count += 1;
+          clausal_size += lits.size();
+          clause_count += 1;
           S.addClause(lits, clauses_ww);
         }
         if (!S.okay())
@@ -298,6 +313,8 @@ bool run() {
   if (verbosity >= 2) printf("FINAL_ANTICHAIN_CLAUSE\n");
   S.addClause(outputs, clauses_ww);
 #endif
+  clausal_size += outputs.size();
+  clause_count += 1;
 
 #ifdef WATCH_CLAUSE_WATCH
   for (Clause *clause: clauses_ww) {
@@ -411,6 +428,8 @@ bool run() {
 
       cell_container.add(inputs);
 
+      clausal_size += outputs.size();
+      clause_count += 1;
 #ifdef USE_TRIE
       S.trie.onSat(S, S.nConstrs++, sharing_set, outputs, horlines, verlines);
 #else
@@ -463,6 +482,9 @@ bool run() {
   }
 
 finally:
+#ifdef USE_TRIE
+  trie_size = S.trie.count();
+#endif
   for (Head *verline: verlines) delete[] verline;
   return result;
 }
@@ -472,9 +494,13 @@ int main(int argc, char** argv) {
     char mode = '3';
     if (argc >= 2) mode = argv[1][0];
 
-    if (run()) {
-        std::cout << "NOT_EMPTY" << std::endl;
-    } else {
-        std::cout << "EMPTY" << std::endl;
-    }
+    bool result = run();
+    std::cout
+      << result << " "
+      << base_clause_count << " "
+      << base_clausal_size << " "
+      << clause_count << " "
+      << clausal_size << " "
+      << trie_size
+      << std::endl;
 }
