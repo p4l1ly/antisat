@@ -1,3 +1,5 @@
+import multiprocessing
+import os
 import random
 import re
 import subprocess
@@ -5,6 +7,9 @@ import sys
 import time
 import resource
 from functools import partial
+
+from pyqbf.formula import PCNF
+from pyqbf.solvers import Solver, SolverNames
 
 MAX_VIRTUAL_MEMORY = 10 * 1024 * 1024 * 1024 # 10 GiB
 EARLY_TEST = False
@@ -24,20 +29,22 @@ if EARLY_TEST:
     SUFFIX_ANTISAT = "afa"
     SUFFIX_SMV = "afa"
     SUFFIX_AIG = "afa"
+    SUFFIX_QBF = "afa"
 else:
     BENCHDIR = "../afacomp"
     SUFFIX_ANTISAT = "antisat"
     SUFFIX_SMV = "smv"
     SUFFIX_AIG = "aig"
+    SUFFIX_QBF = "qdimacs"
 
 if DRY_RUN:
     times_f = sys.stdout
     results_f = sys.stdout
     benchtags_f = sys.stdout
 else:
-    times_f = open(f"times_afacomp.csv", "a")
-    results_f = open(f"results_afacomp.csv", "a")
-    benchtags_f = open(f"benchtags_afacomp.csv", "a")
+    times_f = open(f"times_afacomp_qbf.csv", "w")
+    results_f = open(f"results_afacomp_qbf.csv", "w")
+    benchtags_f = open(f"benchtags_afacomp_qbf.csv", "w")
 
 
 def tool_mata(sim, group, instance):
@@ -228,14 +235,63 @@ def tool_nuxmv(group, instance):
     print(f"{result}\t{toc - tic:.2f}")
     print(f"{toc - tic:.2f}", end=" ", file=times_f, flush=True)
 
+def tool_pyqbf(solver, group, instance):
+    path = f"{BENCHDIR}/afacomp_simpl_qdimacs/{group}/{instance}.{SUFFIX_QBF}"
+
+    # check if path exists
+    if not os.path.isfile(path):
+        print("NotApplicable", end=" ", file=results_f, flush=True)
+        print("0.0", end=" ", file=times_f, flush=True)
+        return
+
+    formula = PCNF(from_file=path)
+    name = getattr(SolverNames, solver)
+
+    queue = multiprocessing.Queue()
+
+    def fn():
+        limit_virtual_memory()
+        tic = time.time()
+        try:
+            with Solver(name, bootstrap_with=formula, use_timer=True) as solver:
+                result = solver.solve()
+                # print(solver.get_model())
+                print(f"{name.value.center(8)} took {solver.time():.6f}s and resulted in {result}")
+            result = "NOT_EMPTY" if result else "EMPTY"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            result = e.__class__.__name__
+        toc = time.time()
+
+        queue.put((result, toc - tic))
+
+    p = multiprocessing.Process(target=fn)
+    p.start()
+    p.join(TIMEOUT)
+    try:
+        result, t = queue.get(block=False)
+    except multiprocessing.queues.Empty:
+        p.terminate()
+        result = "Timeout"
+        t = TIMEOUT
+
+    print(result, end=" ", file=results_f, flush=True)
+    print(f"{result}\t{t}")
+    print(f"{t:.2f}", end=" ", file=times_f, flush=True)
+
 
 TOOLS = (
-    ("antisat_clause_heap", partial(tool_antisat, "./buildafa_clause_heap/triesat")),
-    ("antisat_trie_heap", partial(tool_antisat, "./buildafa_trie_heap/triesat")),
-    ("antisat_trie", partial(tool_antisat, "./buildafa_trie/triesat")),
-    ("antisat_trie_heap_solo", partial(tool_antisat, "./buildafa_trie_heap_solo/triesat")),
-    ("mata", partial(tool_mata, False)),
-    ("abc", tool_abc),
+    # ("antisat_clause_heap", partial(tool_antisat, "./buildafa_clause_heap/triesat")),
+    # ("antisat_trie_heap", partial(tool_antisat, "./buildafa_trie_heap/triesat")),
+    # ("antisat_trie", partial(tool_antisat, "./buildafa_trie/triesat")),
+    # ("antisat_trie_heap_solo", partial(tool_antisat, "./buildafa_trie_heap_solo/triesat")),
+    # ("mata", partial(tool_mata, False)),
+    # ("abc", tool_abc),
+    # ("qbf_depqbf", partial(tool_pyqbf, "depqbf")),
+    # ("qbf_rareqs", partial(tool_pyqbf, "rareqs")),
+    # ("qbf_qfun", partial(tool_pyqbf, "qfun")),
+    ("qbf_caqe", partial(tool_pyqbf, "caqe")),
 )
 
 random.seed("qveo3tj309rfkv240")
@@ -289,15 +345,11 @@ while not end:
 
         global_ix += 1
 
-        if global_ix < 17670:
-            continue
-
         print(input_path, ipath, file=benchtags_f, flush=True)
         print("MEASURE", global_ix, input_path, ipath)
 
         for allowed, (tool_name, tool) in zip(tools_mask, TOOLS):
             if allowed:
-                print(tool_name)
                 tool(input_path, ipath)
 
         print(file=results_f, flush=True)
